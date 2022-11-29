@@ -1,6 +1,6 @@
 module github.com/StanzaSystems/sdk-go/adapters/fiberstanza
 
-go 1.18
+go 1.19
 
 require github.com/gofiber/fiber/v2 v2.40.1
 
