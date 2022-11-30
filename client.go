@@ -1,7 +1,16 @@
 package stanza
 
+import (
+// "errors"
+// sentinel "github.com/alibaba/sentinel-golang/api"
+)
+
 type ClientOptions struct {
-	StanzaHub string // host:port (ipv4, ipv6, or resolveable hostname)
+	AppName   string `json:"appName"`
+	StanzaHub string `json:"stanzaHub"` // host:port (ipv4, ipv6, or resolveable hostname)
+
+	// SentinelConfig
+	// OtelConfig
 }
 
 // Client is the underlying processor that is used by the main API.

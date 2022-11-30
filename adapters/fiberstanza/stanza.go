@@ -5,7 +5,7 @@ import (
 )
 
 // New creates a new fiberstanza middleware handler
-func New(service string, config ...Config) fiber.Handler {
+func New(config ...Config) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		// Wrap OTEL (https://github.com/gofiber/contrib/tree/main/otelfiber)
 

@@ -2,10 +2,13 @@ package fiberstanza
 
 // Config defines the config for fiberstanza middleware.
 type Config struct {
-	// just provide datagate/flowcontroller connection?
+	// Stanza
 
-	// i.e. assume FULL config has to come from datagate/flowcontroller?
-	//
-	// probably we should create a complete Config item here and we simply allow
-	// for a config returned from datagate/flowcontroller to alter/update it?
+	// Sentinel
+	FlowRules           string `yaml:"flowRules"`
+	CircuitBreakerRules string `yaml:"circuitBreakerRules"`
+	IsolationRules      string `yaml:"isolationRules"`
+	SystemRules         string `yaml:"systemRules"`
+
+	// OpenTelemetry
 }
