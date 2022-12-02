@@ -2,13 +2,6 @@ package fiberstanza
 
 // Config defines the config for fiberstanza middleware.
 type Config struct {
-	// Stanza
-
-	// Sentinel
-	FlowRules           string `yaml:"flowRules"`
-	CircuitBreakerRules string `yaml:"circuitBreakerRules"`
-	IsolationRules      string `yaml:"isolationRules"`
-	SystemRules         string `yaml:"systemRules"`
-
-	// OpenTelemetry
+	ResourceName string `json:"resourceName"` // optional (but required if you want to protect multiple resources)
+	Environment  string `json:"environment"`  // defaults to "dev" if unset
 }
