@@ -4,6 +4,9 @@ import (
 	"fmt"
 
 	"github.com/StanzaSystems/sdk-go/global"
+	"github.com/StanzaSystems/sdk-go/logging"
+	"github.com/StanzaSystems/sdk-go/sentinel"
+
 	"github.com/go-logr/logr"
 )
 
@@ -13,6 +16,7 @@ type ClientOptions struct {
 	StanzaHub string `json:"stanzaHub"` // host:port (ipv4, ipv6, or resolveable hostname)
 
 	// Optional
+	AppType     int32  `json:"appType"`
 	Environment string `json:"environment"`
 	Logger      logr.Logger
 }
@@ -28,7 +32,7 @@ func Init(options ClientOptions) error {
 	if options.StanzaHub == "" {
 		return fmt.Errorf("StanzaHub is a required option")
 	}
-	
+
 	// Apply option defaults if unset
 	if options.Environment == "" {
 		options.Environment = "dev"
@@ -36,18 +40,26 @@ func Init(options ClientOptions) error {
 
 	// Use supplied logger if set
 	if (options.Logger != logr.Logger{}) {
-		global.SetLogger(options.Logger)
+		logging.SetLogger(options.Logger)
 	}
 
-	// Initialize new global state
-	err := global.NewState(
-		options.AppName,
-		options.Environment,
-		options.StanzaHub)
-	if err != nil {
+	// Initialize otel?
+
+	// Initialize sentinel
+	if err := sentinel.Init(options.AppName); err != nil {
 		return err
 	}
+
+	// Initialize stanza global state
+	if err := global.NewState(options.AppName, options.Environment, options.StanzaHub); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func NewResource(resourceName string) error {
+	return global.NewResource(resourceName)
 }
 
 // SetLogger configures the logger used internally by the SDK. This allows you
@@ -55,5 +67,5 @@ func Init(options ClientOptions) error {
 //
 // It can also be passed in as an option to Init().
 func SetLogger(logger logr.Logger) {
-	global.SetLogger(logger)
+	logging.SetLogger(logger)
 }
