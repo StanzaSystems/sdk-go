@@ -12,13 +12,15 @@ import (
 
 type ClientOptions struct {
 	// Required
-	AppName   string `json:"appName"`
-	StanzaHub string `json:"stanzaHub"` // host:port (ipv4, ipv6, or resolveable hostname)
+	AppName   string // name of this application
+	StanzaHub string // host:port (ipv4, ipv6, or resolveable hostname)
+
+	// TODO: make sentinel.DataSourceOptions an interface?
+	DataSource sentinel.DataSourceOptions // sentinel datasource to get flowcontrol rules from
 
 	// Optional
-	AppType     int32  `json:"appType"`
-	Environment string `json:"environment"`
-	Logger      logr.Logger
+	Environment string      // any string which defines your environment (default: dev)
+	Logger      logr.Logger // bring your own logger (via go-logr/logr API)
 }
 
 // Init initializes the SDK with ClientOptions. The returned error is
@@ -43,15 +45,15 @@ func Init(options ClientOptions) error {
 		logging.SetLogger(options.Logger)
 	}
 
-	// Initialize otel?
-
-	// Initialize sentinel
-	if err := sentinel.Init(options.AppName); err != nil {
+	// Initialize stanza global state
+	if err := global.NewState(options.AppName, options.Environment, options.StanzaHub); err != nil {
 		return err
 	}
 
-	// Initialize stanza global state
-	if err := global.NewState(options.AppName, options.Environment, options.StanzaHub); err != nil {
+	// Initialize otel?
+
+	// Initialize sentinel
+	if err := sentinel.Init(options.AppName, options.DataSource); err != nil {
 		return err
 	}
 

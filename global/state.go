@@ -3,29 +3,21 @@ package global
 import (
 	"fmt"
 	"sync"
-	"time"
 
-	"github.com/StanzaSystems/sdk-go/otel"
-	"github.com/StanzaSystems/sdk-go/sentinel"
+	"github.com/alibaba/sentinel-golang/ext/datasource"
 )
-
-type resource struct {
-	updated  time.Time
-	sentinel sentinel.Config
-	otel     otel.Config
-}
 
 type state struct {
 	// base required options
 	appName     string
 	environment string
-	stanzaHub   string
+	resources   []string
 
-	// map of named resources
-	resources map[string]resource
+	// do we need this? probably store an otlp connection instead
+	stanzaHub string
 
-	// do we need to store an open connection handler?
-	// could be grpc or otlp? -- or maybe both?
+	// sentinel datasource
+	ds datasource.DataSource
 }
 
 var (
@@ -52,37 +44,31 @@ func NewState(app, env, hub string) error {
 		appName:     app,
 		environment: env,
 		stanzaHub:   hub,
-		resources:   make(map[string]resource),
 	}
 
-	// connect to stanzahub
-	// -- establish grpc and/or oltp?
-	// -- registering AppName
+	// connect to stanzahub?
+	// -- datasource for sentinel but where do we otlp otel metrics/traces?
+	// -- do we need to "register" AppName? (so the GUI can offer makign configs for it)
 
 	return nil
 }
 
-func NewResource(resourceName string) error {
-	if _, exists := globalState.resources[resourceName]; exists {
-		return fmt.Errorf("duplicate resource named '%s' exists", resourceName)
-	}
+func GetDataSource() datasource.DataSource {
+	return globalState.ds
+}
 
-	// prepare for global state mutation
+func SetDataSource(ds datasource.DataSource) error {
 	globalStateLock.Lock()
 	defer globalStateLock.Unlock()
 
-	// initialize with default (empty) configs
-	globalState.resources[resourceName] = resource{
-		updated:  time.Now(),
-		sentinel: sentinel.Config{},
-		otel:     otel.Config{},
-	}
+	globalState.ds = ds
+	return nil
+}
 
-	// TODO:
-	// use goroutines (and waitgroup? with grpc streaming?) to add a listener
-	// for getting globalConfig.AppName/resourceName configs (pull or streaming/pushed?)
-	// something like:
-	//   go fetchResourceConfig(resourceName)
+func NewResource(resName string) error {
+	globalStateLock.Lock()
+	defer globalStateLock.Unlock()
 
+	globalState.resources = append(globalState.resources, resName)
 	return nil
 }
