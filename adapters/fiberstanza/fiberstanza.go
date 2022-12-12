@@ -17,13 +17,13 @@ func New(config Config) fiber.Handler {
 	}
 
 	return func(ctx *fiber.Ctx) error {
-		// TODO(msg): implement HttpInboundHandler as fasthttp handler instead of converting to net/http
+		// TODO(msg): implement HttpInboundHandler as fasthttp handler instead of converting to net/http?
 		var req http.Request
 		if err := fasthttpadaptor.ConvertRequest(ctx.Context(), &req, true); err != nil {
 			return err
 		}
-		if err := stanza.HttpInboundHandler(config.ResourceName, &req); err != nil {
-			return err
+		if status := stanza.HttpInboundHandler(config.ResourceName, &req); status != http.StatusOK {
+			return ctx.SendStatus(status)
 		}
 		return ctx.Next()
 	}
