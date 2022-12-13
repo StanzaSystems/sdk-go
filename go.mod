@@ -4,8 +4,7 @@ go 1.19
 
 require (
 	github.com/alibaba/sentinel-golang v1.0.4
-	github.com/go-logr/logr v1.2.3
-	github.com/go-logr/stdr v1.2.2
+	go.uber.org/zap v1.13.0
 )
 
 require (
@@ -31,7 +30,9 @@ require (
 	github.com/tklauser/numcpus v0.2.2 // indirect
 	go.uber.org/atomic v1.6.0 // indirect
 	go.uber.org/multierr v1.5.0 // indirect
+	golang.org/x/lint v0.0.0-20190930215403-16217165b5de // indirect
 	golang.org/x/sys v0.0.0-20210316164454-77fc1eacc6aa // indirect
+	golang.org/x/tools v0.0.0-20200103221440-774c71fcf114 // indirect
 	google.golang.org/protobuf v1.23.0 // indirect
 	gopkg.in/yaml.v2 v2.3.0 // indirect
 	gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c // indirect

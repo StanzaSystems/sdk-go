@@ -1,7 +1,6 @@
 package stanza
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/StanzaSystems/sdk-go/logging"
@@ -13,8 +12,8 @@ import (
 func HttpInboundHandler(resource string, request *http.Request) int {
 	// Wrap OTEL (https://github.com/gofiber/contrib/tree/main/otelfiber)
 
-	entry, sentinelErr := api.Entry(resource, api.WithTrafficType(base.Inbound), api.WithResourceType(base.ResTypeWeb))
-	if sentinelErr != nil {
+	e, b := api.Entry(resource, api.WithTrafficType(base.Inbound), api.WithResourceType(base.ResTypeWeb))
+	if b != nil {
 		// capture metrics
 		// blocked count
 		// blocked count by sentinel block type?
@@ -25,12 +24,12 @@ func HttpInboundHandler(resource string, request *http.Request) int {
 		// I think potentially a lot for our trace/span...
 		// not sure about metrics though -- maybe some "path" based counts?
 
-		logging.Error(
-			errors.New("SentinelBlockError"), sentinelErr.BlockMsg(),
-			"SentinelBlockType", sentinelErr.BlockType().String(),
-			"SentinelBlockValue", sentinelErr.TriggeredValue(),
+		logging.Error(nil, "Stanza blocked",
+			"BlockMessage", b.BlockMsg(),
+			"BlockType", b.BlockType().String(),
+			"BlockValue", b.TriggeredValue(),
 		)
-		logging.Debug("", "SentinelBlockRule", sentinelErr.TriggeredRule().String())
+		logging.Debug("BlockRule", b.TriggeredRule().String())
 
 		// TODO: allow sentinel "customize block fallback" to override this 429 default
 		return http.StatusTooManyRequests
@@ -44,7 +43,7 @@ func HttpInboundHandler(resource string, request *http.Request) int {
 		// latency percentiles?
 
 		// Be sure the entry is exited finally.
-		entry.Exit()
+		e.Exit()
 		return http.StatusOK
 	}
 }
