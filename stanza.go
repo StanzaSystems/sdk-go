@@ -16,7 +16,7 @@ type ClientOptions struct {
 	DataSource sentinel.DataSourceOptions // sentinel datasource to get flowcontrol rules from
 
 	// Optional
-	Environment string      // any string which defines your environment (default: dev)
+	Environment string // any string which defines your environment (default: dev)
 }
 
 // Init initializes the SDK with ClientOptions. The returned error is
@@ -37,9 +37,7 @@ func Init(options ClientOptions) error {
 	}
 
 	// Initialize stanza global state
-	if err := global.NewState(options.AppName, options.Environment, options.StanzaHub); err != nil {
-		return err
-	}
+	global.NewState(options.AppName, options.Environment, options.StanzaHub)
 
 	// Initialize otel?
 
