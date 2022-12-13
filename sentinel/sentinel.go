@@ -1,16 +1,15 @@
 package sentinel
 
 import (
-	"github.com/StanzaSystems/sdk-go/logging"
-
 	"github.com/alibaba/sentinel-golang/api"
 	"github.com/alibaba/sentinel-golang/core/config"
 )
 
 func Init(appName string, dsOptions DataSourceOptions) error {
 	conf := config.NewDefaultConfig()
-	conf.Sentinel.App.Name = appName // overload this with environment?
-	conf.Sentinel.Log.Logger = &logging.SentinelAdaptor{}
+	conf.Sentinel.App.Name = appName              // overload this with environment?
+	conf.Sentinel.Log.Logger = &loggerAdapter{}   // log via the Stanza global logger
+	conf.Sentinel.Log.Metric.FlushIntervalSec = 0 // disable default logging of metrics to on disk files
 	if err := api.InitWithConfig(conf); err != nil {
 		return err
 	}

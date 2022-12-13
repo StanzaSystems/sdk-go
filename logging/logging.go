@@ -4,7 +4,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// TODO: make an overrideable interface
+// TODO: make a real, overrideable, global logging interface
 
 // Debug prints messages about all internal changes in the SDK.
 func Debug(msg string, keysAndValues ...interface{}) {
