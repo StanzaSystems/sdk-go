@@ -1,35 +1,55 @@
 package global
 
 import (
+	"context"
 	"sync"
 
 	"github.com/alibaba/sentinel-golang/ext/datasource"
+	"go.opentelemetry.io/otel/sdk/resource"
+	"go.opentelemetry.io/otel/semconv/v1.9.0"
 )
 
 type state struct {
-	// base required options
-	appName     string
-	environment string
-	resources   []string
+	// application details set by SDK clients
+	name        string // defaults to "default_application"
+	release     string // defaults to "0.0.0"
+	environment string // defaults to "dev"
 
-	// do we need this? probably store an otlp connection instead
-	stanzaHub string
+	// stanza
+	stanzaHub string // defaults to "localhost:9510"
 
-	// sentinel datasource
-	ds datasource.DataSource
+	// sentinel
+	ds        datasource.DataSource
+	resources []string
+
+	// otel
+	otelResource *resource.Resource
 }
 
 var (
-	globalState     = state{}
+	globalState = state{
+		name:        "default_application",
+		release:     "0.0.0",
+		environment: "dev",
+		stanzaHub:   "localhost:9510",
+	}
 	globalStateLock = &sync.RWMutex{}
 	initOnce        sync.Once
 )
 
-func AppName() string {
-	return globalState.appName
+func Name() string {
+	return globalState.name
 }
 
-func NewState(app, env, hub string) {
+func Release() string {
+	return globalState.release
+}
+
+func Environment() string {
+	return globalState.environment
+}
+
+func NewState(name, rel, env, hub string) {
 	initOnce.Do(func() {
 		// prepare for global state mutation
 		globalStateLock.Lock()
@@ -37,15 +57,24 @@ func NewState(app, env, hub string) {
 
 		// initialize new global state
 		globalState = state{
-			appName:     app,
+			name:        name,
+			release:     rel,
 			environment: env,
 			stanzaHub:   hub,
 		}
 
 		// connect to stanzahub?
 		// -- datasource for sentinel but where do we otlp otel metrics/traces?
-		// -- do we need to "register" AppName? (so the GUI can offer makign configs for it)
+		// -- do we need to "register" name/ver/env?
 	})
+}
+
+func NewResource(resName string) error {
+	globalStateLock.Lock()
+	defer globalStateLock.Unlock()
+
+	globalState.resources = append(globalState.resources, resName)
+	return nil
 }
 
 func GetDataSource() datasource.DataSource {
@@ -60,10 +89,24 @@ func SetDataSource(ds datasource.DataSource) error {
 	return nil
 }
 
-func NewResource(resName string) error {
+func GetOtelResource() *resource.Resource {
+	return globalState.otelResource
+}
+
+func SetOtelResource(ctx context.Context) error {
 	globalStateLock.Lock()
 	defer globalStateLock.Unlock()
 
-	globalState.resources = append(globalState.resources, resName)
+	res, err := resource.New(ctx,
+		resource.WithAttributes(
+			semconv.ServiceNameKey.String(globalState.name),
+			semconv.ServiceVersionKey.String(globalState.release),
+			semconv.DeploymentEnvironmentKey.String(globalState.environment),
+		),
+	)
+	if err != nil {
+		return err
+	}
+	globalState.otelResource = res
 	return nil
 }

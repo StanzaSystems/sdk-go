@@ -17,6 +17,8 @@ package sentinel
 // or would that be done "outside" of the sentinel datasource model?
 
 import (
+	"github.com/StanzaSystems/sdk-go/global"
+
 	"github.com/alibaba/sentinel-golang/ext/datasource"
 	"github.com/alibaba/sentinel-golang/ext/datasource/file"
 )
@@ -62,9 +64,17 @@ type DataSourceOptions struct {
 func InitDataSource(options DataSourceOptions) error {
 	// TODO: Put a case statement here for each of the supported datasources
 	if options.File.ConfigFilePath != "" {
-		_, err := InitFileDataSource(options.File.ConfigFilePath)
-		return err
+		ds, err := InitFileDataSource(options.File.ConfigFilePath)
+		if err != nil {
+			return err
+		}
+		if err := global.SetDataSource(ds); err != nil {
+			return err
+		}
 	}
+
+	// TODO: can disable system metrics polling if no system rules? where?
+	//       (has to be evaluated everytime new rules are loaded)
 	return nil
 }
 
