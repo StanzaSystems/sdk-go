@@ -1,17 +1,16 @@
 package global
 
 import (
-	"context"
 	"sync"
 
 	"github.com/alibaba/sentinel-golang/ext/datasource"
-	"go.opentelemetry.io/otel/sdk/resource"
-	"go.opentelemetry.io/otel/semconv/v1.9.0"
+	otelmetric "go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 type state struct {
 	// application details set by SDK clients
-	name        string // defaults to "default_application"
+	name        string // defaults to "unknown_service"
 	release     string // defaults to "0.0.0"
 	environment string // defaults to "dev"
 
@@ -19,48 +18,59 @@ type state struct {
 	stanzaHub string // defaults to "localhost:9510"
 
 	// sentinel
-	ds        datasource.DataSource
-	resources []string
+	sentinel *sentinel
 
 	// otel
-	otelResource *resource.Resource
+	otel *otel
+}
+
+type sentinel struct {
+	ds        *datasource.DataSource
+	resources []string
+}
+
+type otel struct {
+	MeterProvider otelmetric.MeterProvider
+	Propagators   propagation.TextMapPropagator
 }
 
 var (
-	globalState = state{
-		name:        "default_application",
+	gs = state{
+		name:        "unknown_service",
 		release:     "0.0.0",
 		environment: "dev",
 		stanzaHub:   "localhost:9510",
 	}
-	globalStateLock = &sync.RWMutex{}
-	initOnce        sync.Once
+	gsLock   = &sync.RWMutex{}
+	initOnce sync.Once
 )
 
 func Name() string {
-	return globalState.name
+	return gs.name
 }
 
 func Release() string {
-	return globalState.release
+	return gs.release
 }
 
 func Environment() string {
-	return globalState.environment
+	return gs.environment
 }
 
 func NewState(name, rel, env, hub string) {
 	initOnce.Do(func() {
 		// prepare for global state mutation
-		globalStateLock.Lock()
-		defer globalStateLock.Unlock()
+		gsLock.Lock()
+		defer gsLock.Unlock()
 
 		// initialize new global state
-		globalState = state{
+		gs = state{
 			name:        name,
 			release:     rel,
 			environment: env,
 			stanzaHub:   hub,
+			sentinel:    &sentinel{},
+			otel:        &otel{},
 		}
 
 		// connect to stanzahub?
@@ -70,43 +80,34 @@ func NewState(name, rel, env, hub string) {
 }
 
 func NewResource(resName string) error {
-	globalStateLock.Lock()
-	defer globalStateLock.Unlock()
+	gsLock.Lock()
+	defer gsLock.Unlock()
 
-	globalState.resources = append(globalState.resources, resName)
+	gs.sentinel.resources = append(gs.sentinel.resources, resName)
 	return nil
 }
 
-func GetDataSource() datasource.DataSource {
-	return globalState.ds
+func GetDataSource() *datasource.DataSource {
+	return gs.sentinel.ds
 }
 
 func SetDataSource(ds datasource.DataSource) error {
-	globalStateLock.Lock()
-	defer globalStateLock.Unlock()
+	gsLock.Lock()
+	defer gsLock.Unlock()
 
-	globalState.ds = ds
+	gs.sentinel.ds = &ds
 	return nil
 }
 
-func GetOtelResource() *resource.Resource {
-	return globalState.otelResource
+func GetOtelConfig() *otel {
+	return gs.otel
 }
 
-func SetOtelResource(ctx context.Context) error {
-	globalStateLock.Lock()
-	defer globalStateLock.Unlock()
+func SetOtelConfig(mp otelmetric.MeterProvider, p propagation.TextMapPropagator) error {
+	gsLock.Lock()
+	defer gsLock.Unlock()
 
-	res, err := resource.New(ctx,
-		resource.WithAttributes(
-			semconv.ServiceNameKey.String(globalState.name),
-			semconv.ServiceVersionKey.String(globalState.release),
-			semconv.DeploymentEnvironmentKey.String(globalState.environment),
-		),
-	)
-	if err != nil {
-		return err
-	}
-	globalState.otelResource = res
+	gs.otel.MeterProvider = mp
+	gs.otel.Propagators = p
 	return nil
 }

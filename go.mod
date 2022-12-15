@@ -5,6 +5,7 @@ go 1.19
 require (
 	github.com/alibaba/sentinel-golang v1.0.4
 	go.opentelemetry.io/otel v1.11.2
+	go.opentelemetry.io/otel/metric v0.34.0
 	go.opentelemetry.io/otel/sdk v1.11.2
 	go.uber.org/zap v1.13.0
 )
