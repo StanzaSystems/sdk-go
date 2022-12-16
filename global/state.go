@@ -2,10 +2,6 @@ package global
 
 import (
 	"sync"
-
-	"github.com/alibaba/sentinel-golang/ext/datasource"
-	otelmetric "go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/propagation"
 )
 
 type state struct {
@@ -22,16 +18,6 @@ type state struct {
 
 	// otel
 	otel *otel
-}
-
-type sentinel struct {
-	ds        *datasource.DataSource
-	resources []string
-}
-
-type otel struct {
-	MeterProvider otelmetric.MeterProvider
-	Propagators   propagation.TextMapPropagator
 }
 
 var (
@@ -77,37 +63,4 @@ func NewState(name, rel, env, hub string) {
 		// -- datasource for sentinel but where do we otlp otel metrics/traces?
 		// -- do we need to "register" name/ver/env?
 	})
-}
-
-func NewResource(resName string) error {
-	gsLock.Lock()
-	defer gsLock.Unlock()
-
-	gs.sentinel.resources = append(gs.sentinel.resources, resName)
-	return nil
-}
-
-func GetDataSource() *datasource.DataSource {
-	return gs.sentinel.ds
-}
-
-func SetDataSource(ds datasource.DataSource) error {
-	gsLock.Lock()
-	defer gsLock.Unlock()
-
-	gs.sentinel.ds = &ds
-	return nil
-}
-
-func GetOtelConfig() *otel {
-	return gs.otel
-}
-
-func SetOtelConfig(mp otelmetric.MeterProvider, p propagation.TextMapPropagator) error {
-	gsLock.Lock()
-	defer gsLock.Unlock()
-
-	gs.otel.MeterProvider = mp
-	gs.otel.Propagators = p
-	return nil
 }
