@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/StanzaSystems/sdk-go"
-	"github.com/StanzaSystems/sdk-go/global"
 	"github.com/StanzaSystems/sdk-go/logging"
 
 	"github.com/gofiber/fiber/v2"
@@ -14,12 +13,15 @@ import (
 	"go.opentelemetry.io/contrib"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/metric/global"
 	"go.opentelemetry.io/otel/metric/instrument"
 	"go.opentelemetry.io/otel/metric/unit"
 	"go.opentelemetry.io/otel/propagation"
 )
 
 const (
+	instrumentationName = "github.com/StanzaSystems/sdk-go/adapters/fiberstanza"
+
 	metricNameHttpServerDuration       = "http.server.duration"
 	metricNameHttpServerRequestSize    = "http.server.request.size"
 	metricNameHttpServerResponseSize   = "http.server.response.size"
@@ -32,24 +34,35 @@ func New(config Config) fiber.Handler {
 		logging.Error(err, "failed to register new resource")
 	}
 
-	cfg := global.GetOtelConfig()
-	meter := cfg.MeterProvider.Meter(
-		"intrumentationName", // TODO: what is this used for?
+	meter := global.Meter(
+		instrumentationName,
 		metric.WithInstrumentationVersion(contrib.SemVersion()),
 	)
-	httpServerDuration, err := meter.SyncFloat64().Histogram(metricNameHttpServerDuration, instrument.WithUnit(unit.Milliseconds), instrument.WithDescription("measures the duration inbound HTTP requests"))
+	httpServerDuration, err := meter.SyncFloat64().Histogram(
+		metricNameHttpServerDuration,
+		instrument.WithUnit(unit.Milliseconds),
+		instrument.WithDescription("measures the duration inbound HTTP requests"))
 	if err != nil {
 		otel.Handle(err)
 	}
-	httpServerRequestSize, err := meter.SyncInt64().Histogram(metricNameHttpServerRequestSize, instrument.WithUnit(unit.Bytes), instrument.WithDescription("measures the size of HTTP request messages"))
+	httpServerRequestSize, err := meter.SyncInt64().Histogram(
+		metricNameHttpServerRequestSize,
+		instrument.WithUnit(unit.Bytes),
+		instrument.WithDescription("measures the size of HTTP request messages"))
 	if err != nil {
 		otel.Handle(err)
 	}
-	httpServerResponseSize, err := meter.SyncInt64().Histogram(metricNameHttpServerResponseSize, instrument.WithUnit(unit.Bytes), instrument.WithDescription("measures the size of HTTP response messages"))
+	httpServerResponseSize, err := meter.SyncInt64().Histogram(
+		metricNameHttpServerResponseSize,
+		instrument.WithUnit(unit.Bytes),
+		instrument.WithDescription("measures the size of HTTP response messages"))
 	if err != nil {
 		otel.Handle(err)
 	}
-	httpServerActiveRequests, err := meter.SyncInt64().UpDownCounter(metricNameHttpServerActiveRequests, instrument.WithUnit(unit.Dimensionless), instrument.WithDescription("measures the number of concurrent HTTP requests that are currently in-flight"))
+	httpServerActiveRequests, err := meter.SyncInt64().UpDownCounter(
+		metricNameHttpServerActiveRequests,
+		instrument.WithUnit(unit.Dimensionless),
+		instrument.WithDescription("measures the number of concurrent HTTP requests that are currently in-flight"))
 	if err != nil {
 		otel.Handle(err)
 	}
@@ -73,7 +86,8 @@ func New(config Config) fiber.Handler {
 			reqHeader.Add(string(k), string(v))
 		})
 
-		ctx := cfg.Propagators.Extract(savedCtx, propagation.HeaderCarrier(reqHeader))
+		prop := otel.GetTextMapPropagator()
+		ctx := prop.Extract(savedCtx, propagation.HeaderCarrier(reqHeader))
 
 		// TODO: Start the trace here
 		// spanName := utils.CopyString(c.Path())
