@@ -17,16 +17,21 @@ package sentinel
 // or would that be done "outside" of the sentinel datasource model?
 
 import (
+	"os"
+	"path/filepath"
+
 	"github.com/StanzaSystems/sdk-go/global"
 
 	"github.com/alibaba/sentinel-golang/ext/datasource"
 	"github.com/alibaba/sentinel-golang/ext/datasource/file"
 )
 
-// type ApolloOptions struct {
-// 	Conf        *config.AppConfig
-// 	PropertyKey string
-// }
+const (
+	cb_rules string = "circuitbreaker_rules.json"
+	flow_rules string = "flow_rules.json"
+	isolation_rules string = "isolation_rules.json"
+	system_rules string = "system_rules.json"
+)
 
 type ConsulOptions struct {
 	PropertyKey string
@@ -45,30 +50,20 @@ type FileOptions struct {
 // 	Namespace string
 // }
 
-// type NacosOptions {
-// 	Client config_client.IConfigClient
-// 	Group  string
-// 	DataId string
-// }
-
 type DataSourceOptions struct {
-	// apollo ApolloOptions
 	Consul ConsulOptions
 	// etcdv3 Etcdv3Options
 	File FileOptions
 	// k8s K8sOptions
-	// nacos NacosOptions
 }
 
 // Initialize a sentinel datasource
 func InitDataSource(options DataSourceOptions) error {
 	// TODO: Put a case statement here for each of the supported datasources
+
+	// Refreshable File
 	if options.File.ConfigFilePath != "" {
-		ds, err := InitFileDataSource(options.File.ConfigFilePath)
-		if err != nil {
-			return err
-		}
-		if err := global.SetDataSource(ds); err != nil {
+		if err := InitFileDataSource(options.File.ConfigFilePath); err != nil {
 			return err
 		}
 	}
@@ -78,19 +73,50 @@ func InitDataSource(options DataSourceOptions) error {
 	return nil
 }
 
-// Initialize a new refreshable file datasource
-func InitFileDataSource(sourceFilePath string) (datasource.DataSource, error) {
-	ds := file.NewFileDataSource(sourceFilePath,
-		datasource.NewCircuitBreakerRulesHandler(datasource.CircuitBreakerRuleJsonArrayParser),
-		datasource.NewFlowRulesHandler(datasource.FlowRuleJsonArrayParser),
-		datasource.NewIsolationRulesHandler(datasource.IsolationRuleJsonArrayParser),
-		datasource.NewSystemRulesHandler(datasource.SystemRuleJsonArrayParser),
-	)
-	if err := ds.Initialize(); err != nil {
-		// do we want to return a failed datasource connection?
-		// or should we setup a background poller (with exponential backoff, etc)
-		// so we keep trying?
-		return nil, err
+// Initialize new refreshable file datasources
+func InitFileDataSource(ConfigFilePath string) error {
+	// if the file doesn't exist (yet), should we create a background poller which
+	// keeps trying to add this datasource? (with expoential backoff, etc)
+
+	// circuitbreaker rules
+	if _, err := os.Stat(filepath.Join(ConfigFilePath, cb_rules)); err == nil {
+		cbDataSource := file.NewFileDataSource(
+			filepath.Join(ConfigFilePath, cb_rules),
+			datasource.NewCircuitBreakerRulesHandler(datasource.CircuitBreakerRuleJsonArrayParser))
+		if err := cbDataSource.Initialize(); err == nil {
+			global.SetCircuitBreakerDataSource(cbDataSource)
+		}
 	}
-	return ds, nil
+
+	// flow control rules
+	if _, err := os.Stat(filepath.Join(ConfigFilePath, flow_rules)); err == nil {
+		flowDataSource := file.NewFileDataSource(
+			filepath.Join(ConfigFilePath, flow_rules),
+			datasource.NewFlowRulesHandler(datasource.FlowRuleJsonArrayParser))
+		if err := flowDataSource.Initialize(); err == nil {
+			global.SetFlowDataSource(flowDataSource)
+		}
+	}
+
+	// isolation rules
+	if _, err := os.Stat(filepath.Join(ConfigFilePath, isolation_rules)); err == nil {
+		isolationDataSource := file.NewFileDataSource(
+			filepath.Join(ConfigFilePath, isolation_rules),
+			datasource.NewIsolationRulesHandler(datasource.IsolationRuleJsonArrayParser))
+		if err := isolationDataSource.Initialize(); err == nil {
+			global.SetIsolationDataSource(isolationDataSource)
+		}
+	}
+
+	// system rules
+	if _, err := os.Stat(filepath.Join(ConfigFilePath, system_rules)); err == nil {
+		systemDataSource := file.NewFileDataSource(
+			filepath.Join(ConfigFilePath, system_rules),
+			datasource.NewSystemRulesHandler(datasource.SystemRuleJsonArrayParser))
+		if err := systemDataSource.Initialize(); err == nil {
+			global.SetSystemDataSource(systemDataSource)
+		}
+	}
+
+	return nil
 }
