@@ -1,9 +1,7 @@
 package fiberstanza
 
 import (
-	"context"
 	"net/http"
-	"time"
 
 	"github.com/StanzaSystems/sdk-go"
 	"github.com/StanzaSystems/sdk-go/logging"
