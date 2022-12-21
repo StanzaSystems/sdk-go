@@ -4,7 +4,7 @@ import (
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/internal/global"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/sdk/resource"
 )
 
@@ -18,8 +18,8 @@ func initDebugTracer(resource *resource.Resource) (*trace.TracerProvider, error)
 		trace.WithBatcher(exporter),
 		trace.WithResource(resource),
 	)
-	global.SetTracerProvider(tp)
-	global.SetTextMapPropagator(
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(
 		propagation.NewCompositeTextMapPropagator(
 			propagation.TraceContext{},
 			propagation.Baggage{}))
