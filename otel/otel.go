@@ -11,10 +11,9 @@ import (
 )
 
 func Init(ctx context.Context) error {
-	// TODO: connect to stanza-hub and get an otel config?
+	// TODO: connect to stanza-hub and get an otel config (at least a sample rate)?
 
 	res, err := resource.New(ctx,
-		resource.WithFromEnv(), // pull attributes from OTEL_RESOURCE_ATTRIBUTES and OTEL_SERVICE_NAME environment variables
 		resource.WithAttributes(
 			semconv.ServiceNameKey.String(global.Name()),
 			semconv.ServiceVersionKey.String(global.Release()),
@@ -35,10 +34,10 @@ func Init(ctx context.Context) error {
 		// TODO: add metrics and tracer provider shutdowns
 	} else {
 		if _, err := initGrpcMeter(ctx, res); err != nil {
-			panic(err)
+			panic(err) // TODO: don't panic here
 		}
 		if _, err := initDebugTracer(res); err != nil { // TODO: initGrpcTracer
-			panic(err)
+			panic(err) // TODO: don't panic here
 		}
 		// TODO: add metrics and tracer provider shutdowns
 	}
