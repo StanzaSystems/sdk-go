@@ -20,33 +20,34 @@ func New(config Config) fiber.Handler {
 	if err := stanza.NewResource(config.ResourceName); err != nil {
 		logging.Error(err, "failed to register new resource")
 	}
-	him, err := stanza.InitHttpInboundHandler(config.ResourceName)
+	im, err := stanza.InitHttpInboundMeters(config.ResourceName)
 	if err != nil {
-		logging.Error(err, "failed to initialize new http inbound handler")
+		logging.Error(err, "failed to initialize new http inbound meters")
 	}
 
 	return func(c *fiber.Ctx) error {
-		// TODO(msg): implement HttpInboundHandler as fasthttp handler instead of converting to net/http?
 		savedCtx, cancel := context.WithCancel(c.UserContext())
-
 		start := time.Now()
+
+		// TODO: do we /WANT/ any HTTP attributes on these metrics?
 		// metricAttrs := httpServerMetricAttributesFromRequest(c)
-		him.ActiveRequests.Add(savedCtx, 1)
+		im.ActiveRequests.Add(savedCtx, 1)
 		defer func() {
-			him.Duration.Record(savedCtx, float64(time.Since(start).Microseconds())/1000)
-			him.RequestSize.Record(savedCtx, int64(len(c.Request().Body())))
-			him.ResponseSize.Record(savedCtx, int64(len(c.Response().Body())))
-			him.ActiveRequests.Add(savedCtx, -1)
+			im.Duration.Record(savedCtx, float64(time.Since(start).Microseconds())/1000)
+			im.RequestSize.Record(savedCtx, int64(len(c.Request().Body())))
+			im.ResponseSize.Record(savedCtx, int64(len(c.Response().Body())))
+			im.ActiveRequests.Add(savedCtx, -1)
 			c.SetUserContext(savedCtx)
 			cancel()
 		}()
 
+		// TODO(msg): implement HttpInboundHandler as fasthttp handler instead of converting to net/http?
 		var req http.Request
 		if err := fasthttpadaptor.ConvertRequest(c.Context(), &req, true); err != nil {
 			logging.Error(err, "failed to convert request from fasthttp")
 			return c.Next() // log error and fail open
 		}
-		if status := stanza.HttpInboundHandler(c.Context(), him, &req); status != http.StatusOK {
+		if status := stanza.HttpInboundHandler(c.Context(), &im, &req); status != http.StatusOK {
 			return c.SendStatus(status)
 		}
 		return c.Next()
