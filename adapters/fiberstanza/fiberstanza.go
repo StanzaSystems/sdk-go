@@ -9,10 +9,7 @@ import (
 	"github.com/StanzaSystems/sdk-go/logging"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/utils"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/semconv/v1.12.0"
 )
 
 // New creates a new fiberstanza middleware fiber.Handler
@@ -26,17 +23,15 @@ func New(config Config) fiber.Handler {
 	}
 
 	return func(c *fiber.Ctx) error {
-		savedCtx, cancel := context.WithCancel(c.UserContext())
 		start := time.Now()
+		savedCtx, cancel := context.WithCancel(c.UserContext())
 
-		// TODO: do we /WANT/ any HTTP attributes on these metrics?
-		// metricAttrs := httpServerMetricAttributesFromRequest(c)
-		im.ActiveRequests.Add(savedCtx, 1)
+		im.ActiveRequests.Add(savedCtx, 1, im.Attributes...)
 		defer func() {
-			im.Duration.Record(savedCtx, float64(time.Since(start).Microseconds())/1000)
-			im.RequestSize.Record(savedCtx, int64(len(c.Request().Body())))
-			im.ResponseSize.Record(savedCtx, int64(len(c.Response().Body())))
-			im.ActiveRequests.Add(savedCtx, -1)
+			im.Duration.Record(savedCtx, float64(time.Since(start).Microseconds())/1000, im.Attributes...)
+			im.RequestSize.Record(savedCtx, int64(len(c.Request().Body())), im.Attributes...)
+			im.ResponseSize.Record(savedCtx, int64(len(c.Response().Body())), im.Attributes...)
+			im.ActiveRequests.Add(savedCtx, -1, im.Attributes...)
 			c.SetUserContext(savedCtx)
 			cancel()
 		}()
@@ -52,17 +47,4 @@ func New(config Config) fiber.Handler {
 		}
 		return c.Next()
 	}
-}
-
-func httpServerMetricAttributesFromRequest(c *fiber.Ctx) []attribute.KeyValue {
-	var attrs []attribute.KeyValue
-	if c.Context().IsTLS() {
-		attrs = append(attrs, semconv.HTTPSchemeHTTPS)
-	} else {
-		attrs = append(attrs, semconv.HTTPSchemeHTTP)
-	}
-	attrs = append(attrs, semconv.HTTPHostKey.String(utils.CopyString(c.Hostname())))
-	attrs = append(attrs, semconv.HTTPMethodKey.String(utils.CopyString(c.Method())))
-	attrs = append(attrs, semconv.HTTPRouteKey.String(utils.CopyString(c.Route().Path)))
-	return attrs
 }
