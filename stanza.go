@@ -30,7 +30,7 @@ func Init(ctx context.Context, options ClientOptions) error {
 		return fmt.Errorf("StanzaHub is a required option")
 	}
 
-	// Initialize stanza global state
+	// Initialize stanza
 	global.NewState(options.Name, options.Release, options.Environment, options.StanzaHub)
 
 	// Initialize otel

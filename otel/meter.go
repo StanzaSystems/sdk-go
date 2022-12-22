@@ -24,7 +24,6 @@ func initDebugMeter(res *resource.Resource) (*metric.MeterProvider, error) {
 }
 
 func initGrpcMeter(ctx context.Context, res *resource.Resource) (*metric.MeterProvider, error) {
-	// https://github.com/open-telemetry/opentelemetry-go/blob/main/exporters/otlp/otlpmetric/otlpmetricgrpc/config.go
 	exp, err := otlpmetricgrpc.New(ctx,
 		otlpmetricgrpc.WithTimeout(5*time.Second), // TODO: be better than this...
 		// otlpmetricgrpc.WithRetry(retryConfig)

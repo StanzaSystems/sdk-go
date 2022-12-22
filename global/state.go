@@ -60,7 +60,7 @@ func NewState(name, rel, env, hub string) {
 		}
 
 		// connect to stanzahub?
-		// -- datasource for sentinel but where do we otlp otel metrics/traces?
+		// -- get otel config?
 		// -- do we need to "register" name/ver/env?
 	})
 }
