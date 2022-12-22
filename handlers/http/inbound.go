@@ -8,6 +8,7 @@ import (
 
 	"github.com/alibaba/sentinel-golang/api"
 	"github.com/alibaba/sentinel-golang/core/base"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/global"
 	"go.opentelemetry.io/otel/metric/instrument"
@@ -17,20 +18,24 @@ import (
 )
 
 const (
-	httpServerAllowedCount   = "stanza.http.server.sentinel.allowed"
-	httpServerBlockedCount   = "stanza.http.server.sentinel.blocked"
-	httpServerTotalCount     = "stanza.http.server.sentinel.total"
-	httpServerDuration       = "stanza.http.server.duration"
-	httpServerRequestSize    = "stanza.http.server.request.size"
-	httpServerResponseSize   = "stanza.http.server.response.size"
-	httpServerActiveRequests = "stanza.http.server.active"
+	httpServerAllowedCount       = "stanza.http.server.sentinel.allowed"
+	httpServerBlockedCount       = "stanza.http.server.sentinel.blocked"
+	httpServerBlockedCountByType = "stanza.http.server.sentinel.blocked.by"
+	httpServerTotalCount         = "stanza.http.server.sentinel.total"
+	httpServerDuration           = "stanza.http.server.duration"
+	httpServerRequestSize        = "stanza.http.server.request.size"
+	httpServerResponseSize       = "stanza.http.server.response.size"
+	httpServerActiveRequests     = "stanza.http.server.active"
 )
 
 type InboundMeters struct {
-	resource       string
-	allowedCount   syncint64.Counter
-	blockedCount   syncint64.Counter
-	totalCount     syncint64.Counter
+	resource           string
+	allowedCount       syncint64.Counter
+	blockedCount       syncint64.Counter
+	blockedCountByType syncint64.Counter
+	totalCount         syncint64.Counter
+
+	Attributes     []attribute.KeyValue
 	Duration       syncfloat64.Histogram
 	RequestSize    syncint64.Histogram
 	ResponseSize   syncint64.Histogram
@@ -44,7 +49,10 @@ func InitInboundMeters(res string) (InboundMeters, error) {
 	)
 
 	var err error
-	im := InboundMeters{resource: res}
+	im := InboundMeters{
+		resource:   res,
+		Attributes: []attribute.KeyValue{attribute.String("sentinel.resource", res)},
+	}
 
 	// sentinel meters
 	im.allowedCount, err = meter.SyncInt64().Counter(
@@ -56,6 +64,13 @@ func InitInboundMeters(res string) (InboundMeters, error) {
 	}
 	im.blockedCount, err = meter.SyncInt64().Counter(
 		httpServerBlockedCount,
+		instrument.WithUnit(unit.Dimensionless),
+		instrument.WithDescription("measures the number of inbound HTTP requests that were backpressured"))
+	if err != nil {
+		return im, err
+	}
+	im.blockedCountByType, err = meter.SyncInt64().Counter(
+		httpServerBlockedCountByType,
 		instrument.WithUnit(unit.Dimensionless),
 		instrument.WithDescription("measures the number of inbound HTTP requests that were backpressured"))
 	if err != nil {
@@ -105,15 +120,12 @@ func InitInboundMeters(res string) (InboundMeters, error) {
 func InboundHandler(ctx context.Context, im *InboundMeters, req *http.Request) int {
 	e, b := api.Entry(im.resource, api.WithTrafficType(base.Inbound), api.WithResourceType(base.ResTypeWeb))
 	if b != nil {
-		// TODO: all of these need to be "sentinel resource" tagged!!
-		im.blockedCount.Add(ctx, 1)
-		// blocked count by sentinel block type?
-		im.totalCount.Add(ctx, 1)
-		// latency percentiles?
+		byTypeAttrs := append(im.Attributes, attribute.String("sentinel.block.type", b.BlockType().String()))
+		im.totalCount.Add(ctx, 1, im.Attributes...)
+		im.blockedCount.Add(ctx, 1, im.Attributes...)
+		im.blockedCountByType.Add(ctx, 1, byTypeAttrs...)
 
-		// what do we want from that http request?
-		// I think potentially a lot for our trace/span...
-		// not sure about metrics though -- maybe some "path" based counts?
+		// TODO: add sentinel blocked span to otel trace here
 
 		logging.Error(nil, "Stanza blocked",
 			"BlockMessage", b.BlockMsg(),
@@ -125,11 +137,10 @@ func InboundHandler(ctx context.Context, im *InboundMeters, req *http.Request) i
 		// TODO: allow sentinel "customize block fallback" to override this 429 default
 		return http.StatusTooManyRequests
 	} else {
-		im.allowedCount.Add(ctx, 1)
-		im.totalCount.Add(ctx, 1)
-		// latency percentiles?
+		im.totalCount.Add(ctx, 1, im.Attributes...)
+		im.allowedCount.Add(ctx, 1, im.Attributes...)
 
-		e.Exit()             // cleanly exit the sentinel entry
+		e.Exit()             // cleanly exit the Sentinel Entry
 		return http.StatusOK // return success
 	}
 }
