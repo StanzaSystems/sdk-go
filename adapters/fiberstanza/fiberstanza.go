@@ -42,9 +42,11 @@ func New(config Config) fiber.Handler {
 			logging.Error(err, "failed to convert request from fasthttp")
 			return c.Next() // log error and fail open
 		}
-		if status := stanza.HttpInboundHandler(c.Context(), &im, &req); status != http.StatusOK {
+		ctx, status := stanza.HttpInboundHandler(savedCtx, &im, &req)
+		if status != http.StatusOK {
 			return c.SendStatus(status)
 		}
+		c.SetUserContext(ctx)
 		return c.Next()
 	}
 }
