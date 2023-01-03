@@ -11,6 +11,6 @@ func InitHttpInboundMeters(res string) (httphandler.InboundMeters, error) {
 	return httphandler.InitInboundMeters(res)
 }
 
-func HttpInboundHandler(ctx context.Context, im *httphandler.InboundMeters, req *http.Request) (context.Context, int) {
-	return httphandler.InboundHandler(ctx, im, req)
+func HttpInboundHandler(ctx context.Context, route string, im *httphandler.InboundMeters, req *http.Request) (context.Context, int) {
+	return httphandler.InboundHandler(ctx, route, im, req)
 }
