@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	sg "github.com/StanzaSystems/sdk-go/global"
 	"github.com/StanzaSystems/sdk-go/logging"
 
 	"github.com/alibaba/sentinel-golang/api"
@@ -48,8 +49,8 @@ type InboundMeters struct {
 
 func InitInboundMeters(res string) (InboundMeters, error) {
 	meter := global.MeterProvider().Meter(
-		instrumentationName,                        // TODO: should this be a customer "DSN" of some form?
-		metric.WithInstrumentationVersion("0.0.1"), // TODO: stanza sdk-go version goes here
+		instrumentationName,
+		metric.WithInstrumentationVersion(instrumentationVersion),
 	)
 
 	var err error
@@ -121,44 +122,36 @@ func InitInboundMeters(res string) (InboundMeters, error) {
 	return im, nil
 }
 
-func InboundHandler(ctx context.Context, im *InboundMeters, req *http.Request) (context.Context, int) {
+func InboundHandler(ctx context.Context, route string, im *InboundMeters, req *http.Request) (context.Context, int) {
 	ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.HeaderCarrier(req.Header))
+
+	// generic HTTP server trace
 	opts := []trace.SpanStartOption{
-		trace.WithAttributes(
-			semconv.HTTPServerNameKey.String("TODO"),
-			semconv.HTTPMethodKey.String(req.Method),
-			semconv.HTTPURLKey.String(req.URL.String()),
-			// semconv.NetHostIPKey.String(utils.CopyString(c.IP())),
-			// semconv.NetHostNameKey.String(utils.CopyString(c.Hostname())),
-			// semconv.HTTPUserAgentKey.String(string(utils.CopyBytes(c.Request().Header.UserAgent()))),
-			semconv.HTTPRequestContentLengthKey.Int64(req.ContentLength),
-			semconv.HTTPSchemeKey.String(string(req.Proto)),
-			semconv.NetTransportTCP),
+		trace.WithAttributes(semconv.NetAttributesFromHTTPRequest("tcp", req)...),
+		trace.WithAttributes(semconv.HTTPServerAttributesFromHTTPRequest(sg.Name(), route, req)...),
+		trace.WithAttributes(semconv.EndUserAttributesFromHTTPRequest(req)...),
 		trace.WithSpanKind(trace.SpanKindServer),
 	}
-	// if len(c.IPs()) > 0 {
-	// 	opts = append(opts, trace.WithAttributes(semconv.HTTPClientIPKey.String(utils.CopyString(c.IPs()[0]))))
-	// }
-
-	tracer := otel.GetTracerProvider().Tracer("InstrumentationName")
-	ctx, span := tracer.Start(ctx, "TodoNameSpan", opts...)
+	tracer := otel.GetTracerProvider().Tracer(
+		instrumentationName,
+		trace.WithInstrumentationVersion(instrumentationVersion),
+	)
+	ctx, span := tracer.Start(ctx, route, opts...)
 	defer span.End()
 
 	e, b := api.Entry(im.resource, api.WithTrafficType(base.Inbound), api.WithResourceType(base.ResTypeWeb))
 	if b != nil {
 		// TODO: allow sentinel "customize block fallback" to override this 429 default
-		sc := http.StatusTooManyRequests
+		sc := http.StatusTooManyRequests // default `429 Too Many Request`
+		span.SetAttributes(semconv.HTTPAttributesFromHTTPStatusCode(sc)...)
 
 		byTypeAttrs := append(im.Attributes, attribute.String("sentinel.block.type", b.BlockType().String()))
 		im.totalCount.Add(ctx, 1, im.Attributes...)
 		im.blockedCount.Add(ctx, 1, im.Attributes...)
 		im.blockedCountByType.Add(ctx, 1, byTypeAttrs...)
 
-		// TODO: add additional sentinel specific info to span?
-		attrs := semconv.HTTPAttributesFromHTTPStatusCode(sc)
-		spanStatus, spanMessage := semconv.SpanStatusFromHTTPStatusCodeAndSpanKind(sc, trace.SpanKindServer)
-		span.SetAttributes(attrs...)
-		span.SetStatus(spanStatus, spanMessage)
+		// TODO: add additional sentinel specific info to span
+		// (at least im.resource, b.BlockMessage, b.BlockType, and b.BlockValue)
 
 		logging.Error(nil, "Stanza blocked",
 			"BlockMessage", b.BlockMsg(),
@@ -170,15 +163,12 @@ func InboundHandler(ctx context.Context, im *InboundMeters, req *http.Request) (
 	
 	} else {
 		sc := http.StatusOK
+		span.SetAttributes(semconv.HTTPAttributesFromHTTPStatusCode(sc)...)
 
 		im.totalCount.Add(ctx, 1, im.Attributes...)
 		im.allowedCount.Add(ctx, 1, im.Attributes...)
 
 		// TODO: add additional sentinel specific info to span?
-		attrs := semconv.HTTPAttributesFromHTTPStatusCode(sc)
-		spanStatus, spanMessage := semconv.SpanStatusFromHTTPStatusCodeAndSpanKind(sc, trace.SpanKindServer)
-		span.SetAttributes(attrs...)
-		span.SetStatus(spanStatus, spanMessage)
 
 		e.Exit()       // cleanly exit the Sentinel Entry
 		return ctx, sc // return success
