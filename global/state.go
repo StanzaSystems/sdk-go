@@ -21,12 +21,7 @@ type state struct {
 }
 
 var (
-	gs = state{
-		name:        "unknown_service",
-		release:     "0.0.0",
-		environment: "dev",
-		stanzaHub:   "localhost:9510",
-	}
+	gs       = state{}
 	gsLock   = &sync.RWMutex{}
 	initOnce sync.Once
 )

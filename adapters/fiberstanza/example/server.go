@@ -7,7 +7,6 @@ import (
 	"context"
 
 	"github.com/StanzaSystems/sdk-go/adapters/fiberstanza"
-	"github.com/StanzaSystems/sdk-go/sentinel"
 	"github.com/gofiber/contrib/fiberzap"
 	"github.com/gofiber/fiber/v2"
 	"go.uber.org/zap"
@@ -41,14 +40,15 @@ func main() {
 	zap.ReplaceGlobals(logger.WithOptions(zap.AddCallerSkip(1)))
 
 	// Init Stanza fault tolerance library
-	stanzaInitErr := fiberstanza.Init(ctx, fiberstanza.ClientOptions{
-		Name:        name,
-		Release:     release,
-		Environment: environment,
-		DataSource:  sentinel.DataSourceOptions{File: sentinel.FileOptions{ConfigFilePath: "test"}},
-		StanzaHub:   "host:port",
-		// Logger:      zapr.NewLogger(logger.WithOptions(zap.AddCallerSkip(1))),
-	})
+	stanzaInitErr := fiberstanza.Init(ctx,
+		fiberstanza.Client{
+			Name:        name,
+			Release:     release,
+			Environment: environment,
+			DataSource:  "local:test",
+			// StanzaHub:   "host:port",
+			// Logger:      zapr.NewLogger(logger.WithOptions(zap.AddCallerSkip(1))),
+		})
 	if stanzaInitErr != nil {
 		logger.Warn("stanza.init", zap.Error(stanzaInitErr))
 	}
@@ -61,8 +61,8 @@ func main() {
 
 	// middleware: stanza
 	if stanzaInitErr == nil {
-		app.Use(fiberstanza.New(fiberstanza.Config{
-			ResourceName: "abc",
+		app.Use(fiberstanza.New(fiberstanza.Decorator{
+			Name: "abc",
 		}))
 	}
 

@@ -3,7 +3,6 @@ module github.com/StanzaSystems/sdk-go/adapters/fiberstanza/example
 go 1.19
 
 require (
-	github.com/StanzaSystems/sdk-go v0.0.0-00010101000000-000000000000
 	github.com/StanzaSystems/sdk-go/adapters/fiberstanza v0.0.0-00010101000000-000000000000
 	github.com/gofiber/contrib/fiberzap v0.0.0-20230104210539-ac38bf6e480c
 	github.com/gofiber/fiber/v2 v2.41.0
@@ -11,6 +10,7 @@ require (
 )
 
 require (
+	github.com/StanzaSystems/sdk-go v0.0.0-00010101000000-000000000000 // indirect
 	github.com/alibaba/sentinel-golang v1.0.4 // indirect
 	github.com/andybalholm/brotli v1.0.4 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
