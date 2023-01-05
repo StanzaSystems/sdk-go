@@ -5,7 +5,7 @@ import (
 	"github.com/alibaba/sentinel-golang/core/config"
 )
 
-func Init(appName string, dsOptions DataSourceOptions) error {
+func Init(appName string, ds string) error {
 	conf := config.NewDefaultConfig()
 	conf.Sentinel.App.Name = appName              // overload this with environment?
 	conf.Sentinel.Log.Logger = &loggerAdapter{}   // log via the Stanza global logger
@@ -13,7 +13,7 @@ func Init(appName string, dsOptions DataSourceOptions) error {
 	if err := api.InitWithConfig(conf); err != nil {
 		return err
 	}
-	if err := InitDataSource(dsOptions); err != nil {
+	if err := InitDataSource(ds); err != nil {
 		return err
 	}
 	return nil

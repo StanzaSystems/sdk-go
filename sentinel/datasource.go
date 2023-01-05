@@ -17,8 +17,10 @@ package sentinel
 // or would that be done "outside" of the sentinel datasource model?
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/StanzaSystems/sdk-go/global"
 
@@ -27,61 +29,42 @@ import (
 )
 
 const (
-	cb_rules string = "circuitbreaker_rules.json"
-	flow_rules string = "flow_rules.json"
+	cb_rules        string = "circuitbreaker_rules.json"
+	flow_rules      string = "flow_rules.json"
 	isolation_rules string = "isolation_rules.json"
-	system_rules string = "system_rules.json"
+	system_rules    string = "system_rules.json"
 )
 
-type ConsulOptions struct {
-	PropertyKey string
-}
-
-// type Etcdv3Options struct {
-// 	Client *clientv3.Client
-// 	Key    string
-// }
-
-type FileOptions struct {
-	ConfigFilePath string
-}
-
-// type K8sOptions struct {
-// 	Namespace string
-// }
-
-type DataSourceOptions struct {
-	Consul ConsulOptions
-	// etcdv3 Etcdv3Options
-	File FileOptions
-	// k8s K8sOptions
-}
-
 // Initialize a sentinel datasource
-func InitDataSource(options DataSourceOptions) error {
-	// TODO: Put a case statement here for each of the supported datasources
-
-	// Refreshable File
-	if options.File.ConfigFilePath != "" {
-		if err := InitFileDataSource(options.File.ConfigFilePath); err != nil {
-			return err
-		}
+func InitDataSource(dataSource string) error {
+	ds := strings.Split(dataSource, ":")
+	if len(ds) < 2 {
+		return fmt.Errorf("invalid datasource: %v", ds)
 	}
+	switch ds[0] {
+	case "consul":
+		return fmt.Errorf("consul datasource support has not been implemented yet")
 
-	// TODO: can disable system metrics polling if no system rules? where?
-	//       (has to be evaluated everytime new rules are loaded)
-	return nil
+	case "grpc":
+		return fmt.Errorf("grpc datasource support has not been implemented yet")
+
+	case "local":
+		return InitFileDataSource(ds[1])
+
+	default:
+		return fmt.Errorf("invalid datasource: %v", ds[0])
+	}
 }
 
 // Initialize new refreshable file datasources
-func InitFileDataSource(ConfigFilePath string) error {
+func InitFileDataSource(ConfigPath string) error {
 	// if the file doesn't exist (yet), should we create a background poller which
 	// keeps trying to add this datasource? (with expoential backoff, etc)
 
 	// circuitbreaker rules
-	if _, err := os.Stat(filepath.Join(ConfigFilePath, cb_rules)); err == nil {
+	if _, err := os.Stat(filepath.Join(ConfigPath, cb_rules)); err == nil {
 		cbDataSource := file.NewFileDataSource(
-			filepath.Join(ConfigFilePath, cb_rules),
+			filepath.Join(ConfigPath, cb_rules),
 			datasource.NewCircuitBreakerRulesHandler(datasource.CircuitBreakerRuleJsonArrayParser))
 		if err := cbDataSource.Initialize(); err == nil {
 			global.SetCircuitBreakerDataSource(cbDataSource)
@@ -89,9 +72,9 @@ func InitFileDataSource(ConfigFilePath string) error {
 	}
 
 	// flow control rules
-	if _, err := os.Stat(filepath.Join(ConfigFilePath, flow_rules)); err == nil {
+	if _, err := os.Stat(filepath.Join(ConfigPath, flow_rules)); err == nil {
 		flowDataSource := file.NewFileDataSource(
-			filepath.Join(ConfigFilePath, flow_rules),
+			filepath.Join(ConfigPath, flow_rules),
 			datasource.NewFlowRulesHandler(datasource.FlowRuleJsonArrayParser))
 		if err := flowDataSource.Initialize(); err == nil {
 			global.SetFlowDataSource(flowDataSource)
@@ -99,9 +82,9 @@ func InitFileDataSource(ConfigFilePath string) error {
 	}
 
 	// isolation rules
-	if _, err := os.Stat(filepath.Join(ConfigFilePath, isolation_rules)); err == nil {
+	if _, err := os.Stat(filepath.Join(ConfigPath, isolation_rules)); err == nil {
 		isolationDataSource := file.NewFileDataSource(
-			filepath.Join(ConfigFilePath, isolation_rules),
+			filepath.Join(ConfigPath, isolation_rules),
 			datasource.NewIsolationRulesHandler(datasource.IsolationRuleJsonArrayParser))
 		if err := isolationDataSource.Initialize(); err == nil {
 			global.SetIsolationDataSource(isolationDataSource)
@@ -109,9 +92,9 @@ func InitFileDataSource(ConfigFilePath string) error {
 	}
 
 	// system rules
-	if _, err := os.Stat(filepath.Join(ConfigFilePath, system_rules)); err == nil {
+	if _, err := os.Stat(filepath.Join(ConfigPath, system_rules)); err == nil {
 		systemDataSource := file.NewFileDataSource(
-			filepath.Join(ConfigFilePath, system_rules),
+			filepath.Join(ConfigPath, system_rules),
 			datasource.NewSystemRulesHandler(datasource.SystemRuleJsonArrayParser))
 		if err := systemDataSource.Initialize(); err == nil {
 			global.SetSystemDataSource(systemDataSource)

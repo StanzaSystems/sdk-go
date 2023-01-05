@@ -2,36 +2,30 @@ package stanza
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/StanzaSystems/sdk-go/global"
 	"github.com/StanzaSystems/sdk-go/otel"
 	"github.com/StanzaSystems/sdk-go/sentinel"
 )
 
-type ClientOptions struct {
-	Name        string // defines applications name --REQUIRED--
-	Release     string // defines applications version (default: v0.0.0)
-	Environment string // defines applications environment (default: dev)
+type Client struct {
+	// Required
+	// DSN or some other kind of customer key
 
-	// TODO: figure out if we need this?
-	StanzaHub string // host:port (ipv4, ipv6, or resolveable hostname)
-
-	// TODO: make sentinel.DataSourceOptions an interface?
-	DataSource sentinel.DataSourceOptions // sentinel datasource to get flowcontrol rules from
+	// Optional
+	Name        string `default:"unknown_service"`        // defines applications unique name
+	Release     string `default:"0.0.0"`                  // defines applications version
+	Environment string `default:"dev"`                    // defines applications environment
+	StanzaHub   string `default:"api.stanzahub.com"`      // host:port (ipv4, ipv6, or resolveable hostname)
+	DataSource  string `default:"grpc:api.stanzahub.com"` // local:<path>, consul:<key>, or grpc:host:port
 }
 
 // Init initializes the SDK with ClientOptions. The returned error is
 // non-nil if options is invalid, if a global client already exists, or
 // if StanzaHub can't be reached.
-func Init(ctx context.Context, options ClientOptions) error {
-	// Check for required options
-	if options.StanzaHub == "" {
-		return fmt.Errorf("StanzaHub is a required option")
-	}
-
+func Init(ctx context.Context, client Client) error {
 	// Initialize stanza
-	global.NewState(options.Name, options.Release, options.Environment, options.StanzaHub)
+	global.NewState(client.Name, client.Release, client.Environment, client.StanzaHub)
 
 	// Initialize otel
 	if err := otel.Init(ctx); err != nil {
@@ -39,7 +33,7 @@ func Init(ctx context.Context, options ClientOptions) error {
 	}
 
 	// Initialize sentinel
-	if err := sentinel.Init(options.Name, options.DataSource); err != nil {
+	if err := sentinel.Init(client.Name, client.DataSource); err != nil {
 		return err
 	}
 

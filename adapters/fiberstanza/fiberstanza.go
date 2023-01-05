@@ -12,12 +12,30 @@ import (
 	"github.com/valyala/fasthttp/fasthttpadaptor"
 )
 
+// Client defines options for a new Stanza Client
+type Client struct {
+	// Required
+	// DSN or some other kind of customer key/ID
+
+	// Optional
+	Name        string // defines applications unique name
+	Release     string // defines applications version
+	Environment string // defines applications environment
+	StanzaHub   string // host:port (ipv4, ipv6, or resolveable hostname)
+	DataSource  string // local:<path>, consul:<key>, or grpc:host:port
+}
+
+// Decorator defines the config for fiberstanza middleware.
+type Decorator struct {
+	Name string // optional (but required if you want to use multiple Decorators)
+}
+
 // New creates a new fiberstanza middleware fiber.Handler
-func New(config Config) fiber.Handler {
-	if err := stanza.NewResource(config.ResourceName); err != nil {
+func New(d Decorator) fiber.Handler {
+	if err := stanza.NewResource(d.Name); err != nil {
 		logging.Error(err, "failed to register new resource")
 	}
-	im, err := stanza.InitHttpInboundMeters(config.ResourceName)
+	im, err := stanza.InitHttpInboundMeters(d.Name)
 	if err != nil {
 		logging.Error(err, "failed to initialize new http inbound meters")
 	}
@@ -51,6 +69,6 @@ func New(config Config) fiber.Handler {
 	}
 }
 
-func Init(ctx context.Context, options ClientOptions) error {
-	return stanza.Init(ctx, stanza.ClientOptions(options))
+func Init(ctx context.Context, client Client) error {
+	return stanza.Init(ctx, stanza.Client(client))
 }
