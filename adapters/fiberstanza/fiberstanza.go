@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/StanzaSystems/sdk-go"
+	stanza "github.com/StanzaSystems/sdk-go"
 	"github.com/StanzaSystems/sdk-go/logging"
 
 	"github.com/gofiber/fiber/v2"
@@ -49,4 +49,8 @@ func New(config Config) fiber.Handler {
 		c.SetUserContext(ctx)
 		return c.Next()
 	}
+}
+
+func Init(ctx context.Context, options ClientOptions) error {
+	return stanza.Init(ctx, stanza.ClientOptions(options))
 }
