@@ -1,0 +1,13 @@
+[
+    {
+        "resource": "abc",
+        "threshold": 3,
+        "relationStrategy": 0,
+        "tokenCalculateStrategy": 0,
+        "controlBehavior": 0,
+        "refResource": "refDefault",
+        "warmUpPeriodSec": 10,
+        "maxQueueingTimeMs": 1000,
+        "statIntervalInMs": 0
+    }
+]

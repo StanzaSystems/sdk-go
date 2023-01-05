@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	stanza "github.com/StanzaSystems/sdk-go"
 	"github.com/StanzaSystems/sdk-go/logging"
+	"github.com/StanzaSystems/sdk-go/stanza"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
