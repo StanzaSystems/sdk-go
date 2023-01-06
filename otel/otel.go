@@ -4,20 +4,18 @@ import (
 	"context"
 	"os"
 
-	"github.com/StanzaSystems/sdk-go/global"
-
 	"go.opentelemetry.io/otel/sdk/resource"
-	"go.opentelemetry.io/otel/semconv/v1.12.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.12.0"
 )
 
-func Init(ctx context.Context) error {
+func Init(ctx context.Context, name, rel, env string) error {
 	// TODO: connect to stanza-hub and get an otel config (at least a sample rate)?
 
 	res, err := resource.New(ctx,
 		resource.WithAttributes(
-			semconv.ServiceNameKey.String(global.Name()),
-			semconv.ServiceVersionKey.String(global.Release()),
-			semconv.DeploymentEnvironmentKey.String(global.Environment()),
+			semconv.ServiceNameKey.String(name),
+			semconv.ServiceVersionKey.String(rel),
+			semconv.DeploymentEnvironmentKey.String(env),
 		),
 	)
 	if err != nil {

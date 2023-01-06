@@ -22,8 +22,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/StanzaSystems/sdk-go/global"
-
 	"github.com/alibaba/sentinel-golang/ext/datasource"
 	"github.com/alibaba/sentinel-golang/ext/datasource/file"
 )
@@ -66,8 +64,8 @@ func InitFileDataSource(ConfigPath string) error {
 		cbDataSource := file.NewFileDataSource(
 			filepath.Join(ConfigPath, cb_rules),
 			datasource.NewCircuitBreakerRulesHandler(datasource.CircuitBreakerRuleJsonArrayParser))
-		if err := cbDataSource.Initialize(); err == nil {
-			global.SetCircuitBreakerDataSource(cbDataSource)
+		if err := cbDataSource.Initialize(); err != nil {
+			return err
 		}
 	}
 
@@ -76,8 +74,8 @@ func InitFileDataSource(ConfigPath string) error {
 		flowDataSource := file.NewFileDataSource(
 			filepath.Join(ConfigPath, flow_rules),
 			datasource.NewFlowRulesHandler(datasource.FlowRuleJsonArrayParser))
-		if err := flowDataSource.Initialize(); err == nil {
-			global.SetFlowDataSource(flowDataSource)
+		if err := flowDataSource.Initialize(); err != nil {
+			return err
 		}
 	}
 
@@ -86,8 +84,8 @@ func InitFileDataSource(ConfigPath string) error {
 		isolationDataSource := file.NewFileDataSource(
 			filepath.Join(ConfigPath, isolation_rules),
 			datasource.NewIsolationRulesHandler(datasource.IsolationRuleJsonArrayParser))
-		if err := isolationDataSource.Initialize(); err == nil {
-			global.SetIsolationDataSource(isolationDataSource)
+		if err := isolationDataSource.Initialize(); err != nil {
+			return err
 		}
 	}
 
@@ -96,8 +94,8 @@ func InitFileDataSource(ConfigPath string) error {
 		systemDataSource := file.NewFileDataSource(
 			filepath.Join(ConfigPath, system_rules),
 			datasource.NewSystemRulesHandler(datasource.SystemRuleJsonArrayParser))
-		if err := systemDataSource.Initialize(); err == nil {
-			global.SetSystemDataSource(systemDataSource)
+		if err := systemDataSource.Initialize(); err != nil {
+			return err
 		}
 	}
 

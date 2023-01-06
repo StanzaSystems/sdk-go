@@ -61,9 +61,7 @@ func main() {
 
 	// middleware: stanza
 	if stanzaInitErr == nil {
-		app.Use(fiberstanza.New(fiberstanza.Decorator{
-			Name: "abc",
-		}))
+		app.Use(fiberstanza.New(fiberstanza.Decorator{Name: "abc"}))
 	}
 
 	// healthcheck

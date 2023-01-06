@@ -3,12 +3,11 @@ package stanza
 import (
 	"context"
 
-	"github.com/StanzaSystems/sdk-go/global"
 	"github.com/StanzaSystems/sdk-go/otel"
 	"github.com/StanzaSystems/sdk-go/sentinel"
 )
 
-type Client struct {
+type ClientOptions struct {
 	// Required
 	// DSN or some other kind of customer key
 
@@ -23,40 +22,41 @@ type Client struct {
 // Init initializes the SDK with ClientOptions. The returned error is
 // non-nil if options is invalid, if a global client already exists, or
 // if StanzaHub can't be reached.
-func Init(ctx context.Context, client Client) error {
+func Init(ctx context.Context, co ClientOptions) error {
 	// Set client defaults
-	if client.Name == "" {
-		client.Name = "unknown_service"
+	if co.Name == "" {
+		co.Name = "unknown_service"
 	}
-	if client.Release == "" {
-		client.Release = "0.0.0"
+	if co.Release == "" {
+		co.Release = "0.0.0"
 	}
-	if client.Environment == "" {
-		client.Environment = "dev"
+	if co.Environment == "" {
+		co.Environment = "dev"
 	}
-	if client.StanzaHub == "" {
-		client.StanzaHub = "api.stanzahub.com"
+	if co.StanzaHub == "" {
+		co.StanzaHub = "api.stanzahub.com"
 	}
-	if client.DataSource == "" {
-		client.DataSource = "grpc:" + client.StanzaHub
+	if co.DataSource == "" {
+		co.DataSource = "grpc:" + co.StanzaHub
 	}
 
 	// Initialize stanza
-	global.NewState(client.Name, client.Release, client.Environment, client.StanzaHub)
+	newState(co)
 
 	// Initialize otel
-	if err := otel.Init(ctx); err != nil {
+	if err := otel.Init(ctx, gs.client.Name, gs.client.Release, gs.client.Environment); err != nil {
 		return err
 	}
 
 	// Initialize sentinel
-	if err := sentinel.Init(client.Name, client.DataSource); err != nil {
+	if err := sentinel.Init(gs.client.Name, gs.client.DataSource); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func NewResource(resourceName string) error {
-	return global.NewResource(resourceName)
+func NewDecorator(name string) error {
+	// TODO(msg): register new decorator with stanzahub
+	return nil
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 
-	sg "github.com/StanzaSystems/sdk-go/global"
 	"github.com/StanzaSystems/sdk-go/logging"
 
 	"github.com/alibaba/sentinel-golang/api"
@@ -18,7 +17,7 @@ import (
 	"go.opentelemetry.io/otel/metric/instrument/syncint64"
 	"go.opentelemetry.io/otel/metric/unit"
 	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/semconv/v1.12.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.12.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -34,7 +33,6 @@ const (
 )
 
 type InboundMeters struct {
-	resource           string
 	allowedCount       syncint64.Counter
 	blockedCount       syncint64.Counter
 	blockedCountByType syncint64.Counter
@@ -47,7 +45,7 @@ type InboundMeters struct {
 	ActiveRequests syncint64.UpDownCounter
 }
 
-func InitInboundMeters(res string) (InboundMeters, error) {
+func InitInboundMeters(decorator string) (InboundMeters, error) {
 	meter := global.MeterProvider().Meter(
 		instrumentationName,
 		metric.WithInstrumentationVersion(instrumentationVersion),
@@ -55,8 +53,7 @@ func InitInboundMeters(res string) (InboundMeters, error) {
 
 	var err error
 	im := InboundMeters{
-		resource:   res,
-		Attributes: []attribute.KeyValue{attribute.String("sentinel.resource", res)},
+		Attributes: []attribute.KeyValue{attribute.String("stanza.decorator", decorator)},
 	}
 
 	// sentinel meters
@@ -122,13 +119,13 @@ func InitInboundMeters(res string) (InboundMeters, error) {
 	return im, nil
 }
 
-func InboundHandler(ctx context.Context, route string, im *InboundMeters, req *http.Request) (context.Context, int) {
+func InboundHandler(ctx context.Context, name, decorator, route string, im *InboundMeters, req *http.Request) (context.Context, int) {
 	ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.HeaderCarrier(req.Header))
 
 	// generic HTTP server trace
 	opts := []trace.SpanStartOption{
 		trace.WithAttributes(semconv.NetAttributesFromHTTPRequest("tcp", req)...),
-		trace.WithAttributes(semconv.HTTPServerAttributesFromHTTPRequest(sg.Name(), route, req)...),
+		trace.WithAttributes(semconv.HTTPServerAttributesFromHTTPRequest(name, route, req)...),
 		trace.WithAttributes(semconv.EndUserAttributesFromHTTPRequest(req)...),
 		trace.WithSpanKind(trace.SpanKindServer),
 	}
@@ -139,7 +136,7 @@ func InboundHandler(ctx context.Context, route string, im *InboundMeters, req *h
 	ctx, span := tracer.Start(ctx, route, opts...)
 	defer span.End()
 
-	e, b := api.Entry(im.resource, api.WithTrafficType(base.Inbound), api.WithResourceType(base.ResTypeWeb))
+	e, b := api.Entry(decorator, api.WithTrafficType(base.Inbound), api.WithResourceType(base.ResTypeWeb))
 	if b != nil {
 		// TODO: allow sentinel "customize block fallback" to override this 429 default
 		sc := http.StatusTooManyRequests // default `429 Too Many Request`
@@ -151,7 +148,7 @@ func InboundHandler(ctx context.Context, route string, im *InboundMeters, req *h
 		im.blockedCountByType.Add(ctx, 1, byTypeAttrs...)
 
 		// TODO: add additional sentinel specific info to span
-		// (at least im.resource, b.BlockMessage, b.BlockType, and b.BlockValue)
+		// (at least decorator, b.BlockMessage, b.BlockType, and b.BlockValue)
 
 		logging.Error(nil, "Stanza blocked",
 			"BlockMessage", b.BlockMsg(),
@@ -160,7 +157,7 @@ func InboundHandler(ctx context.Context, route string, im *InboundMeters, req *h
 		)
 		logging.Debug("BlockRule", b.TriggeredRule().String())
 		return ctx, sc
-	
+
 	} else {
 		sc := http.StatusOK
 		span.SetAttributes(semconv.HTTPAttributesFromHTTPStatusCode(sc)...)

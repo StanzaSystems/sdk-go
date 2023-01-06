@@ -18,7 +18,7 @@ type Client struct {
 	// DSN or some other kind of customer key/ID
 
 	// Optional
-	Name        string // defines applications unique name
+	Name        string // defines applications name
 	Release     string // defines applications version
 	Environment string // defines applications environment
 	StanzaHub   string // host:port (ipv4, ipv6, or resolveable hostname)
@@ -32,8 +32,8 @@ type Decorator struct {
 
 // New creates a new fiberstanza middleware fiber.Handler
 func New(d Decorator) fiber.Handler {
-	if err := stanza.NewResource(d.Name); err != nil {
-		logging.Error(err, "failed to register new resource")
+	if err := stanza.NewDecorator(d.Name); err != nil {
+		logging.Error(err, "failed to register new decorator")
 	}
 	im, err := stanza.InitHttpInboundMeters(d.Name)
 	if err != nil {
@@ -60,7 +60,7 @@ func New(d Decorator) fiber.Handler {
 			logging.Error(err, "failed to convert request from fasthttp")
 			return c.Next() // log error and fail open
 		}
-		ctx, status := stanza.HttpInboundHandler(savedCtx, c.Route().Path, &im, &req)
+		ctx, status := stanza.HttpInboundHandler(savedCtx, d.Name, c.Route().Path, &im, &req)
 		if status != http.StatusOK {
 			return c.SendStatus(status)
 		}
@@ -70,5 +70,5 @@ func New(d Decorator) fiber.Handler {
 }
 
 func Init(ctx context.Context, client Client) error {
-	return stanza.Init(ctx, stanza.Client(client))
+	return stanza.Init(ctx, stanza.ClientOptions(client))
 }
