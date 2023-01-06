@@ -13,17 +13,34 @@ type Client struct {
 	// DSN or some other kind of customer key
 
 	// Optional
-	Name        string `default:"unknown_service"`        // defines applications unique name
-	Release     string `default:"0.0.0"`                  // defines applications version
-	Environment string `default:"dev"`                    // defines applications environment
-	StanzaHub   string `default:"api.stanzahub.com"`      // host:port (ipv4, ipv6, or resolveable hostname)
-	DataSource  string `default:"grpc:api.stanzahub.com"` // local:<path>, consul:<key>, or grpc:host:port
+	Name        string // defines applications unique name
+	Release     string // defines applications version
+	Environment string // defines applications environment
+	StanzaHub   string // host:port (ipv4, ipv6, or resolveable hostname)
+	DataSource  string // local:<path>, consul:<key>, or grpc:host:port
 }
 
 // Init initializes the SDK with ClientOptions. The returned error is
 // non-nil if options is invalid, if a global client already exists, or
 // if StanzaHub can't be reached.
 func Init(ctx context.Context, client Client) error {
+	// Set client defaults
+	if client.Name == "" {
+		client.Name = "unknown_service"
+	}
+	if client.Release == "" {
+		client.Release = "0.0.0"
+	}
+	if client.Environment == "" {
+		client.Environment = "dev"
+	}
+	if client.StanzaHub == "" {
+		client.StanzaHub = "api.stanzahub.com"
+	}
+	if client.DataSource == "" {
+		client.DataSource = "grpc:" + client.StanzaHub
+	}
+
 	// Initialize stanza
 	global.NewState(client.Name, client.Release, client.Environment, client.StanzaHub)
 
