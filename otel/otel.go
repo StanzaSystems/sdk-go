@@ -12,6 +12,8 @@ func Init(ctx context.Context, name, rel, env string) error {
 	// TODO: connect to stanza-hub and get an otel config (at least a sample rate)?
 
 	res, err := resource.New(ctx,
+		resource.WithHost(),
+		resource.WithFromEnv(),
 		resource.WithAttributes(
 			semconv.ServiceNameKey.String(name),
 			semconv.ServiceVersionKey.String(rel),
@@ -34,7 +36,7 @@ func Init(ctx context.Context, name, rel, env string) error {
 		if _, err := initGrpcMeter(ctx, res); err != nil {
 			panic(err) // TODO: don't panic here
 		}
-		if _, err := initDebugTracer(res); err != nil { // TODO: initGrpcTracer
+		if _, err := initGrpcTracer(ctx, res); err != nil {
 			panic(err) // TODO: don't panic here
 		}
 		// TODO: add metrics and tracer provider shutdowns

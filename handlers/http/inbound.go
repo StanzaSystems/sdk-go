@@ -33,16 +33,16 @@ const (
 )
 
 type InboundMeters struct {
-	allowedCount       syncint64.Counter
-	blockedCount       syncint64.Counter
-	blockedCountByType syncint64.Counter
-	totalCount         syncint64.Counter
+	Attributes []attribute.KeyValue
 
-	Attributes     []attribute.KeyValue
-	Duration       syncfloat64.Histogram
-	RequestSize    syncint64.Histogram
-	ResponseSize   syncint64.Histogram
-	ActiveRequests syncint64.UpDownCounter
+	AllowedCount       syncint64.Counter
+	BlockedCount       syncint64.Counter
+	BlockedCountByType syncint64.Counter
+	TotalCount         syncint64.Counter
+	Duration           syncfloat64.Histogram
+	RequestSize        syncint64.Histogram
+	ResponseSize       syncint64.Histogram
+	ActiveRequests     syncint64.UpDownCounter
 }
 
 func InitInboundMeters(decorator string) (InboundMeters, error) {
@@ -57,28 +57,28 @@ func InitInboundMeters(decorator string) (InboundMeters, error) {
 	}
 
 	// sentinel meters
-	im.allowedCount, err = meter.SyncInt64().Counter(
+	im.AllowedCount, err = meter.SyncInt64().Counter(
 		httpServerAllowedCount,
 		instrument.WithUnit(unit.Dimensionless),
 		instrument.WithDescription("measures the number of inbound HTTP requests that were allowed"))
 	if err != nil {
 		return im, err
 	}
-	im.blockedCount, err = meter.SyncInt64().Counter(
+	im.BlockedCount, err = meter.SyncInt64().Counter(
 		httpServerBlockedCount,
 		instrument.WithUnit(unit.Dimensionless),
 		instrument.WithDescription("measures the number of inbound HTTP requests that were backpressured"))
 	if err != nil {
 		return im, err
 	}
-	im.blockedCountByType, err = meter.SyncInt64().Counter(
+	im.BlockedCountByType, err = meter.SyncInt64().Counter(
 		httpServerBlockedCountByType,
 		instrument.WithUnit(unit.Dimensionless),
 		instrument.WithDescription("measures the number of inbound HTTP requests that were backpressured"))
 	if err != nil {
 		return im, err
 	}
-	im.totalCount, err = meter.SyncInt64().Counter(
+	im.TotalCount, err = meter.SyncInt64().Counter(
 		httpServerTotalCount,
 		instrument.WithUnit(unit.Dimensionless),
 		instrument.WithDescription("measures the number of inbound HTTP requests that were checked"))
@@ -143,9 +143,9 @@ func InboundHandler(ctx context.Context, name, decorator, route string, im *Inbo
 		span.SetAttributes(semconv.HTTPAttributesFromHTTPStatusCode(sc)...)
 
 		byTypeAttrs := append(im.Attributes, attribute.String("sentinel.block.type", b.BlockType().String()))
-		im.totalCount.Add(ctx, 1, im.Attributes...)
-		im.blockedCount.Add(ctx, 1, im.Attributes...)
-		im.blockedCountByType.Add(ctx, 1, byTypeAttrs...)
+		im.TotalCount.Add(ctx, 1, im.Attributes...)
+		im.BlockedCount.Add(ctx, 1, im.Attributes...)
+		im.BlockedCountByType.Add(ctx, 1, byTypeAttrs...)
 
 		// TODO: add additional sentinel specific info to span
 		// (at least decorator, b.BlockMessage, b.BlockType, and b.BlockValue)
@@ -155,15 +155,17 @@ func InboundHandler(ctx context.Context, name, decorator, route string, im *Inbo
 			"BlockType", b.BlockType().String(),
 			"BlockValue", b.TriggeredValue(),
 		)
-		logging.Debug("BlockRule", b.TriggeredRule().String())
+		logging.Debug("Stanza blocked",
+			"BlockRule", b.TriggeredRule().String(),
+		)
 		return ctx, sc
 
 	} else {
 		sc := http.StatusOK
 		span.SetAttributes(semconv.HTTPAttributesFromHTTPStatusCode(sc)...)
 
-		im.totalCount.Add(ctx, 1, im.Attributes...)
-		im.allowedCount.Add(ctx, 1, im.Attributes...)
+		im.TotalCount.Add(ctx, 1, im.Attributes...)
+		im.AllowedCount.Add(ctx, 1, im.Attributes...)
 
 		// TODO: add additional sentinel specific info to span?
 
