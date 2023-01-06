@@ -150,12 +150,12 @@ func InboundHandler(ctx context.Context, name, decorator, route string, im *Inbo
 		// TODO: add additional sentinel specific info to span
 		// (at least decorator, b.BlockMessage, b.BlockType, and b.BlockValue)
 
-		logging.Error(nil, "stanza blocked",
+		logging.Error(nil, "Stanza blocked",
 			"BlockMessage", b.BlockMsg(),
 			"BlockType", b.BlockType().String(),
 			"BlockValue", b.TriggeredValue(),
 		)
-		logging.Debug("stanza blocked",
+		logging.Debug("Stanza blocked",
 			"BlockRule", b.TriggeredRule().String(),
 		)
 		return ctx, sc
