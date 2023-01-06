@@ -12,6 +12,8 @@ func Init(ctx context.Context, name, rel, env string) error {
 	// TODO: connect to stanza-hub and get an otel config (at least a sample rate)?
 
 	res, err := resource.New(ctx,
+		resource.WithHost(),
+		resource.WithFromEnv(),
 		resource.WithAttributes(
 			semconv.ServiceNameKey.String(name),
 			semconv.ServiceVersionKey.String(rel),

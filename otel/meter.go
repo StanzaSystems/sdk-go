@@ -31,8 +31,6 @@ func initGrpcMeter(ctx context.Context, res *resource.Resource) (*metric.MeterPr
 		// otlpmetricgrpc.WithReconnectionPerid(10 * time.Second)
 		otlpmetricgrpc.WithInsecure(), // TODO: what else needs to be done for TLS?
 		// otlpmetricgrpc.WithTLSCredentials(creds)
-		otlpmetricgrpc.WithEndpoint("a631a047755c747a59fe9a6be9491922-155001334.us-east-2.elb.amazonaws.com:4317"),
-		// otlpmetricgrpc.WithEndpoint("localhost:4317"),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating OTLP gRPC meter exporter: %w", err)
