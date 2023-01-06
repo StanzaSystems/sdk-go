@@ -34,7 +34,7 @@ func Init(ctx context.Context, name, rel, env string) error {
 		if _, err := initGrpcMeter(ctx, res); err != nil {
 			panic(err) // TODO: don't panic here
 		}
-		if _, err := initDebugTracer(res); err != nil { // TODO: initGrpcTracer
+		if _, err := initGrpcTracer(ctx, res); err != nil {
 			panic(err) // TODO: don't panic here
 		}
 		// TODO: add metrics and tracer provider shutdowns
