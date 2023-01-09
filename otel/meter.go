@@ -25,10 +25,14 @@ func initDebugMeter(res *resource.Resource) (*metric.MeterProvider, error) {
 }
 
 func initGrpcMeter(ctx context.Context, res *resource.Resource) (*metric.MeterProvider, error) {
+	retryConfig := otlpmetricgrpc.RetryConfig{
+		Enabled:         true,
+		InitialInterval: 5 * time.Second,
+		MaxInterval:     30 * time.Second,
+		MaxElapsedTime:  time.Minute,
+	}
 	exp, err := otlpmetricgrpc.New(ctx,
-		otlpmetricgrpc.WithTimeout(5*time.Second), // TODO: be better than this...
-		// otlpmetricgrpc.WithRetry(retryConfig)
-		// otlpmetricgrpc.WithReconnectionPerid(10 * time.Second)
+		otlpmetricgrpc.WithRetry(retryConfig),
 		otlpmetricgrpc.WithInsecure(), // TODO: what else needs to be done for TLS?
 		// otlpmetricgrpc.WithTLSCredentials(creds)
 	)

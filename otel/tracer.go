@@ -32,10 +32,14 @@ func initDebugTracer(resource *resource.Resource) (*trace.TracerProvider, error)
 }
 
 func initGrpcTracer(ctx context.Context, resource *resource.Resource) (*trace.TracerProvider, error) {
+	retryConfig := otlptracegrpc.RetryConfig{
+		Enabled:         true,
+		InitialInterval: 5 * time.Second,
+		MaxInterval:     30 * time.Second,
+		MaxElapsedTime:  2 * time.Minute,
+	}
 	exporter, err := otlptracegrpc.New(ctx,
-		otlptracegrpc.WithTimeout(5*time.Second), // TODO: be better than this...
-		// otlptracegrpc.WithRetry(retryConfig)
-		// otlptracegrpc.WithReconnectionPerid(10 * time.Second)
+		otlptracegrpc.WithRetry(retryConfig),
 		otlptracegrpc.WithInsecure(), // TODO: what else needs to be done for TLS?
 		// otlptracegrpc.WithTLSCredentials(creds)
 	)
@@ -43,6 +47,9 @@ func initGrpcTracer(ctx context.Context, resource *resource.Resource) (*trace.Tr
 		return nil, fmt.Errorf("creating OTLP trace exporter: %w", err)
 	}
 	tp := trace.NewTracerProvider(
+		// TODO: make default trace sampler a tiny fractional (will be able to override from hub)
+		// https://github.com/open-telemetry/opentelemetry-go/blob/main/sdk/trace/sampling.go
+		// -- need to understand remote vs local and parent to be a good otel citizen
 		trace.WithSampler(trace.AlwaysSample()),
 		trace.WithBatcher(exporter),
 		trace.WithResource(resource),
