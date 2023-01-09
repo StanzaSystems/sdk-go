@@ -22,14 +22,26 @@ import (
 )
 
 const (
+	httpServerDecorator          = "stanza.http.server.request.decorator"
 	httpServerAllowedCount       = "stanza.http.server.sentinel.allowed"
 	httpServerBlockedCount       = "stanza.http.server.sentinel.blocked"
 	httpServerBlockedCountByType = "stanza.http.server.sentinel.blocked.by"
+	httpServerBlockedMessage     = "stanza.http.server.sentinel.blocked.message"
+	httpServerBlockedType        = "stanza.http.server.sentinel.blocked.type"
+	httpServerBlockedValue       = "stanza.http.server.sentinel.blocked.value"
+	httpServerBlockedRule        = "stanza.http.server.sentinel.blocked.rule"
 	httpServerTotalCount         = "stanza.http.server.sentinel.total"
 	httpServerDuration           = "stanza.http.server.duration"
 	httpServerRequestSize        = "stanza.http.server.request.size"
 	httpServerResponseSize       = "stanza.http.server.response.size"
 	httpServerActiveRequests     = "stanza.http.server.active"
+)
+
+var (
+	decoratorKey      = attribute.Key(httpServerDecorator)
+	blockedMessageKey = attribute.Key(httpServerBlockedMessage)
+	blockedTypeKey    = attribute.Key(httpServerBlockedType)
+	blockedRuleKey    = attribute.Key(httpServerBlockedRule)
 )
 
 type InboundMeters struct {
@@ -53,9 +65,8 @@ func InitInboundMeters(decorator string) (InboundMeters, error) {
 
 	var err error
 	im := InboundMeters{
-		Attributes: []attribute.KeyValue{attribute.String("stanza.decorator", decorator)},
+		Attributes: []attribute.KeyValue{decoratorKey.String(decorator)},
 	}
-
 	// sentinel meters
 	im.AllowedCount, err = meter.SyncInt64().Counter(
 		httpServerAllowedCount,
@@ -138,36 +149,41 @@ func InboundHandler(ctx context.Context, name, decorator, route string, im *Inbo
 
 	e, b := api.Entry(decorator, api.WithTrafficType(base.Inbound), api.WithResourceType(base.ResTypeWeb))
 	if b != nil {
+		im.TotalCount.Add(ctx, 1, im.Attributes...)
+		im.BlockedCount.Add(ctx, 1, im.Attributes...)
+		im.BlockedCountByType.Add(ctx, 1, append(im.Attributes, blockedTypeKey.String(b.BlockType().String()))...)
+
 		// TODO: allow sentinel "customize block fallback" to override this 429 default
 		sc := http.StatusTooManyRequests // default `429 Too Many Request`
 		span.SetAttributes(semconv.HTTPAttributesFromHTTPStatusCode(sc)...)
-
-		byTypeAttrs := append(im.Attributes, attribute.String("sentinel.block.type", b.BlockType().String()))
-		im.TotalCount.Add(ctx, 1, im.Attributes...)
-		im.BlockedCount.Add(ctx, 1, im.Attributes...)
-		im.BlockedCountByType.Add(ctx, 1, byTypeAttrs...)
-
-		// TODO: add additional sentinel specific info to span
-		// (at least decorator, b.BlockMessage, b.BlockType, and b.BlockValue)
+		span.AddEvent("Stanza blocked", trace.WithAttributes(
+			decoratorKey.String(decorator),
+			blockedMessageKey.String(b.BlockMsg()),
+			blockedTypeKey.String(b.BlockType().String()),
+			// blockedValueKey.Int64(b.TriggeredValue()),  // how to convert interface -> int64 here?
+			blockedRuleKey.String(b.TriggeredRule().String()),
+		))
 
 		logging.Error(nil, "Stanza blocked",
-			"BlockMessage", b.BlockMsg(),
-			"BlockType", b.BlockType().String(),
-			"BlockValue", b.TriggeredValue(),
+			httpServerDecorator, decorator,
+			httpServerBlockedMessage, b.BlockMsg(),
+			httpServerBlockedType, b.BlockType().String(),
+			httpServerBlockedValue, b.TriggeredValue(),
 		)
 		logging.Debug("Stanza blocked",
-			"BlockRule", b.TriggeredRule().String(),
+			httpServerBlockedRule, b.TriggeredRule().String(),
 		)
 		return ctx, sc
 
 	} else {
-		sc := http.StatusOK
-		span.SetAttributes(semconv.HTTPAttributesFromHTTPStatusCode(sc)...)
-
 		im.TotalCount.Add(ctx, 1, im.Attributes...)
 		im.AllowedCount.Add(ctx, 1, im.Attributes...)
 
-		// TODO: add additional sentinel specific info to span?
+		sc := http.StatusOK
+		span.SetAttributes(semconv.HTTPAttributesFromHTTPStatusCode(sc)...)
+		span.AddEvent("Stanza allowed", trace.WithAttributes(
+			decoratorKey.String(decorator),
+		))
 
 		e.Exit()       // cleanly exit the Sentinel Entry
 		return ctx, sc // return success

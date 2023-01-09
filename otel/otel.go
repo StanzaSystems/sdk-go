@@ -2,6 +2,7 @@ package otel
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -21,7 +22,7 @@ func Init(ctx context.Context, name, rel, env string) error {
 		),
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("creating opentelemetry resource: %w", err)
 	}
 
 	if os.Getenv("STANZA_DEBUG") != "" {
@@ -31,7 +32,6 @@ func Init(ctx context.Context, name, rel, env string) error {
 		if _, err := initDebugTracer(res); err != nil {
 			panic(err)
 		}
-		// TODO: add metrics and tracer provider shutdowns
 	} else {
 		if _, err := initGrpcMeter(ctx, res); err != nil {
 			panic(err) // TODO: don't panic here
@@ -39,7 +39,13 @@ func Init(ctx context.Context, name, rel, env string) error {
 		if _, err := initGrpcTracer(ctx, res); err != nil {
 			panic(err) // TODO: don't panic here
 		}
-		// TODO: add metrics and tracer provider shutdowns
 	}
+	// Handle shutdown to ensure all sub processes are closed correctly and telemetry is exported
+	//
+	// TODO: add something like the below (but NOT just deferred from here)
+	// defer func() {
+	// 	_ = exp.Shutdown(ctx)
+	// 	_ = tp.Shutdown(ctx)
+	// }()
 	return nil
 }
