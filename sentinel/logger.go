@@ -6,7 +6,7 @@ import (
 	"github.com/StanzaSystems/sdk-go/logging"
 )
 
-// A simple adapater which implements the Sentinel logger interface but actually logs
+// A simple adapter which implements the Sentinel logger interface but actually logs
 // using the Stanza global logger.
 type loggerAdapter struct{}
 

@@ -57,7 +57,7 @@ func InitDataSource(dataSource string) error {
 // Initialize new refreshable file datasources
 func InitFileDataSource(ConfigPath string) error {
 	// if the file doesn't exist (yet), should we create a background poller which
-	// keeps trying to add this datasource? (with expoential backoff, etc)
+	// keeps trying to add this datasource? (with exponential backoff, etc)
 
 	// circuitbreaker rules
 	if _, err := os.Stat(filepath.Join(ConfigPath, cb_rules)); err == nil {

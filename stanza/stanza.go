@@ -15,7 +15,7 @@ type ClientOptions struct {
 	Name        string // defines applications unique name
 	Release     string // defines applications version
 	Environment string // defines applications environment
-	StanzaHub   string // host:port (ipv4, ipv6, or resolveable hostname)
+	StanzaHub   string // host:port (ipv4, ipv6, or resolvable hostname)
 	DataSource  string // local:<path>, consul:<key>, or grpc:host:port
 }
 

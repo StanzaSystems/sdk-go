@@ -20,7 +20,7 @@ func initDebugTracer(resource *resource.Resource) (*trace.TracerProvider, error)
 	}
 
 	// ParentBased will enable sampling if the Parent sampled, otherwise use *default*
-	// raito of 1/10 of a percent (can be changed via Hub or STANZA_DEFAULT_TRACE_RATIO)
+	// ratio of 1/10 of a percent (can be changed via Hub or STANZA_DEFAULT_TRACE_RATIO)
 	tp := trace.NewTracerProvider(
 		trace.WithSampler(trace.ParentBased(trace.TraceIDRatioBased(config.traceRatio))),
 		trace.WithBatcher(exporter),
@@ -51,7 +51,7 @@ func initGrpcTracer(ctx context.Context, resource *resource.Resource) (*trace.Tr
 	}
 
 	// ParentBased will enable sampling if the Parent sampled, otherwise use *default*
-	// raito of 1/10 of a percent (can be changed via Hub or STANZA_DEFAULT_TRACE_RATIO)
+	// ratio of 1/10 of a percent (can be changed via Hub or STANZA_DEFAULT_TRACE_RATIO)
 	tp := trace.NewTracerProvider(
 		trace.WithSampler(trace.ParentBased(trace.TraceIDRatioBased(config.traceRatio))),
 		trace.WithBatcher(exporter),
