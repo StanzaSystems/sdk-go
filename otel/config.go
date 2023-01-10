@@ -1,5 +1,5 @@
 package otel
 
 type Config struct {
-	PlaceHolder string
+	traceRatio float64 // Percentage of traces to sample (default: 0.001)
 }

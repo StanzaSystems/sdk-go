@@ -2,6 +2,7 @@ package fiberstanza
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -33,11 +34,11 @@ type Decorator struct {
 // New creates a new fiberstanza middleware fiber.Handler
 func New(d Decorator) fiber.Handler {
 	if err := stanza.NewDecorator(d.Name); err != nil {
-		logging.Error(err, "failed to register new decorator")
+		logging.Error(fmt.Errorf("failed to register new decorator: %v", err))
 	}
 	im, err := stanza.InitHttpInboundMeters(d.Name)
 	if err != nil {
-		logging.Error(err, "failed to initialize new http inbound meters")
+		logging.Error(fmt.Errorf("failed to initialize new http inbound meters: %v", err))
 	}
 
 	return func(c *fiber.Ctx) error {
@@ -57,7 +58,7 @@ func New(d Decorator) fiber.Handler {
 		// TODO(msg): implement HttpInboundHandler as fasthttp handler instead of converting to net/http?
 		var req http.Request
 		if err := fasthttpadaptor.ConvertRequest(c.Context(), &req, true); err != nil {
-			logging.Error(err, "failed to convert request from fasthttp")
+			logging.Error(fmt.Errorf("failed to convert request from fasthttp: %v", err))
 			return c.Next() // log error and fail open
 		}
 		ctx, status := stanza.HttpInboundHandler(savedCtx, d.Name, c.Route().Path, &im, &req)
