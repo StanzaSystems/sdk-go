@@ -2,24 +2,33 @@
 // README at: https://github.com/devcontainers/templates/tree/main/src/go
 {
 	"name": "Stanza SDK-Go",
-	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
-	"image": "mcr.microsoft.com/devcontainers/go:0-1.19",
+	"dockerComposeFile": "../docker-compose.yaml",
+	"service": "fiberstanza-example-app",
+	"workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+
+	// Use 'forwardPorts' to make a list of ports inside the container available locally.
+	// "forwardPorts": [3000],
+	"portsAttributes": {
+		"3000": {
+			"label": "FiberStanza Example App",
+			"onAutoForward": "notify"
+		}
+	},	
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	"features": {
-		"ghcr.io/eitsupi/devcontainer-features/jq-likes:1": {}
+		"ghcr.io/eitsupi/devcontainer-features/jq-likes:1": {},
+		"ghcr.io/devcontainers/features/github-cli:1": {}
 	},
 	
 	"customizations": {
 		"vscode": {
 			"extensions": [
-				"golang.go"
+				"golang.go",
+				"streetsidesoftware.code-spell-checker"
 			]
 		}
 	}
-
-	// Use 'forwardPorts' to make a list of ports inside the container available locally.
-	// "forwardPorts": [],
 
 	// Use 'postCreateCommand' to run commands after the container is created.
 	// "postCreateCommand": "go version",

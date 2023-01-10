@@ -1,0 +1,11 @@
+{
+    "cSpell.words": ["Codespaces", "devcontainers"],
+    "cSpell.ignorePaths": [
+        "package-lock.json",
+        "node_modules",
+        ".devcontainer",
+        ".git/objects",
+        ".vscode",
+        ".vscode-insiders"
+    ], 
+}
