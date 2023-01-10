@@ -24,7 +24,7 @@
 	// "forwardPorts": [3000],
 	"portsAttributes": {
 		"3000": {
-			"label": "FiberStanza Example App",
+			"label": "Example App (fiberstanza)",
 			"onAutoForward": "notify"
 		}
 	}
