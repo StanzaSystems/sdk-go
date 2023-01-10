@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/StanzaSystems/sdk-go/logging"
@@ -164,7 +165,7 @@ func InboundHandler(ctx context.Context, name, decorator, route string, im *Inbo
 			blockedRuleKey.String(b.TriggeredRule().String()),
 		))
 
-		logging.Error(nil, "Stanza blocked",
+		logging.Error(fmt.Errorf("stanza blocked"),
 			httpServerDecorator, decorator,
 			httpServerBlockedMessage, b.BlockMsg(),
 			httpServerBlockedType, b.BlockType().String(),

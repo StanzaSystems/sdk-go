@@ -1,6 +1,8 @@
 package sentinel
 
 import (
+	"fmt"
+
 	"github.com/StanzaSystems/sdk-go/logging"
 )
 
@@ -33,7 +35,11 @@ func (l *loggerAdapter) WarnEnabled() bool {
 }
 
 func (l *loggerAdapter) Error(err error, msg string, keysAndValues ...interface{}) {
-	logging.Error(err, msg, keysAndValues...)
+	if msg != "" {
+		logging.Error(fmt.Errorf("%v: %v", msg, err), keysAndValues...)
+	} else {
+		logging.Error(err, keysAndValues...)
+	}
 }
 
 func (l *loggerAdapter) ErrorEnabled() bool {

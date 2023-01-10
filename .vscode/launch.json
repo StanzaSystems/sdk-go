@@ -15,7 +15,8 @@
                 // "AUTH0_DOMAIN": "dev-xgxhw0cn.us.auth0.com",
                 // "AUTH0_AUDIENCE": "https://localhost:9010",
                 "OTEL_EXPORTER_OTLP_ENDPOINT": "https://a631a047755c747a59fe9a6be9491922-155001334.us-east-2.elb.amazonaws.com:4317",
-                // "STANZA_DEBUG": "true",
+                "STANZA_DEFAULT_TRACE_RATIO": "0.5",
+                "STANZA_DEBUG": "true",
             },
             "args": [
                 // "-enableauth",

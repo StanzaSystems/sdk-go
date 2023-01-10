@@ -18,8 +18,11 @@ func initDebugTracer(resource *resource.Resource) (*trace.TracerProvider, error)
 	if err != nil {
 		return nil, fmt.Errorf("creating stdout trace exporter: %w", err)
 	}
+
+	// ParentBased will enable sampling if the Parent sampled, otherwise use *default*
+	// raito of 1/10 of a percent (can be changed via Hub or STANZA_DEFAULT_TRACE_RATIO)
 	tp := trace.NewTracerProvider(
-		trace.WithSampler(trace.AlwaysSample()),
+		trace.WithSampler(trace.ParentBased(trace.TraceIDRatioBased(config.traceRatio))),
 		trace.WithBatcher(exporter),
 		trace.WithResource(resource),
 	)
@@ -46,11 +49,11 @@ func initGrpcTracer(ctx context.Context, resource *resource.Resource) (*trace.Tr
 	if err != nil {
 		return nil, fmt.Errorf("creating OTLP trace exporter: %w", err)
 	}
+
+	// ParentBased will enable sampling if the Parent sampled, otherwise use *default*
+	// raito of 1/10 of a percent (can be changed via Hub or STANZA_DEFAULT_TRACE_RATIO)
 	tp := trace.NewTracerProvider(
-		// TODO: make default trace sampler a tiny fractional (will be able to override from hub)
-		// https://github.com/open-telemetry/opentelemetry-go/blob/main/sdk/trace/sampling.go
-		// -- need to understand remote vs local and parent to be a good otel citizen
-		trace.WithSampler(trace.AlwaysSample()),
+		trace.WithSampler(trace.ParentBased(trace.TraceIDRatioBased(config.traceRatio))),
 		trace.WithBatcher(exporter),
 		trace.WithResource(resource),
 	)

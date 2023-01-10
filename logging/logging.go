@@ -22,7 +22,7 @@ func Warn(msg string, keysAndValues ...interface{}) {
 }
 
 // Error prints messages about exceptional states of the SDK.
-func Error(err error, msg string, keysAndValues ...interface{}) {
+func Error(err error, keysAndValues ...interface{}) {
 	// TODO: Add "error", err.Error() to keysAndValues
-	zap.S().Errorw(msg, keysAndValues...)
+	zap.S().Errorw(err.Error(), keysAndValues...)
 }

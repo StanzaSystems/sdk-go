@@ -4,14 +4,19 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
+
+	"github.com/StanzaSystems/sdk-go/logging"
 
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.12.0"
 )
 
-func Init(ctx context.Context, name, rel, env string) error {
-	// TODO: connect to stanza-hub and get an otel config (at least a sample rate)?
+var config = Config{
+	traceRatio: 0.001, // Percentage of traces to sample (default: 0.001)
+}
 
+func Init(ctx context.Context, name, rel, env string) error {
 	res, err := resource.New(ctx,
 		resource.WithHost(),
 		resource.WithFromEnv(),
@@ -23,6 +28,15 @@ func Init(ctx context.Context, name, rel, env string) error {
 	)
 	if err != nil {
 		return fmt.Errorf("creating opentelemetry resource: %w", err)
+	}
+
+	if os.Getenv("STANZA_DEFAULT_TRACE_RATIO") != "" {
+		newRatio, err := strconv.ParseFloat(os.Getenv("STANZA_DEFAULT_TRACE_RATIO"), 32)
+		if err != nil {
+			if err := SetTraceRatio(newRatio); err != nil {
+				logging.Error(err)
+			}
+		}
 	}
 
 	if os.Getenv("STANZA_DEBUG") != "" {
@@ -48,4 +62,13 @@ func Init(ctx context.Context, name, rel, env string) error {
 	// 	_ = tp.Shutdown(ctx)
 	// }()
 	return nil
+}
+
+func SetTraceRatio(r float64) error {
+	if r <= 1.0 && r >= 0.0 {
+		config.traceRatio = r
+		return nil
+	} else {
+		return fmt.Errorf("invalid trace ratio: %v", r)
+	}
 }
