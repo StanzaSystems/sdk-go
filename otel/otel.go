@@ -33,6 +33,8 @@ func Init(ctx context.Context, name, rel, env string) error {
 	if os.Getenv("STANZA_DEFAULT_TRACE_RATIO") != "" {
 		newRatio, err := strconv.ParseFloat(os.Getenv("STANZA_DEFAULT_TRACE_RATIO"), 32)
 		if err != nil {
+			logging.Error(fmt.Errorf("parsing default trace ratio: %s", err))
+		} else {
 			if err := SetTraceRatio(newRatio); err != nil {
 				logging.Error(err)
 			}
