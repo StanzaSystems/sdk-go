@@ -13,3 +13,12 @@
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+
+# VSCode
+.vscode/
+
+# Build artifacts
+bin/
+
+# Any user generated certs, don't check those in.
+certs/
