@@ -40,17 +40,19 @@ func main() {
 	zap.ReplaceGlobals(logger.WithOptions(zap.AddCallerSkip(1)))
 
 	// Init Stanza fault tolerance library
-	stanzaInitErr := fiberstanza.Init(ctx,
+	shutdown, stanzaInitErr := fiberstanza.Init(ctx,
 		fiberstanza.Client{
+			APIKey:      "c6af1e6b-78f4-40c1-9428-2c890dcfdd7f",
 			Name:        name,
 			Release:     release,
 			Environment: environment,
-			DataSource:  "local:test",
+			// DataSource:  "local:test",
 			// StanzaHub:   "host:port",
 			// Logger:      zapr.NewLogger(logger.WithOptions(zap.AddCallerSkip(1))),
 		})
+	defer shutdown()
 	if stanzaInitErr != nil {
-		logger.Warn("stanza.init", zap.Error(stanzaInitErr))
+		logger.Error("stanza.init", zap.Error(stanzaInitErr))
 	}
 
 	// fiber: HTTP server

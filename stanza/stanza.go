@@ -2,6 +2,7 @@ package stanza
 
 import (
 	"context"
+	"errors"
 
 	"github.com/StanzaSystems/sdk-go/otel"
 	"github.com/StanzaSystems/sdk-go/sentinel"
@@ -9,7 +10,7 @@ import (
 
 type ClientOptions struct {
 	// Required
-	// DSN or some other kind of customer key
+	APIKey string // customer generated API key
 
 	// Optional
 	Name        string // defines applications unique name
@@ -22,7 +23,11 @@ type ClientOptions struct {
 // Init initializes the SDK with ClientOptions. The returned error is
 // non-nil if options is invalid, if a global client already exists, or
 // if StanzaHub can't be reached.
-func Init(ctx context.Context, co ClientOptions) error {
+func Init(ctx context.Context, co ClientOptions) (func(), error) {
+	if co.APIKey == "" {
+		return func() {}, errors.New("missing required Stanza API key")
+	}
+
 	// Set client defaults
 	if co.Name == "" {
 		co.Name = "unknown_service"
@@ -36,24 +41,27 @@ func Init(ctx context.Context, co ClientOptions) error {
 	if co.StanzaHub == "" {
 		co.StanzaHub = "api.stanzahub.com"
 	}
-	if co.DataSource == "" {
-		co.DataSource = "grpc:" + co.StanzaHub
-	}
 
 	// Initialize stanza
 	newState(co)
 
+	// TODO: register call to stanza hub API should return otel-collector address
+
 	// Initialize otel
-	if err := otel.Init(ctx, gs.client.Name, gs.client.Release, gs.client.Environment); err != nil {
-		return err
+	shutdown, err := otel.Init(ctx, gs.client.Name, gs.client.Release, gs.client.Environment)
+	if err != nil {
+		return func() { shutdown() }, err
 	}
 
 	// Initialize sentinel
-	if err := sentinel.Init(gs.client.Name, gs.client.DataSource); err != nil {
-		return err
+	if co.DataSource != "" {
+		if err := sentinel.Init(gs.client.Name, gs.client.DataSource); err != nil {
+			return func() { shutdown() }, err
+		}
 	}
 
-	return nil
+	// Return OTEL shutdown (to be deferred by the caller)
+	return func() { shutdown() }, nil
 }
 
 func NewDecorator(name string) error {

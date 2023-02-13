@@ -2,7 +2,7 @@
 
 Stanza is a... <one sentence summary here>
 
-"Stanza Go SDK" is the framework for adding Stanza Action control points using the Go language.
+"Stanza Go SDK" provides higher-order functions ("decorators") for adding Stanza fault tolerance to your Golang application.
 
 ## Installation
 
@@ -19,13 +19,12 @@ your local Stanza Hub and any other options.
 
 ## Usage
 
-The SDK supports adding flow control, traffic shaping, concurrency limiting, circuit breaking, and adaptive system protection (via [Sentinel](https://github.com/alibaba/sentinel-golang)) to your service and externally managing the
-configs with the Stanza Control Plane.
+The SDK supports adding flow control, traffic shaping, concurrency limiting, circuit breaking, and adaptive system protection (via [Sentinel](https://github.com/alibaba/sentinel-golang)) to your service and externally managing the configs with the Stanza Control Plane.
 
-See samples to get started.
+See samples to get started. (TODO)
 
 Documentation is available here. You can also find the API documentation here.
 
 ## Community
 
-Join Stanza's <something> to get involved and help us imporve the SDK!
+Join Stanza's <something> to get involved and help us improve the SDK!

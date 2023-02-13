@@ -8,7 +8,9 @@ import (
 
 	"github.com/StanzaSystems/sdk-go/logging"
 
+	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
+	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.12.0"
 )
 
@@ -16,7 +18,7 @@ var config = Config{
 	traceRatio: 0.001, // Percentage of traces to sample (default: 0.001)
 }
 
-func Init(ctx context.Context, name, rel, env string) error {
+func Init(ctx context.Context, name, rel, env string) (func(), error) {
 	res, err := resource.New(ctx,
 		resource.WithHost(),
 		resource.WithFromEnv(),
@@ -27,7 +29,7 @@ func Init(ctx context.Context, name, rel, env string) error {
 		),
 	)
 	if err != nil {
-		return fmt.Errorf("creating opentelemetry resource: %w", err)
+		return func() {}, fmt.Errorf("creating opentelemetry resource: %w", err)
 	}
 
 	if os.Getenv("STANZA_DEFAULT_TRACE_RATIO") != "" {
@@ -41,29 +43,30 @@ func Init(ctx context.Context, name, rel, env string) error {
 		}
 	}
 
+	var mp *metric.MeterProvider
+	var tp *trace.TracerProvider
 	if os.Getenv("STANZA_DEBUG") != "" {
-		if _, err := initDebugMeter(res); err != nil {
+		if mp, err = initDebugMeter(res); err != nil {
 			panic(err)
 		}
-		if _, err := initDebugTracer(res); err != nil {
+		if tp, err = initDebugTracer(res); err != nil {
 			panic(err)
 		}
 	} else {
-		if _, err := initGrpcMeter(ctx, res); err != nil {
-			panic(err) // TODO: don't panic here
+		if mp, err = initGrpcMeter(ctx, res); err != nil {
+			// TODO: don't panic here
+			// but what should we do? Retry indefinitely?
+			// (with exponential backoff to very infrequently?)
+			panic(err)
 		}
-		if _, err := initGrpcTracer(ctx, res); err != nil {
+		if tp, err = initGrpcTracer(ctx, res); err != nil {
 			panic(err) // TODO: don't panic here
 		}
 	}
-	// Handle shutdown to ensure all sub processes are closed correctly and telemetry is exported
-	//
-	// TODO: add something like the below (but NOT just deferred from here)
-	// defer func() {
-	// 	_ = exp.Shutdown(ctx)
-	// 	_ = tp.Shutdown(ctx)
-	// }()
-	return nil
+	return func() {
+		mp.Shutdown(ctx)
+		tp.Shutdown(ctx)
+	}, nil
 }
 
 func SetTraceRatio(r float64) error {

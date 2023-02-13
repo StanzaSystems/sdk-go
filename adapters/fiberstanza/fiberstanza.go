@@ -16,7 +16,7 @@ import (
 // Client defines options for a new Stanza Client
 type Client struct {
 	// Required
-	// DSN or some other kind of customer key/ID
+	APIKey string // customer generated API key
 
 	// Optional
 	Name        string // defines applications name
@@ -70,6 +70,6 @@ func New(d Decorator) fiber.Handler {
 	}
 }
 
-func Init(ctx context.Context, client Client) error {
+func Init(ctx context.Context, client Client) (func(), error) {
 	return stanza.Init(ctx, stanza.ClientOptions(client))
 }
