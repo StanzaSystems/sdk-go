@@ -39,7 +39,7 @@ func Init(ctx context.Context, co ClientOptions) (func(), error) {
 		co.Environment = "dev"
 	}
 	if co.StanzaHub == "" {
-		co.StanzaHub = "api.stanzahub.com"
+		co.StanzaHub = "api.getstanza.io"
 	}
 
 	// Initialize stanza
@@ -54,7 +54,7 @@ func Init(ctx context.Context, co ClientOptions) (func(), error) {
 	}
 
 	// Initialize sentinel
-	if co.DataSource != "" {
+	if SentinelEnabled() {
 		if err := sentinel.Init(gs.client.Name, gs.client.DataSource); err != nil {
 			return func() { shutdown() }, err
 		}
@@ -62,9 +62,4 @@ func Init(ctx context.Context, co ClientOptions) (func(), error) {
 
 	// Return OTEL shutdown (to be deferred by the caller)
 	return func() { shutdown() }, nil
-}
-
-func NewDecorator(name string) error {
-	// TODO(msg): register new decorator with stanzahub
-	return nil
 }
