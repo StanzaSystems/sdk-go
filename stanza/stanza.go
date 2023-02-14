@@ -39,7 +39,7 @@ func Init(ctx context.Context, co ClientOptions) (func(), error) {
 		co.Environment = "dev"
 	}
 	if co.StanzaHub == "" {
-		co.StanzaHub = "api.getstanza.io"
+		co.StanzaHub = "hub.getstanza.io"
 	}
 
 	// Initialize stanza
