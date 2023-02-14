@@ -1,6 +1,7 @@
 package stanza
 
 import (
+	"os"
 	"sync"
 )
 
@@ -28,4 +29,11 @@ func newState(client ClientOptions) {
 		// -- register name/ver/env
 		// -- get otel config
 	})
+}
+
+func SentinelEnabled() bool {
+	if gs.client.DataSource != "" && os.Getenv("STANZA_NO_SENTINEL") == "" {
+		return true
+	}
+	return false
 }

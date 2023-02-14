@@ -33,10 +33,7 @@ type Decorator struct {
 
 // New creates a new fiberstanza middleware fiber.Handler
 func New(d Decorator) fiber.Handler {
-	if err := stanza.NewDecorator(d.Name); err != nil {
-		logging.Error(fmt.Errorf("failed to register new decorator: %v", err))
-	}
-	im, err := stanza.InitHttpInboundMeters(d.Name)
+	h, err := stanza.NewHttpInboundHandler(d.Name)
 	if err != nil {
 		logging.Error(fmt.Errorf("failed to initialize new http inbound meters: %v", err))
 	}
@@ -45,12 +42,12 @@ func New(d Decorator) fiber.Handler {
 		start := time.Now()
 		savedCtx, cancel := context.WithCancel(c.UserContext())
 
-		im.ActiveRequests.Add(savedCtx, 1, im.Attributes...)
+		h.Meter().ActiveRequests.Add(savedCtx, 1, h.Meter().Attributes...)
 		defer func() {
-			im.Duration.Record(savedCtx, float64(time.Since(start).Microseconds())/1000, im.Attributes...)
-			im.RequestSize.Record(savedCtx, int64(len(c.Request().Body())), im.Attributes...)
-			im.ResponseSize.Record(savedCtx, int64(len(c.Response().Body())), im.Attributes...)
-			im.ActiveRequests.Add(savedCtx, -1, im.Attributes...)
+			h.Meter().Duration.Record(savedCtx, float64(time.Since(start).Microseconds())/1000, h.Meter().Attributes...)
+			h.Meter().RequestSize.Record(savedCtx, int64(len(c.Request().Body())), h.Meter().Attributes...)
+			h.Meter().ResponseSize.Record(savedCtx, int64(len(c.Response().Body())), h.Meter().Attributes...)
+			h.Meter().ActiveRequests.Add(savedCtx, -1, h.Meter().Attributes...)
 			c.SetUserContext(savedCtx)
 			cancel()
 		}()
@@ -61,7 +58,7 @@ func New(d Decorator) fiber.Handler {
 			logging.Error(fmt.Errorf("failed to convert request from fasthttp: %v", err))
 			return c.Next() // log error and fail open
 		}
-		ctx, status := stanza.HttpInboundHandler(savedCtx, d.Name, c.Route().Path, &im, &req)
+		ctx, status := h.VerifyServingCapacity(&req, c.Route().Path)
 		if status != http.StatusOK {
 			return c.SendStatus(status)
 		}
