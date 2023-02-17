@@ -20,3 +20,6 @@ RUN go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest
 # Give vscode ownership of GOPATH
 RUN chown -R vscode: /go
 USER vscode
+
+# Because I'm tired of remembering to do this everytime I rebuild my devcontainer
+RUN echo '-w "\\n"' > ~/.curlrc
