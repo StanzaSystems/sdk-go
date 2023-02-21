@@ -83,6 +83,10 @@ func main() {
 		resp, err := fiberstanza.HttpGet("https://zenquotes.io/api/random",
 			fiberstanza.Decorate("ZenQuotes", fiberstanza.GetFeatureFromContext(c)))
 		if err != nil {
+			// Consider how you want to handle this error! This could be an error from ZenQuotes or a
+			// "429 Too Many Requests" from Stanza. For example, instead of returning the error directly,
+			// maybe display a user friendly "Something went wrong!" type of error page. Or if it's an
+			// optional component of a larger page, just skip rendering it without returning an error.
 			return err
 		}
 		defer resp.Body.Close()

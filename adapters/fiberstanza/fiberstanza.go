@@ -85,13 +85,12 @@ func Decorate(decorator string, feature string) Decorator {
 // GetFeatureFromContext is a helper function to extract stanza feature name from
 // OTEL baggage (which is hiding in the fiber.Ctx)
 func GetFeatureFromContext(c *fiber.Ctx) string {
-	// var req http.Request
+	// TODO: actually extract STANZA_FEATURE from OTEL Baggage
 	//
+	// var req http.Request	//
 	//	if err := fasthttpadaptor.ConvertRequest(c.Context(), &req, true); err != nil {
 	//		logging.Error(fmt.Errorf("failed to convert request from fasthttp: %v", err))
 	//	}
-	//
 	// ctx := otel.GetTextMapPropagator().Extract(req.Context(), propagation.HeaderCarrier(req.Header))
-	// actually extract STANZA_FEATURE from Baggage
 	return "FOOBAR"
 }
