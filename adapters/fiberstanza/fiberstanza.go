@@ -26,14 +26,9 @@ type Client struct {
 	DataSource  string // local:<path>, consul:<key>, or grpc:host:port
 }
 
-// Decorator defines the config for fiberstanza middleware.
-type Decorator struct {
-	Name string // optional (but required if you want to use multiple Decorators)
-}
-
 // New creates a new fiberstanza middleware fiber.Handler
-func New(d Decorator) fiber.Handler {
-	h, err := stanza.NewHttpInboundHandler(d.Name)
+func Middleware(decorator string) fiber.Handler {
+	h, err := stanza.NewHttpInboundHandler(decorator)
 	if err != nil {
 		logging.Error(fmt.Errorf("failed to initialize new http inbound meters: %v", err))
 	}
@@ -67,6 +62,35 @@ func New(d Decorator) fiber.Handler {
 	}
 }
 
+// Init is a fiberstanza helper function (passthrough to stanza.Init)
 func Init(ctx context.Context, client Client) (func(), error) {
 	return stanza.Init(ctx, stanza.ClientOptions(client))
+}
+
+// HttpGet is a fiberstanza helper function (passthrough to stanza.HttpGetHandler)
+func HttpGet(url string, d Decorator) (*http.Response, error) {
+	return stanza.HttpGetHandler(url, d.Name, d.Feature)
+}
+
+type Decorator struct {
+	Name    string // required
+	Feature string // optional
+}
+
+// Decorate is a fiberstanza helper function
+func Decorate(decorator string, feature string) Decorator {
+	return Decorator{Name: decorator, Feature: feature}
+}
+
+// GetFeatureFromContext is a helper function to extract stanza feature name from
+// OTEL baggage (which is hiding in the fiber.Ctx)
+func GetFeatureFromContext(c *fiber.Ctx) string {
+	// TODO: actually extract STANZA_FEATURE from OTEL Baggage
+	//
+	// var req http.Request	//
+	//	if err := fasthttpadaptor.ConvertRequest(c.Context(), &req, true); err != nil {
+	//		logging.Error(fmt.Errorf("failed to convert request from fasthttp: %v", err))
+	//	}
+	// ctx := otel.GetTextMapPropagator().Extract(req.Context(), propagation.HeaderCarrier(req.Header))
+	return "FOOBAR"
 }
