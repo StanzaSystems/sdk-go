@@ -1,6 +1,6 @@
 [
     {
-        "resource": "abc",
+        "resource": "RootDecorator",
         "threshold": 3,
         "relationStrategy": 0,
         "tokenCalculateStrategy": 0,

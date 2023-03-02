@@ -92,8 +92,8 @@ func main() {
 		defer resp.Body.Close()
 		json.NewDecoder(resp.Body).Decode(&zq)
 
-		// return c.SendString("Hello, World 👋!")
 		return c.SendString(zq[0].Q + " —" + zq[0].A + "\n\n")
+		// return c.SendString("🍄")
 	})
 
 	app.Listen(":3000")
