@@ -21,9 +21,10 @@ const (
 	debug       = true
 )
 
+// For decoding ZenQuotes (https://zenquotes.io) JSON
 var zq []struct {
-	A string
 	Q string
+	A string
 }
 
 func main() {
