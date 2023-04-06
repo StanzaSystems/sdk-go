@@ -15,7 +15,6 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/global"
 	"go.opentelemetry.io/otel/metric/instrument"
-	"go.opentelemetry.io/otel/metric/unit"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/semconv/v1.17.0/httpconv"
 	"go.opentelemetry.io/otel/trace"
@@ -91,28 +90,28 @@ func NewInboundHandler(app, decorator string, sentinel bool) (*InboundHandler, e
 	var err error
 	im.AllowedCount, err = meter.Int64Counter(
 		httpServerAllowedCount,
-		instrument.WithUnit(unit.Dimensionless),
+		instrument.WithUnit("1"),
 		instrument.WithDescription("measures the number of inbound HTTP requests that were allowed"))
 	if err != nil {
 		return handler, err
 	}
 	im.BlockedCount, err = meter.Int64Counter(
 		httpServerBlockedCount,
-		instrument.WithUnit(unit.Dimensionless),
+		instrument.WithUnit("1"),
 		instrument.WithDescription("measures the number of inbound HTTP requests that were backpressured"))
 	if err != nil {
 		return handler, err
 	}
 	im.BlockedCountByType, err = meter.Int64Counter(
 		httpServerBlockedCountByType,
-		instrument.WithUnit(unit.Dimensionless),
+		instrument.WithUnit("1"),
 		instrument.WithDescription("measures the number of inbound HTTP requests that were backpressured"))
 	if err != nil {
 		return handler, err
 	}
 	im.TotalCount, err = meter.Int64Counter(
 		httpServerTotalCount,
-		instrument.WithUnit(unit.Dimensionless),
+		instrument.WithUnit("1"),
 		instrument.WithDescription("measures the number of inbound HTTP requests that were checked"))
 	if err != nil {
 		return handler, err
@@ -121,28 +120,28 @@ func NewInboundHandler(app, decorator string, sentinel bool) (*InboundHandler, e
 	// generic HTTP server meters
 	im.Duration, err = meter.Float64Histogram(
 		httpServerDuration,
-		instrument.WithUnit(unit.Milliseconds),
+		instrument.WithUnit("ms"),
 		instrument.WithDescription("measures the duration inbound HTTP requests"))
 	if err != nil {
 		return handler, err
 	}
 	im.RequestSize, err = meter.Int64Histogram(
 		httpServerRequestSize,
-		instrument.WithUnit(unit.Bytes),
+		instrument.WithUnit("By"),
 		instrument.WithDescription("measures the size of HTTP request messages"))
 	if err != nil {
 		return handler, err
 	}
 	im.ResponseSize, err = meter.Int64Histogram(
 		httpServerResponseSize,
-		instrument.WithUnit(unit.Bytes),
+		instrument.WithUnit("By"),
 		instrument.WithDescription("measures the size of HTTP response messages"))
 	if err != nil {
 		return handler, err
 	}
 	im.ActiveRequests, err = meter.Int64UpDownCounter(
 		httpServerActiveRequests,
-		instrument.WithUnit(unit.Dimensionless),
+		instrument.WithUnit("1"),
 		instrument.WithDescription("measures the number of concurrent HTTP requests in-flight"))
 	if err != nil {
 		return handler, err
