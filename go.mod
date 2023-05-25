@@ -1,6 +1,6 @@
 module github.com/StanzaSystems/sdk-go
 
-go 1.19
+go 1.20
 
 require (
 	github.com/alibaba/sentinel-golang v1.0.4
