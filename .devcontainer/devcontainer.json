@@ -1,7 +1,7 @@
 // For format details, see https://aka.ms/devcontainer.json. For config options, see the
 // README at: https://github.com/devcontainers/templates/tree/main/src/go
 {
-	"name": "Public APIs",
+	"name": "SDK-Go",
 	"image": "mcr.microsoft.com/devcontainers/go:0-1.20",
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
