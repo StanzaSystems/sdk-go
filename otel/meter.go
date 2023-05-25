@@ -7,7 +7,7 @@ import (
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
-	"go.opentelemetry.io/otel/metric/global"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 )
@@ -20,7 +20,7 @@ func initDebugMeter(res *resource.Resource) (*metric.MeterProvider, error) {
 	mp := metric.NewMeterProvider(
 		metric.WithResource(res),
 		metric.WithReader(metric.NewPeriodicReader(exporter)))
-	global.SetMeterProvider(mp)
+	otel.SetMeterProvider(mp)
 	return mp, nil
 }
 
@@ -42,6 +42,6 @@ func initGrpcMeter(ctx context.Context, res *resource.Resource) (*metric.MeterPr
 	mp := metric.NewMeterProvider(
 		metric.WithResource(res),
 		metric.WithReader(metric.NewPeriodicReader(exp)))
-	global.SetMeterProvider(mp)
+	otel.SetMeterProvider(mp)
 	return mp, nil
 }

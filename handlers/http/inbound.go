@@ -13,8 +13,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/metric/global"
-	"go.opentelemetry.io/otel/metric/instrument"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/semconv/v1.17.0/httpconv"
 	"go.opentelemetry.io/otel/trace"
@@ -47,14 +45,14 @@ var (
 type InboundMeters struct {
 	Attributes []attribute.KeyValue
 
-	AllowedCount       instrument.Int64Counter
-	BlockedCount       instrument.Int64Counter
-	BlockedCountByType instrument.Int64Counter
-	TotalCount         instrument.Int64Counter
-	Duration           instrument.Float64Histogram
-	RequestSize        instrument.Int64Histogram
-	ResponseSize       instrument.Int64Histogram
-	ActiveRequests     instrument.Int64UpDownCounter
+	AllowedCount       metric.Int64Counter
+	BlockedCount       metric.Int64Counter
+	BlockedCountByType metric.Int64Counter
+	TotalCount         metric.Int64Counter
+	Duration           metric.Float64Histogram
+	RequestSize        metric.Int64Histogram
+	ResponseSize       metric.Int64Histogram
+	ActiveRequests     metric.Int64UpDownCounter
 }
 
 type InboundHandler struct {
@@ -78,7 +76,7 @@ func NewInboundHandler(app, decorator string, sentinel bool) (*InboundHandler, e
 			trace.WithInstrumentationVersion(instrumentationVersion),
 		),
 	}
-	meter := global.MeterProvider().Meter(
+	meter := otel.Meter(
 		instrumentationName,
 		metric.WithInstrumentationVersion(instrumentationVersion),
 	)
@@ -90,29 +88,29 @@ func NewInboundHandler(app, decorator string, sentinel bool) (*InboundHandler, e
 	var err error
 	im.AllowedCount, err = meter.Int64Counter(
 		httpServerAllowedCount,
-		instrument.WithUnit("1"),
-		instrument.WithDescription("measures the number of inbound HTTP requests that were allowed"))
+		metric.WithUnit("1"),
+		metric.WithDescription("measures the number of inbound HTTP requests that were allowed"))
 	if err != nil {
 		return handler, err
 	}
 	im.BlockedCount, err = meter.Int64Counter(
 		httpServerBlockedCount,
-		instrument.WithUnit("1"),
-		instrument.WithDescription("measures the number of inbound HTTP requests that were backpressured"))
+		metric.WithUnit("1"),
+		metric.WithDescription("measures the number of inbound HTTP requests that were backpressured"))
 	if err != nil {
 		return handler, err
 	}
 	im.BlockedCountByType, err = meter.Int64Counter(
 		httpServerBlockedCountByType,
-		instrument.WithUnit("1"),
-		instrument.WithDescription("measures the number of inbound HTTP requests that were backpressured"))
+		metric.WithUnit("1"),
+		metric.WithDescription("measures the number of inbound HTTP requests that were backpressured"))
 	if err != nil {
 		return handler, err
 	}
 	im.TotalCount, err = meter.Int64Counter(
 		httpServerTotalCount,
-		instrument.WithUnit("1"),
-		instrument.WithDescription("measures the number of inbound HTTP requests that were checked"))
+		metric.WithUnit("1"),
+		metric.WithDescription("measures the number of inbound HTTP requests that were checked"))
 	if err != nil {
 		return handler, err
 	}
@@ -120,29 +118,29 @@ func NewInboundHandler(app, decorator string, sentinel bool) (*InboundHandler, e
 	// generic HTTP server meters
 	im.Duration, err = meter.Float64Histogram(
 		httpServerDuration,
-		instrument.WithUnit("ms"),
-		instrument.WithDescription("measures the duration inbound HTTP requests"))
+		metric.WithUnit("ms"),
+		metric.WithDescription("measures the duration inbound HTTP requests"))
 	if err != nil {
 		return handler, err
 	}
 	im.RequestSize, err = meter.Int64Histogram(
 		httpServerRequestSize,
-		instrument.WithUnit("By"),
-		instrument.WithDescription("measures the size of HTTP request messages"))
+		metric.WithUnit("By"),
+		metric.WithDescription("measures the size of HTTP request messages"))
 	if err != nil {
 		return handler, err
 	}
 	im.ResponseSize, err = meter.Int64Histogram(
 		httpServerResponseSize,
-		instrument.WithUnit("By"),
-		instrument.WithDescription("measures the size of HTTP response messages"))
+		metric.WithUnit("By"),
+		metric.WithDescription("measures the size of HTTP response messages"))
 	if err != nil {
 		return handler, err
 	}
 	im.ActiveRequests, err = meter.Int64UpDownCounter(
 		httpServerActiveRequests,
-		instrument.WithUnit("1"),
-		instrument.WithDescription("measures the number of concurrent HTTP requests in-flight"))
+		metric.WithUnit("1"),
+		metric.WithDescription("measures the number of concurrent HTTP requests in-flight"))
 	if err != nil {
 		return handler, err
 	}
@@ -173,11 +171,13 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string) (c
 	ctx, span := h.tracer.Start(ctx, route, opts...)
 	defer span.End()
 
+	attr := []metric.AddOption{metric.WithAttributes(h.meter.Attributes...)}
 	e, b := api.Entry(h.decorator, api.WithTrafficType(base.Inbound), api.WithResourceType(base.ResTypeWeb))
 	if b != nil {
-		h.meter.TotalCount.Add(ctx, 1, h.meter.Attributes...)
-		h.meter.BlockedCount.Add(ctx, 1, h.meter.Attributes...)
-		h.meter.BlockedCountByType.Add(ctx, 1, append(h.meter.Attributes, blockedTypeKey.String(b.BlockType().String()))...)
+		h.meter.TotalCount.Add(ctx, 1, attr...)
+		h.meter.BlockedCount.Add(ctx, 1, attr...)
+		h.meter.BlockedCountByType.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(
+			append(h.meter.Attributes, attribute.Key(blockedTypeKey).String(b.BlockType().String()))...)}...)
 
 		// TODO: allow sentinel "customize block fallback" to override this 429 default
 		sc := http.StatusTooManyRequests // default `429 Too Many Request`
@@ -200,8 +200,8 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string) (c
 		)
 		return ctx, sc
 	} else {
-		h.meter.TotalCount.Add(ctx, 1, h.meter.Attributes...)
-		h.meter.AllowedCount.Add(ctx, 1, h.meter.Attributes...)
+		h.meter.TotalCount.Add(ctx, 1, attr...)
+		h.meter.AllowedCount.Add(ctx, 1, attr...)
 
 		sc := http.StatusOK
 		span.AddEvent("Stanza allowed", trace.WithAttributes(

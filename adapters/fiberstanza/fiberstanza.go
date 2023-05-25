@@ -8,6 +8,7 @@ import (
 
 	"github.com/StanzaSystems/sdk-go/logging"
 	"github.com/StanzaSystems/sdk-go/stanza"
+	"go.opentelemetry.io/otel/metric"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
@@ -37,12 +38,14 @@ func Middleware(decorator string) fiber.Handler {
 		start := time.Now()
 		savedCtx, cancel := context.WithCancel(c.UserContext())
 
-		h.Meter().ActiveRequests.Add(savedCtx, 1, h.Meter().Attributes...)
+		addAttr := []metric.AddOption{metric.WithAttributes(h.Meter().Attributes...)}
+		recAttr := []metric.RecordOption{metric.WithAttributes(h.Meter().Attributes...)}
+		h.Meter().ActiveRequests.Add(savedCtx, 1, addAttr...)
 		defer func() {
-			h.Meter().Duration.Record(savedCtx, float64(time.Since(start).Microseconds())/1000, h.Meter().Attributes...)
-			h.Meter().RequestSize.Record(savedCtx, int64(len(c.Request().Body())), h.Meter().Attributes...)
-			h.Meter().ResponseSize.Record(savedCtx, int64(len(c.Response().Body())), h.Meter().Attributes...)
-			h.Meter().ActiveRequests.Add(savedCtx, -1, h.Meter().Attributes...)
+			h.Meter().Duration.Record(savedCtx, float64(time.Since(start).Microseconds())/1000, recAttr...)
+			h.Meter().RequestSize.Record(savedCtx, int64(len(c.Request().Body())), recAttr...)
+			h.Meter().ResponseSize.Record(savedCtx, int64(len(c.Response().Body())), recAttr...)
+			h.Meter().ActiveRequests.Add(savedCtx, -1, addAttr...)
 			c.SetUserContext(savedCtx)
 			cancel()
 		}()
