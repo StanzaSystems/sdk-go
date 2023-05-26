@@ -34,7 +34,7 @@ func initDebugTracer(resource *resource.Resource) (*trace.TracerProvider, error)
 	return tp, nil
 }
 
-func initGrpcTracer(ctx context.Context, resource *resource.Resource) (*trace.TracerProvider, error) {
+func initGrpcTracer(ctx context.Context, resource *resource.Resource, token string) (*trace.TracerProvider, error) {
 	retryConfig := otlptracegrpc.RetryConfig{
 		Enabled:         true,
 		InitialInterval: 5 * time.Second,
@@ -45,6 +45,9 @@ func initGrpcTracer(ctx context.Context, resource *resource.Resource) (*trace.Tr
 		otlptracegrpc.WithRetry(retryConfig),
 		otlptracegrpc.WithInsecure(), // TODO: what else needs to be done for TLS?
 		// otlptracegrpc.WithTLSCredentials(creds)
+		otlptracegrpc.WithHeaders(map[string]string{
+			"Authorization": "Bearer " + token,
+		}),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating OTLP trace exporter: %w", err)

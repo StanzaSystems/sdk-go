@@ -18,7 +18,7 @@ var config = Config{
 	traceRatio: 0.001, // Percentage of traces to sample (default: 0.001)
 }
 
-func Init(ctx context.Context, name, rel, env string) (func(), error) {
+func Init(ctx context.Context, name, rel, env string, token string) (func(), error) {
 	res, err := resource.New(ctx,
 		resource.WithHost(),
 		resource.WithFromEnv(),
@@ -53,13 +53,13 @@ func Init(ctx context.Context, name, rel, env string) (func(), error) {
 			panic(err)
 		}
 	} else {
-		if mp, err = initGrpcMeter(ctx, res); err != nil {
+		if mp, err = initGrpcMeter(ctx, res, token); err != nil {
 			// TODO: don't panic here
 			// but what should we do? Retry indefinitely?
 			// (with exponential backoff to very infrequently?)
 			panic(err)
 		}
-		if tp, err = initGrpcTracer(ctx, res); err != nil {
+		if tp, err = initGrpcTracer(ctx, res, token); err != nil {
 			panic(err) // TODO: don't panic here
 		}
 	}
