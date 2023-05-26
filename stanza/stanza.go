@@ -47,8 +47,14 @@ func Init(ctx context.Context, co ClientOptions) (func(), error) {
 
 	// TODO: register call to stanza hub API should return otel-collector address
 
+	// TODO: register call to stanza hub to swap API key for otel bearer token
+	token, err := GetBearerToken(co.StanzaHub, co.APIKey)
+	if err != nil {
+		return func() {}, err
+	}
+
 	// Initialize otel
-	shutdown, err := otel.Init(ctx, gs.client.Name, gs.client.Release, gs.client.Environment)
+	shutdown, err := otel.Init(ctx, gs.client.Name, gs.client.Release, gs.client.Environment, token)
 	if err != nil {
 		return func() { shutdown() }, err
 	}
