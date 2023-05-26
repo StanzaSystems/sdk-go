@@ -3,11 +3,9 @@ package stanza
 import (
 	"context"
 	"errors"
-	"log"
 
 	"github.com/StanzaSystems/sdk-go/otel"
 	"github.com/StanzaSystems/sdk-go/sentinel"
-	"google.golang.org/grpc"
 )
 
 type ClientOptions struct {
