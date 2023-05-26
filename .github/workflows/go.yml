@@ -14,7 +14,8 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: 1.20
+        cache: false
+        go-version-file: './adapters/fiberstanza/example/go.mod'
 
     - name: Build
       run: go build -v ./adapters/fiberstanza/example/...
