@@ -43,29 +43,30 @@ func Init(ctx context.Context, co ClientOptions) (func(), error) {
 	}
 
 	// Initialize stanza
-	newState(co)
-
-	// TODO: register call to stanza hub API should return otel-collector address
-
-	// TODO: register call to stanza hub to swap API key for otel bearer token
-	token, err := GetBearerToken(co.StanzaHub, co.APIKey)
-	if err != nil {
-		return func() {}, err
-	}
+	hubDone := newState(co)
 
 	// Initialize otel
-	shutdown, err := otel.Init(ctx, gs.client.Name, gs.client.Release, gs.client.Environment, token)
+	otelDone, err := otel.Init(ctx, gs.clientOpt.Name, gs.clientOpt.Release, gs.clientOpt.Environment, gs.bearerToken)
 	if err != nil {
-		return func() { shutdown() }, err
+		return func() {
+			otelDone()
+			hubDone()
+		}, err
 	}
 
 	// Initialize sentinel
 	if SentinelEnabled() {
-		if err := sentinel.Init(gs.client.Name, gs.client.DataSource); err != nil {
-			return func() { shutdown() }, err
+		if err := sentinel.Init(gs.clientOpt.Name, gs.clientOpt.DataSource); err != nil {
+			return func() {
+				otelDone()
+				hubDone()
+			}, err
 		}
 	}
 
-	// Return OTEL shutdown (to be deferred by the caller)
-	return func() { shutdown() }, nil
+	// Return OTEL and Hub shutdown (to be deferred by the caller)
+	return func() {
+		otelDone()
+		hubDone()
+	}, nil
 }

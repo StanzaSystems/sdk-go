@@ -11,5 +11,5 @@ func HttpGetHandler(url, decorator, feature string) (*http.Response, error) {
 }
 
 func NewHttpInboundHandler(decorator string) (*httphandler.InboundHandler, error) {
-	return httphandler.NewInboundHandler(gs.client.Name, decorator, SentinelEnabled())
+	return httphandler.NewInboundHandler(gs.clientOpt.Name, decorator, SentinelEnabled())
 }

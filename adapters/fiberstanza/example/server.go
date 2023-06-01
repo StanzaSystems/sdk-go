@@ -49,11 +49,12 @@ func main() {
 	// Init Stanza fault tolerance library
 	shutdown, stanzaInitErr := fiberstanza.Init(ctx,
 		fiberstanza.Client{
-			APIKey:      "c6af1e6b-78f4-40c1-9428-2c890dcfdd7f",
+			// APIKey:      "c6af1e6b-78f4-40c1-9428-2c890dcfdd7f",
+			APIKey:      "valid-api-key",
 			Name:        name,
 			Release:     release,
 			Environment: environment,
-			StanzaHub:   "hub.dev.getstanza.dev:443",
+			StanzaHub:   "hub.dev.getstanza.dev:9020",
 			// DataSource:  "local:test",
 			// Logger:      zapr.NewLogger(logger.WithOptions(zap.AddCallerSkip(1))),
 		})
