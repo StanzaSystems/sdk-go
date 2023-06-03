@@ -2,25 +2,10 @@ package sentinel
 
 // A sentinel DataSource watches for sentinel config changes and converts
 // config JSON into structured sentinel Rules.
-//
-// Sentinel has the following datasource options builtin:
-// https://github.com/alibaba/sentinel-golang/tree/master/ext/datasource/
-// -- file (refreshable local)
-// https://github.com/alibaba/sentinel-golang/tree/master/pkg/datasource/
-// -- apollo
-// -- consul
-// -- etcdv3
-// -- k8s
-// -- nacos
-//
-// should we add a grpc datasource?
-// or would that be done "outside" of the sentinel datasource model?
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/alibaba/sentinel-golang/ext/datasource"
 	"github.com/alibaba/sentinel-golang/ext/datasource/file"
@@ -33,31 +18,9 @@ const (
 	system_rules    string = "system_rules.json"
 )
 
-// Initialize a sentinel datasource
-func InitDataSource(dataSource string) error {
-	ds := strings.Split(dataSource, ":")
-	if len(ds) < 2 {
-		return fmt.Errorf("invalid datasource: %v", ds)
-	}
-	switch ds[0] {
-	case "consul":
-		return fmt.Errorf("consul datasource support has not been implemented yet")
-
-	case "grpc":
-		return fmt.Errorf("grpc datasource support has not been implemented yet")
-
-	case "local":
-		return InitFileDataSource(ds[1])
-
-	default:
-		return fmt.Errorf("invalid datasource: %v", ds[0])
-	}
-}
-
-// Initialize new refreshable file datasources
+// Initialize new refreshable file datasource
 func InitFileDataSource(ConfigPath string) error {
-	// if the file doesn't exist (yet), should we create a background poller which
-	// keeps trying to add this datasource? (with exponential backoff, etc)
+	// TODO: create empty rules files if they don't exist
 
 	// circuitbreaker rules
 	if _, err := os.Stat(filepath.Join(ConfigPath, cb_rules)); err == nil {

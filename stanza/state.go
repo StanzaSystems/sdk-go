@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/tls"
 	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/StanzaSystems/sdk-go/logging"
@@ -25,9 +27,10 @@ type state struct {
 	bearerTokenTime time.Time
 
 	// stored from GetServiceConfig polling
-	svcConfig        hubv1.ServiceConfig
-	svcConfigTime    time.Time
-	svcConfigVersion string
+	svcConfig          *hubv1.ServiceConfig
+	svcConfigTime      time.Time
+	svcConfigVersion   string
+	sentinelDatasource string
 }
 
 var (
@@ -36,8 +39,8 @@ var (
 	initOnce sync.Once
 )
 
-func newState(co ClientOptions) func() {
-	ctx, ctxCancel := context.WithCancel(context.Background())
+func newState(ctx context.Context, co ClientOptions) func() {
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	initOnce.Do(func() {
 		// prepare for global state mutation
 		gsLock.Lock()
@@ -50,33 +53,51 @@ func newState(co ClientOptions) func() {
 			bearerToken:      "",
 			svcConfigVersion: "",
 		}
+		gs.sentinelDatasource, _ = os.MkdirTemp("", "sentinel")
 
 		// connect to stanza-hub
 		go connectHub(ctx)
 	})
 	return func() {
-		ctxCancel()
+		stop()
 		if gs.hubConn != nil {
 			gs.hubConn.Close()
+			logging.Debug("gracefully disconnected from stanza hub")
 		}
 	}
 }
 
+// var otelDone func()
+// if OtelEnabled() {
+// 	otelDone, _ = otel.Init(ctx, gs.clientOpt.Name, gs.clientOpt.Release, gs.clientOpt.Environment, gs.bearerToken)
+// }
+
+// if SentinelEnabled() {
+// 	sentinel.Init(gs.clientOpt.Name, gs.sentinelDatasource)
+// }
+
 func connectHub(ctx context.Context) {
 	const MIN_POLLING_TIME = 5 * time.Second
 
+	otelShutdown := func() {}
+	sentinelShutdown := func() {}
 	for {
 		select {
 		case <-ctx.Done():
+			otelShutdown()
+			sentinelShutdown()
+			os.RemoveAll(gs.sentinelDatasource)
 			return
 		case <-time.After(MIN_POLLING_TIME):
-			if gs.hubConn != nil {
-				GetBearerToken(ctx)
+			if gs.hubConn != nil { // AND some kind of healthcheck/ping on hubConn success?
 				GetServiceConfig(ctx)
+				// SentinelInit(ctx)
+				GetBearerToken(ctx)
+				otelShutdown = OtelStartup(ctx)
 			} else {
 				opts := []grpc.DialOption{
 					grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{})),
-					// grpc.WithUserAgent(), // todo: SDK spec 
+					// grpc.WithUserAgent(), // todo: SDK spec
 					// todo: add keepalives, backoff config, etc
 				}
 				hubConn, err := grpc.Dial(gs.clientOpt.StanzaHub, opts...)
@@ -96,11 +117,4 @@ func connectHub(ctx context.Context) {
 			}
 		}
 	}
-}
-
-func SentinelEnabled() bool {
-	if gs.clientOpt.DataSource != "" && os.Getenv("STANZA_NO_SENTINEL") == "" {
-		return true
-	}
-	return false
 }

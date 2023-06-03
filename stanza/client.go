@@ -2,7 +2,6 @@ package stanza
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/StanzaSystems/sdk-go/logging"
@@ -21,11 +20,11 @@ func GetBearerToken(ctx context.Context) {
 			logging.Error(err)
 		}
 		if res.GetBearerToken() != "" {
+			logging.Debug("successfully obtained bearer token")
 			gs.bearerToken = res.GetBearerToken()
 			gs.bearerTokenTime = time.Now()
 		}
 	}
-	fmt.Println(gs.bearerToken)
 }
 
 func GetServiceConfig(ctx context.Context) {
@@ -43,10 +42,16 @@ func GetServiceConfig(ctx context.Context) {
 			},
 		)
 		if res.GetConfigDataSent() {
-			gs.svcConfig = *res.GetConfig()
+			logging.Debug("successfully retrieved service config", "version", res.GetVersion())
+			gs.svcConfig = res.GetConfig()
 			gs.svcConfigTime = time.Now()
 			gs.svcConfigVersion = res.GetVersion()
 		}
 	}
-	fmt.Println(gs.svcConfigVersion)
+}
+
+func OtelStartup(ctx context.Context) func() {
+	return func() {
+		logging.Debug("gracefully shutdown OTEL exporting")
+	}
 }

@@ -38,6 +38,7 @@ var (
 	debugBaggageKey   = attribute.Key("hub.getstanza.io/StanzaDebug")
 	decoratorKey      = attribute.Key(httpServerDecorator)
 	blockedMessageKey = attribute.Key(httpServerBlockedMessage)
+	blockedValueKey   = attribute.Key(httpServerBlockedValue)
 	blockedTypeKey    = attribute.Key(httpServerBlockedType)
 	blockedRuleKey    = attribute.Key(httpServerBlockedRule)
 )
@@ -56,21 +57,23 @@ type InboundMeters struct {
 }
 
 type InboundHandler struct {
-	app         string
-	decorator   string
-	sentinel    bool
-	propagators propagation.TextMapPropagator
-	tracer      trace.Tracer
-	meter       InboundMeters
+	app             string
+	decorator       string
+	otelEnabled     bool
+	sentinelEnabled bool
+	propagators     propagation.TextMapPropagator
+	tracer          trace.Tracer
+	meter           InboundMeters
 }
 
 // New returns a new InboundHandler
-func NewInboundHandler(app, decorator string, sentinel bool) (*InboundHandler, error) {
+func NewInboundHandler(app, decorator string, otelEnabled, sentinelEnabled bool) (*InboundHandler, error) {
 	handler := &InboundHandler{
-		app:         app,
-		decorator:   decorator,
-		sentinel:    sentinel,
-		propagators: otel.GetTextMapPropagator(),
+		app:             app,
+		decorator:       decorator,
+		otelEnabled:     otelEnabled,
+		sentinelEnabled: sentinelEnabled,
+		propagators:     otel.GetTextMapPropagator(),
 		tracer: otel.GetTracerProvider().Tracer(
 			instrumentationName,
 			trace.WithInstrumentationVersion(instrumentationVersion),
@@ -172,44 +175,45 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string) (c
 	defer span.End()
 
 	attr := []metric.AddOption{metric.WithAttributes(h.meter.Attributes...)}
-	e, b := api.Entry(h.decorator, api.WithTrafficType(base.Inbound), api.WithResourceType(base.ResTypeWeb))
-	if b != nil {
-		h.meter.TotalCount.Add(ctx, 1, attr...)
-		h.meter.BlockedCount.Add(ctx, 1, attr...)
-		h.meter.BlockedCountByType.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(
-			append(h.meter.Attributes, attribute.Key(blockedTypeKey).String(b.BlockType().String()))...)}...)
+	if h.sentinelEnabled {
+		e, b := api.Entry(h.decorator, api.WithTrafficType(base.Inbound), api.WithResourceType(base.ResTypeWeb))
+		if b != nil {
+			h.meter.TotalCount.Add(ctx, 1, attr...)
+			h.meter.BlockedCount.Add(ctx, 1, attr...)
+			h.meter.BlockedCountByType.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(
+				append(h.meter.Attributes, attribute.Key(blockedTypeKey).String(b.BlockType().String()))...)}...)
 
-		// TODO: allow sentinel "customize block fallback" to override this 429 default
-		sc := http.StatusTooManyRequests // default `429 Too Many Request`
-		span.AddEvent("Stanza blocked", trace.WithAttributes(
-			decoratorKey.String(h.decorator),
-			blockedMessageKey.String(b.BlockMsg()),
-			blockedTypeKey.String(b.BlockType().String()),
-			// blockedValueKey.Int64(b.TriggeredValue()),  // how to convert interface -> int64 here?
-			blockedRuleKey.String(b.TriggeredRule().String()),
-		))
+			// TODO: allow sentinel "customize block fallback" to override this 429 default
+			sc := http.StatusTooManyRequests // default `429 Too Many Request`
 
-		logging.Error(fmt.Errorf("stanza blocked"),
-			httpServerDecorator, h.decorator,
-			httpServerBlockedMessage, b.BlockMsg(),
-			httpServerBlockedType, b.BlockType().String(),
-			httpServerBlockedValue, b.TriggeredValue(),
-		)
-		logging.Debug("Stanza blocked",
-			httpServerBlockedRule, b.TriggeredRule().String(),
-		)
-		return ctx, sc
-	} else {
-		h.meter.TotalCount.Add(ctx, 1, attr...)
-		h.meter.AllowedCount.Add(ctx, 1, attr...)
+			span.AddEvent("Stanza blocked", trace.WithAttributes(
+				decoratorKey.String(h.decorator),
+				blockedMessageKey.String(b.BlockMsg()),
+				blockedTypeKey.String(b.BlockType().String()),
+				blockedValueKey.String(fmt.Sprint(b.TriggeredValue())),
+				blockedRuleKey.String(b.TriggeredRule().String()),
+			))
 
-		sc := http.StatusOK
-		span.AddEvent("Stanza allowed", trace.WithAttributes(
-			decoratorKey.String(h.decorator),
-		))
-		h.propagators.Inject(ctx, propagation.HeaderCarrier(r.Header))
-
-		e.Exit()       // cleanly exit the Sentinel Entry
-		return ctx, sc // return success
+			logging.Error(fmt.Errorf("stanza blocked"),
+				httpServerDecorator, h.decorator,
+				httpServerBlockedMessage, b.BlockMsg(),
+				httpServerBlockedType, b.BlockType().String(),
+				httpServerBlockedValue, b.TriggeredValue(),
+			)
+			logging.Debug("Stanza blocked",
+				httpServerBlockedRule, b.TriggeredRule().String(),
+			)
+			return ctx, sc
+		}
+		e.Exit() // cleanly exit the Sentinel Entry
 	}
+
+	sc := http.StatusOK
+	span.AddEvent("Stanza allowed", trace.WithAttributes(
+		decoratorKey.String(h.decorator),
+	))
+	h.meter.TotalCount.Add(ctx, 1, attr...)
+	h.meter.AllowedCount.Add(ctx, 1, attr...)
+	h.propagators.Inject(ctx, propagation.HeaderCarrier(r.Header))
+	return ctx, sc // return success
 }
