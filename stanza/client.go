@@ -2,12 +2,20 @@ package stanza
 
 import (
 	"context"
+	"os"
 	"time"
 
 	"github.com/StanzaSystems/sdk-go/logging"
+	"github.com/StanzaSystems/sdk-go/otel"
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
+	"github.com/StanzaSystems/sdk-go/sentinel"
 
 	"google.golang.org/grpc/metadata"
+)
+
+var (
+	otelDone     func()
+	sentinelDone func()
 )
 
 func GetBearerToken(ctx context.Context) {
@@ -51,7 +59,50 @@ func GetServiceConfig(ctx context.Context) {
 }
 
 func OtelStartup(ctx context.Context) func() {
+	if OtelEnabled() {
+		if !gs.otelConnected { // or X amount of time has passed
+			// TODO: connect trace and metric exporters separately
+			if gs.svcConfig != nil &&
+				gs.svcConfig.GetTraceConfig() != nil &&
+				gs.svcConfig.GetMetricConfig() != nil {
+				otelDone, _ = otel.Init(ctx,
+					gs.clientOpt.Name,
+					gs.clientOpt.Release,
+					gs.clientOpt.Environment,
+					gs.bearerToken)
+				gs.otelConnected = true
+				gs.otelConnectedTime = time.Now()
+				logging.Debug("successfully connected opentelemetry exporter")
+			}
+		}
+	}
+	return otelDone
+}
+
+func SentinelStartup(ctx context.Context) func() {
+	if SentinelEnabled() {
+		if !gs.sentinelConnected { // or X amount of time has passed
+			if gs.svcConfig != nil {
+				sc := gs.svcConfig.GetSentinelConfig()
+				if sc != nil {
+					// TODO: should setup datasource per type
+					if sc.GetCircuitbreakerRulesJson() != "" ||
+						sc.GetFlowRulesJson() != "" ||
+						sc.GetIsolationRulesJson() != "" ||
+						sc.GetSystemRulesJson() != "" {
+						// TODO: need to add a gs.svcConfig.SentinelConfig -> gs.sentinelDatasource writer
+						sentinelDone = sentinel.Init(gs.clientOpt.Name, gs.sentinelDatasource)
+						gs.sentinelConnected = true
+						gs.sentinelConnectedTime = time.Now()
+						logging.Debug("successfully connected sentinel watcher")
+					}
+				}
+
+			}
+		}
+	}
 	return func() {
-		logging.Debug("gracefully shutdown OTEL exporting")
+		sentinelDone()
+		os.RemoveAll(gs.sentinelDatasource)
 	}
 }

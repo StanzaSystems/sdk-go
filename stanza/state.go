@@ -27,10 +27,18 @@ type state struct {
 	bearerTokenTime time.Time
 
 	// stored from GetServiceConfig polling
-	svcConfig          *hubv1.ServiceConfig
-	svcConfigTime      time.Time
-	svcConfigVersion   string
-	sentinelDatasource string
+	svcConfig        *hubv1.ServiceConfig
+	svcConfigTime    time.Time
+	svcConfigVersion string
+
+	// OTEL
+	otelConnected     bool
+	otelConnectedTime time.Time
+
+	// sentinel
+	sentinelConnected     bool
+	sentinelConnectedTime time.Time
+	sentinelDatasource    string
 }
 
 var (
@@ -48,10 +56,12 @@ func newState(ctx context.Context, co ClientOptions) func() {
 
 		// initialize new global state
 		gs = state{
-			clientOpt:        &co,
-			hubConn:          nil,
-			bearerToken:      "",
-			svcConfigVersion: "",
+			clientOpt:         &co,
+			hubConn:           nil,
+			otelConnected:     false,
+			sentinelConnected: false,
+			bearerToken:       "",
+			svcConfigVersion:  "",
 		}
 		gs.sentinelDatasource, _ = os.MkdirTemp("", "sentinel")
 
@@ -62,19 +72,10 @@ func newState(ctx context.Context, co ClientOptions) func() {
 		stop()
 		if gs.hubConn != nil {
 			gs.hubConn.Close()
-			logging.Debug("gracefully disconnected from stanza hub")
+			logging.Debug("disconnected from stanza hub", "url", gs.clientOpt.StanzaHub)
 		}
 	}
 }
-
-// var otelDone func()
-// if OtelEnabled() {
-// 	otelDone, _ = otel.Init(ctx, gs.clientOpt.Name, gs.clientOpt.Release, gs.clientOpt.Environment, gs.bearerToken)
-// }
-
-// if SentinelEnabled() {
-// 	sentinel.Init(gs.clientOpt.Name, gs.sentinelDatasource)
-// }
 
 func connectHub(ctx context.Context) {
 	const MIN_POLLING_TIME = 5 * time.Second
@@ -86,14 +87,13 @@ func connectHub(ctx context.Context) {
 		case <-ctx.Done():
 			otelShutdown()
 			sentinelShutdown()
-			os.RemoveAll(gs.sentinelDatasource)
 			return
 		case <-time.After(MIN_POLLING_TIME):
 			if gs.hubConn != nil { // AND some kind of healthcheck/ping on hubConn success?
-				GetServiceConfig(ctx)
-				// SentinelInit(ctx)
 				GetBearerToken(ctx)
 				otelShutdown = OtelStartup(ctx)
+				GetServiceConfig(ctx)
+				sentinelShutdown = SentinelStartup(ctx)
 			} else {
 				opts := []grpc.DialOption{
 					grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{})),

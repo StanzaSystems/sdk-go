@@ -66,6 +66,7 @@ func Init(ctx context.Context, name, rel, env string, token string) (func(), err
 	return func() {
 		mp.Shutdown(ctx)
 		tp.Shutdown(ctx)
+		logging.Debug("gracefully shutdown opentelemetry exporter")
 	}, nil
 }
 

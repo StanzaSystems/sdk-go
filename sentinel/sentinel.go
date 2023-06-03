@@ -7,10 +7,7 @@ import (
 	"github.com/alibaba/sentinel-golang/core/config"
 )
 
-var SentinelTempDir string
-
-func Init(name, ds string) {
-	SentinelTempDir = ds
+func Init(name string, ds string) func() {
 	conf := config.NewDefaultConfig()
 	conf.Sentinel.App.Name = name                 // overload this with environment?
 	conf.Sentinel.Log.Logger = &loggerAdapter{}   // log via the Stanza global logger
@@ -20,5 +17,8 @@ func Init(name, ds string) {
 	}
 	if err := InitFileDataSource(ds); err != nil {
 		logging.Error(err)
+	}
+	return func() {
+		logging.Debug("gracefully shutdown sentinel watcher")
 	}
 }
