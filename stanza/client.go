@@ -21,13 +21,18 @@ var (
 
 // Set to less than the maximum duration of the Auth0 Bearer Token
 const BEARER_TOKEN_REFRESH_INTERVAL = 4 * time.Hour
+const BEARER_TOKEN_REFRESH_JITTER = 600
 
-func BearerTokenRefresh(s int) time.Duration {
-	return BEARER_TOKEN_REFRESH_INTERVAL + time.Duration(rand.Intn(s))*time.Second
+// Set to how often we poll Hub for a new Service Config
+const SERVICE_CONFIG_REFRESH_INTERVAL = 5 * time.Minute
+const SERVICE_CONFIG_REFRESH_JITTER = 60
+
+func jitter(d time.Duration, i int) time.Duration {
+	return d + (time.Duration(rand.Intn(i)) * time.Second)
 }
 
-func GetBearerToken(ctx context.Context) {
-	if time.Now().After(gs.bearerTokenTime.Add(BearerTokenRefresh(600))) {
+func GetNewBearerToken(ctx context.Context) bool {
+	if time.Now().After(gs.bearerTokenTime.Add(jitter(BEARER_TOKEN_REFRESH_INTERVAL, BEARER_TOKEN_REFRESH_JITTER))) {
 		md := metadata.New(map[string]string{"x-stanza-key": gs.clientOpt.APIKey})
 		res, err := gs.hubAuthClient.GetBearerToken(
 			metadata.NewOutgoingContext(ctx, md),
@@ -36,15 +41,19 @@ func GetBearerToken(ctx context.Context) {
 			logging.Error(err)
 		}
 		if res.GetBearerToken() != "" {
-			logging.Debug("successfully obtained bearer token")
+			gsLock.Lock()
+			defer gsLock.Unlock()
 			gs.bearerToken = res.GetBearerToken()
 			gs.bearerTokenTime = time.Now()
+			logging.Debug("successfully obtained bearer token")
+			return true
 		}
 	}
+	return false
 }
 
 func GetServiceConfig(ctx context.Context) {
-	if gs.svcConfigVersion == "" { // or X amount of time has passed
+	if time.Now().After(gs.svcConfigTime.Add(jitter(SERVICE_CONFIG_REFRESH_INTERVAL, SERVICE_CONFIG_REFRESH_JITTER))) {
 		md := metadata.New(map[string]string{"x-stanza-key": gs.clientOpt.APIKey})
 		res, _ := gs.hubConfigClient.GetServiceConfig(
 			metadata.NewOutgoingContext(ctx, md),
@@ -58,17 +67,20 @@ func GetServiceConfig(ctx context.Context) {
 			},
 		)
 		if res.GetConfigDataSent() {
-			logging.Debug("successfully retrieved service config", "version", res.GetVersion())
+			// TODO: compare versus current configure and trigger OTEL/Sentinel reloads if needed
+			gsLock.Lock()
+			defer gsLock.Unlock()
 			gs.svcConfig = res.GetConfig()
 			gs.svcConfigTime = time.Now()
 			gs.svcConfigVersion = res.GetVersion()
+			logging.Debug("successfully retrieved service config", "version", res.GetVersion())
 		}
 	}
 }
 
 func OtelStartup(ctx context.Context) func() {
 	if OtelEnabled() {
-		if !gs.otelConnected { // or X amount of time has passed
+		if !gs.otelConnected || GetNewBearerToken(ctx) {
 			// TODO: connect trace and metric exporters separately
 			if gs.svcConfig != nil &&
 				gs.svcConfig.GetTraceConfig() != nil &&
@@ -78,6 +90,9 @@ func OtelStartup(ctx context.Context) func() {
 					gs.clientOpt.Release,
 					gs.clientOpt.Environment,
 					gs.bearerToken)
+
+				gsLock.Lock()
+				defer gsLock.Unlock()
 				gs.otelConnected = true
 				gs.otelConnectedTime = time.Now()
 				logging.Debug("successfully connected opentelemetry exporter")
@@ -100,6 +115,9 @@ func SentinelStartup(ctx context.Context) func() {
 						sc.GetSystemRulesJson() != "" {
 						// TODO: need to add a gs.svcConfig.SentinelConfig -> gs.sentinelDatasource writer
 						sentinelDone = sentinel.Init(gs.clientOpt.Name, gs.sentinelDatasource)
+
+						gsLock.Lock()
+						defer gsLock.Unlock()
 						gs.sentinelConnected = true
 						gs.sentinelConnectedTime = time.Now()
 						logging.Debug("successfully connected sentinel watcher")

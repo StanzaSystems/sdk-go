@@ -14,6 +14,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type state struct {
@@ -95,13 +96,17 @@ func connectHub(ctx context.Context) {
 			return
 		case <-time.After(MIN_POLLING_TIME):
 			if gs.hubConn != nil { // AND some kind of healthcheck/ping on hubConn success?
-				GetBearerToken(ctx)
 				otelShutdown = OtelStartup(ctx)
 				GetServiceConfig(ctx)
 				sentinelShutdown = SentinelStartup(ctx)
 			} else {
+				// Use env variable to disable TLS for local Stanza Hub development
+				creds := credentials.NewTLS(&tls.Config{})
+				if os.Getenv("STANZA_NO_TLS") != "" {
+					creds = insecure.NewCredentials()
+				}
 				opts := []grpc.DialOption{
-					grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{})),
+					grpc.WithTransportCredentials(creds),
 					// grpc.WithUserAgent(), // todo: SDK spec
 					// todo: add keepalives, backoff config, etc
 				}

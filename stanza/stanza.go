@@ -47,9 +47,9 @@ func Init(ctx context.Context, co ClientOptions) (func(), error) {
 }
 
 func OtelEnabled() bool {
-	return os.Getenv("STANZA_NO_OTEL") == ""
+	return os.Getenv("STANZA_NO_OTEL") != ""
 }
 
 func SentinelEnabled() bool {
-	return os.Getenv("STANZA_NO_SENTINEL") == ""
+	return os.Getenv("STANZA_NO_SENTINEL") != ""
 }
