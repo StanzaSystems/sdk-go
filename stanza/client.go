@@ -2,6 +2,7 @@ package stanza
 
 import (
 	"context"
+	"math/rand"
 	"os"
 	"time"
 
@@ -18,8 +19,15 @@ var (
 	sentinelDone func()
 )
 
+// Set to less than the maximum duration of the Auth0 Bearer Token
+const BEARER_TOKEN_REFRESH_INTERVAL = 4 * time.Hour
+
+func BearerTokenRefresh(s int) time.Duration {
+	return BEARER_TOKEN_REFRESH_INTERVAL + time.Duration(rand.Intn(s))*time.Second
+}
+
 func GetBearerToken(ctx context.Context) {
-	if gs.bearerToken == "" { // or X amount of time has passed
+	if time.Now().After(gs.bearerTokenTime.Add(BearerTokenRefresh(600))) {
 		md := metadata.New(map[string]string{"x-stanza-key": gs.clientOpt.APIKey})
 		res, err := gs.hubAuthClient.GetBearerToken(
 			metadata.NewOutgoingContext(ctx, md),
