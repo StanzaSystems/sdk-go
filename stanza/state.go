@@ -103,7 +103,7 @@ func connectHub(ctx context.Context) {
 				sentinelShutdown = SentinelStartup(ctx)
 			} else {
 				creds := credentials.NewTLS(&tls.Config{})
-				if os.Getenv("STANZA_NO_HUB_TLS") != "" { // disable TLS for local Hub development
+				if os.Getenv("STANZA_HUB_NO_TLS") != "" { // disable TLS for local Hub development
 					creds = insecure.NewCredentials()
 				}
 				opts := []grpc.DialOption{

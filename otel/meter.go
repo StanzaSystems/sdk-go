@@ -41,7 +41,7 @@ func initGrpcMeter(ctx context.Context, res *resource.Resource, config *hubv1.Me
 			"Authorization": "Bearer " + token,
 		}),
 	}
-	if os.Getenv("STANZA_NO_OTEL_TLS") != "" { // disable TLS for local OTEL development
+	if os.Getenv("STANZA_OTEL_NO_TLS") != "" { // disable TLS for local OTEL development
 		opts = append(opts,
 			otlpmetricgrpc.WithInsecure(),
 		)
