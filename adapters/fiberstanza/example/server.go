@@ -6,6 +6,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/StanzaSystems/sdk-go/adapters/fiberstanza"
 	"github.com/gofiber/contrib/fiberzap"
@@ -28,7 +31,9 @@ var zq []struct {
 }
 
 func main() {
-	ctx := context.Background()
+	// Create an interruptible context to use for graceful server shutdowns
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	// Configure structured logger.
 	zc := zap.NewProductionConfig()
@@ -47,17 +52,14 @@ func main() {
 	zap.ReplaceGlobals(logger.WithOptions(zap.AddCallerSkip(1)))
 
 	// Init Stanza fault tolerance library
-	shutdown, stanzaInitErr := fiberstanza.Init(ctx,
+	stanzaExit, stanzaInitErr := fiberstanza.Init(ctx,
 		fiberstanza.Client{
 			APIKey:      "c6af1e6b-78f4-40c1-9428-2c890dcfdd7f",
 			Name:        name,
 			Release:     release,
 			Environment: environment,
-			StanzaHub:   "hub.dev.getstanza.dev:443",
-			// DataSource:  "local:test",
-			// Logger:      zapr.NewLogger(logger.WithOptions(zap.AddCallerSkip(1))),
 		})
-	defer shutdown()
+	defer stanzaExit()
 	if stanzaInitErr != nil {
 		logger.Error("stanza.init", zap.Error(stanzaInitErr))
 	}
@@ -97,5 +99,10 @@ func main() {
 		// return c.SendString("🍄")
 	})
 
-	app.Listen(":3000")
+	go app.Listen(":3000")
+
+	// GRACEFUL SHUTDOWN
+	// - watches for a "Done" signal to the context we setup at the start
+	// - triggered by os.Interrupt, syscall.SIGINT, or syscall.SIGTERM
+	<-ctx.Done()
 }

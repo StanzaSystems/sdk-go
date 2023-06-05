@@ -24,7 +24,6 @@ type Client struct {
 	Release     string // defines applications version
 	Environment string // defines applications environment
 	StanzaHub   string // host:port (ipv4, ipv6, or resolvable hostname)
-	DataSource  string // local:<path>, consul:<key>, or grpc:host:port
 }
 
 // New creates a new fiberstanza middleware fiber.Handler
@@ -95,5 +94,6 @@ func GetFeatureFromContext(c *fiber.Ctx) string {
 	//		logging.Error(fmt.Errorf("failed to convert request from fasthttp: %v", err))
 	//	}
 	// ctx := otel.GetTextMapPropagator().Extract(req.Context(), propagation.HeaderCarrier(req.Header))
-	return "FOOBAR"
+	// return "FOOBAR"
+	return ""
 }

@@ -3,9 +3,7 @@ package stanza
 import (
 	"context"
 	"errors"
-
-	"github.com/StanzaSystems/sdk-go/otel"
-	"github.com/StanzaSystems/sdk-go/sentinel"
+	"os"
 )
 
 type ClientOptions struct {
@@ -17,7 +15,6 @@ type ClientOptions struct {
 	Release     string // defines applications version
 	Environment string // defines applications environment
 	StanzaHub   string // host:port (ipv4, ipv6, or resolvable hostname)
-	DataSource  string // local:<path>, consul:<key>, or grpc:host:port
 }
 
 // Init initializes the SDK with ClientOptions. The returned error is
@@ -39,33 +36,20 @@ func Init(ctx context.Context, co ClientOptions) (func(), error) {
 		co.Environment = "dev"
 	}
 	if co.StanzaHub == "" {
-		co.StanzaHub = "hub.getstanza.io"
+		co.StanzaHub = "hub.dev.getstanza.dev:9020" // for now, should be "hub.getstanza.io:9020"
 	}
 
-	// Initialize stanza
-	newState(co)
+	// Initialize new global state
+	hubDone := newState(ctx, co)
 
-	// TODO: register call to stanza hub API should return otel-collector address
+	// Return graceful shutdown function (to be deferred by the caller)
+	return hubDone, nil
+}
 
-	// TODO: register call to stanza hub to swap API key for otel bearer token
-	token, err := GetBearerToken(co.StanzaHub, co.APIKey)
-	if err != nil {
-		return func() {}, err
-	}
+func OtelEnabled() bool {
+	return os.Getenv("STANZA_NO_OTEL") == ""
+}
 
-	// Initialize otel
-	shutdown, err := otel.Init(ctx, gs.client.Name, gs.client.Release, gs.client.Environment, token)
-	if err != nil {
-		return func() { shutdown() }, err
-	}
-
-	// Initialize sentinel
-	if SentinelEnabled() {
-		if err := sentinel.Init(gs.client.Name, gs.client.DataSource); err != nil {
-			return func() { shutdown() }, err
-		}
-	}
-
-	// Return OTEL shutdown (to be deferred by the caller)
-	return func() { shutdown() }, nil
+func SentinelEnabled() bool {
+	return os.Getenv("STANZA_NO_SENTINEL") == ""
 }
