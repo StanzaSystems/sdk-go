@@ -56,12 +56,17 @@ func newState(ctx context.Context, co ClientOptions) func() {
 
 		// initialize new global state
 		gs = state{
-			clientOpt:         &co,
-			hubConn:           nil,
-			otelConnected:     false,
-			sentinelConnected: false,
-			bearerToken:       "",
-			svcConfigVersion:  "",
+			clientOpt:             &co,
+			hubConn:               nil,
+			bearerToken:           "",
+			bearerTokenTime:       time.Time{},
+			svcConfig:             nil,
+			svcConfigTime:         time.Time{},
+			svcConfigVersion:      "",
+			otelConnected:         false,
+			otelConnectedTime:     time.Time{},
+			sentinelConnected:     false,
+			sentinelConnectedTime: time.Time{},
 		}
 		gs.sentinelDatasource, _ = os.MkdirTemp("", "sentinel")
 
