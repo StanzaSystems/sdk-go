@@ -32,8 +32,8 @@ func Init(ctx context.Context, name, rel, env string, token string) (func(), err
 		return func() {}, fmt.Errorf("creating opentelemetry resource: %w", err)
 	}
 
-	if os.Getenv("STANZA_DEFAULT_TRACE_RATIO") != "" {
-		newRatio, err := strconv.ParseFloat(os.Getenv("STANZA_DEFAULT_TRACE_RATIO"), 32)
+	if traceRatio, ok := os.LookupEnv("STANZA_DEFAULT_TRACE_RATIO"); ok {
+		newRatio, err := strconv.ParseFloat(traceRatio, 32)
 		if err != nil {
 			logging.Error(fmt.Errorf("parsing default trace ratio: %s", err))
 		} else {
