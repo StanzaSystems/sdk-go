@@ -4,3 +4,8 @@ use (
 	./adapters/fiberstanza
 	./adapters/fiberstanza/example
 )
+
+replace (
+    github.com/StanzaSystems/sdk-go => ./
+    github.com/StanzaSystems/adapters/fiberstanza => ./adapters/fiberstanza
+)

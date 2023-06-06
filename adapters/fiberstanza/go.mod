@@ -3,7 +3,7 @@ module github.com/StanzaSystems/sdk-go/adapters/fiberstanza
 go 1.20
 
 require (
-	github.com/StanzaSystems/sdk-go v0.0.0-00010101000000-000000000000
+	github.com/StanzaSystems/sdk-go v0.0.0-20230606142354-9519e8d514d5
 	github.com/gofiber/fiber/v2 v2.46.0
 	github.com/valyala/fasthttp v1.47.0
 	go.opentelemetry.io/otel/metric v1.16.0
@@ -12,6 +12,7 @@ require (
 require (
 	github.com/alibaba/sentinel-golang v1.0.4 // indirect
 	github.com/andybalholm/brotli v1.0.5 // indirect
+	github.com/benbjohnson/clock v1.3.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
@@ -76,5 +77,3 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/StanzaSystems/sdk-go => ../../
