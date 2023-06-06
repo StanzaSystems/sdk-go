@@ -14,11 +14,6 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-var (
-	otelDone     func()
-	sentinelDone func()
-)
-
 // Set to less than the maximum duration of the Auth0 Bearer Token
 const BEARER_TOKEN_REFRESH_INTERVAL = 4 * time.Hour
 const BEARER_TOKEN_REFRESH_JITTER = 600
@@ -27,8 +22,56 @@ const BEARER_TOKEN_REFRESH_JITTER = 600
 const SERVICE_CONFIG_REFRESH_INTERVAL = 5 * time.Minute
 const SERVICE_CONFIG_REFRESH_JITTER = 60
 
-func jitter(d time.Duration, i int) time.Duration {
-	return d + (time.Duration(rand.Intn(i)) * time.Second)
+// Must be created outside the *Startup functions (so we don't wipe these out every 5 seconds)
+var (
+	otelDone     = func() {}
+	sentinelDone = func() {}
+)
+
+func OtelStartup(ctx context.Context) func() {
+	if OtelEnabled() && gs.svcConfig != nil {
+		gsLock.Lock()
+		defer gsLock.Unlock()
+		if !gs.otelInit {
+			otelDone, _ = otel.Init(ctx,
+				gs.clientOpt.Name,
+				gs.clientOpt.Release,
+				gs.clientOpt.Environment)
+
+			gs.otelInit = true
+			logging.Debug("initialized opentelemetry exporter")
+		}
+		newToken := GetNewBearerToken(ctx)
+		if !gs.otelMetricProviderConnected || newToken {
+			if gs.svcConfig.GetMetricConfig() != nil {
+				if err := otel.InitMetricProvider(ctx, gs.svcConfig.GetMetricConfig(), gs.bearerToken); err != nil {
+					logging.Error(err)
+				} else {
+					gs.otelMetricProviderConnected = true
+					if os.Getenv("STANZA_DEBUG") != "" || os.Getenv("STANZA_OTEL_DEBUG") != "" {
+						logging.Debug("connected to stdout metric exporter")
+					} else {
+						logging.Debug("connected to opentelemetry metric collector", "url", gs.svcConfig.GetMetricConfig().GetCollectorUrl())
+					}
+				}
+			}
+		}
+		if !gs.otelTraceProviderConnected || newToken {
+			if gs.svcConfig.GetTraceConfig() != nil {
+				if err := otel.InitTraceProvider(ctx, gs.svcConfig.GetTraceConfig(), gs.bearerToken); err != nil {
+					logging.Error(err)
+				} else {
+					gs.otelTraceProviderConnected = true
+					if os.Getenv("STANZA_DEBUG") != "" || os.Getenv("STANZA_OTEL_DEBUG") != "" {
+						logging.Debug("connected to stdout trace exporter")
+					} else {
+						logging.Debug("connected to opentelemetry trace collector", "url", gs.svcConfig.GetTraceConfig().GetCollectorUrl())
+					}
+				}
+			}
+		}
+	}
+	return otelDone
 }
 
 func GetNewBearerToken(ctx context.Context) bool {
@@ -41,11 +84,9 @@ func GetNewBearerToken(ctx context.Context) bool {
 			logging.Error(err)
 		}
 		if res.GetBearerToken() != "" {
-			gsLock.Lock()
-			defer gsLock.Unlock()
 			gs.bearerToken = res.GetBearerToken()
 			gs.bearerTokenTime = time.Now()
-			logging.Debug("successfully obtained bearer token")
+			logging.Debug("obtained bearer token")
 			return true
 		}
 	}
@@ -67,63 +108,36 @@ func GetServiceConfig(ctx context.Context) {
 			},
 		)
 		if res.GetConfigDataSent() {
-			// TODO: compare versus current configure and trigger OTEL/Sentinel reloads if needed
 			gsLock.Lock()
 			defer gsLock.Unlock()
+			// TODO: compare versus current configure and trigger OTEL/Sentinel reloads if needed
 			gs.svcConfig = res.GetConfig()
 			gs.svcConfigTime = time.Now()
 			gs.svcConfigVersion = res.GetVersion()
-			logging.Debug("successfully retrieved service config", "version", res.GetVersion())
+			logging.Debug("retrieved service config", "version", res.GetVersion())
 		}
 	}
-}
-
-func OtelStartup(ctx context.Context) func() {
-	if OtelEnabled() {
-		if !gs.otelConnected || GetNewBearerToken(ctx) {
-			// TODO: connect trace and metric exporters separately
-			if gs.svcConfig != nil &&
-				gs.svcConfig.GetTraceConfig() != nil &&
-				gs.svcConfig.GetMetricConfig() != nil {
-				otelDone, _ = otel.Init(ctx,
-					gs.clientOpt.Name,
-					gs.clientOpt.Release,
-					gs.clientOpt.Environment,
-					gs.bearerToken)
-
-				gsLock.Lock()
-				defer gsLock.Unlock()
-				gs.otelConnected = true
-				gs.otelConnectedTime = time.Now()
-				logging.Debug("successfully connected opentelemetry exporter")
-			}
-		}
-	}
-	return otelDone
 }
 
 func SentinelStartup(ctx context.Context) func() {
-	if SentinelEnabled() {
+	if SentinelEnabled() && gs.svcConfig != nil {
 		if !gs.sentinelConnected { // or X amount of time has passed
-			if gs.svcConfig != nil {
-				sc := gs.svcConfig.GetSentinelConfig()
-				if sc != nil {
-					// TODO: should setup datasource per type
-					if sc.GetCircuitbreakerRulesJson() != "" ||
-						sc.GetFlowRulesJson() != "" ||
-						sc.GetIsolationRulesJson() != "" ||
-						sc.GetSystemRulesJson() != "" {
-						// TODO: need to add a gs.svcConfig.SentinelConfig -> gs.sentinelDatasource writer
-						sentinelDone = sentinel.Init(gs.clientOpt.Name, gs.sentinelDatasource)
+			sc := gs.svcConfig.GetSentinelConfig()
+			if sc != nil {
+				// TODO: should init datasource per type
+				if sc.GetCircuitbreakerRulesJson() != "" ||
+					sc.GetFlowRulesJson() != "" ||
+					sc.GetIsolationRulesJson() != "" ||
+					sc.GetSystemRulesJson() != "" {
+					// TODO: need to add a gs.svcConfig.SentinelConfig -> gs.sentinelDatasource writer
+					sentinelDone = sentinel.Init(gs.clientOpt.Name, gs.sentinelDatasource)
 
-						gsLock.Lock()
-						defer gsLock.Unlock()
-						gs.sentinelConnected = true
-						gs.sentinelConnectedTime = time.Now()
-						logging.Debug("successfully connected sentinel watcher")
-					}
+					gsLock.Lock()
+					defer gsLock.Unlock()
+					gs.sentinelConnected = true
+					gs.sentinelConnectedTime = time.Now()
+					logging.Debug("successfully connected sentinel watcher")
 				}
-
 			}
 		}
 	}
@@ -131,4 +145,9 @@ func SentinelStartup(ctx context.Context) func() {
 		sentinelDone()
 		os.RemoveAll(gs.sentinelDatasource)
 	}
+}
+
+// Helper function to add jitter (random number of seconds) to time.Duration
+func jitter(d time.Duration, i int) time.Duration {
+	return d + (time.Duration(rand.Intn(i)) * time.Second)
 }

@@ -33,8 +33,9 @@ type state struct {
 	svcConfigVersion string
 
 	// OTEL
-	otelConnected     bool
-	otelConnectedTime time.Time
+	otelInit                    bool
+	otelMetricProviderConnected bool
+	otelTraceProviderConnected  bool
 
 	// sentinel
 	sentinelConnected     bool
@@ -57,17 +58,18 @@ func newState(ctx context.Context, co ClientOptions) func() {
 
 		// initialize new global state
 		gs = state{
-			clientOpt:             &co,
-			hubConn:               nil,
-			bearerToken:           "",
-			bearerTokenTime:       time.Time{},
-			svcConfig:             nil,
-			svcConfigTime:         time.Time{},
-			svcConfigVersion:      "",
-			otelConnected:         false,
-			otelConnectedTime:     time.Time{},
-			sentinelConnected:     false,
-			sentinelConnectedTime: time.Time{},
+			clientOpt:                   &co,
+			hubConn:                     nil,
+			bearerToken:                 "",
+			bearerTokenTime:             time.Time{},
+			svcConfig:                   nil,
+			svcConfigTime:               time.Time{},
+			svcConfigVersion:            "",
+			otelInit:                    false,
+			otelMetricProviderConnected: false,
+			otelTraceProviderConnected:  false,
+			sentinelConnected:           false,
+			sentinelConnectedTime:       time.Time{},
 		}
 		gs.sentinelDatasource, _ = os.MkdirTemp("", "sentinel")
 
@@ -100,9 +102,8 @@ func connectHub(ctx context.Context) {
 				GetServiceConfig(ctx)
 				sentinelShutdown = SentinelStartup(ctx)
 			} else {
-				// Use env variable to disable TLS for local Stanza Hub development
 				creds := credentials.NewTLS(&tls.Config{})
-				if os.Getenv("STANZA_NO_TLS") != "" {
+				if os.Getenv("STANZA_HUB_NO_TLS") != "" { // disable TLS for local Hub development
 					creds = insecure.NewCredentials()
 				}
 				opts := []grpc.DialOption{
