@@ -11,11 +11,6 @@ Stanza's `sdk-go` can be installed like any other Go library via `go get`:
 ```shell
 $ go get github.com/StanzaSystems/sdk-go
 ```
-NOTE: while this module is under development, you may get `remote: Repository not found` errors when trying to run `go get`. To work around this, you can follow the advice in this [thread](https://stackoverflow.com/questions/27500861/whats-the-proper-way-to-go-get-a-private-repository) which suggests running the command:
-* `git config --global url.git@github.com:.insteadOf https://github.com/`
-While this works, there is an updated form which is recommended:
-* `go env -w GOPRIVATE=github.com/StanzaSystems/*` - [Source](https://stackoverflow.com/questions/58305567/how-to-set-goprivate-environment-variable)
-(FWIW the former worked, the latter did not for some reason)
   
 ## Configuration
 
