@@ -2,6 +2,7 @@ package stanza
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"os"
 	"time"
@@ -16,11 +17,11 @@ import (
 
 // Set to less than the maximum duration of the Auth0 Bearer Token
 const BEARER_TOKEN_REFRESH_INTERVAL = 4 * time.Hour
-const BEARER_TOKEN_REFRESH_JITTER = 600
+const BEARER_TOKEN_REFRESH_JITTER = 600 // seconds
 
 // Set to how often we poll Hub for a new Service Config
-const SERVICE_CONFIG_REFRESH_INTERVAL = 5 * time.Minute
-const SERVICE_CONFIG_REFRESH_JITTER = 60
+const SERVICE_CONFIG_REFRESH_INTERVAL = 30 * time.Second
+const SERVICE_CONFIG_REFRESH_JITTER = 6 // seconds
 
 // Must be created outside the *Startup functions (so we don't wipe these out every 5 seconds)
 var (
@@ -29,9 +30,11 @@ var (
 )
 
 func OtelStartup(ctx context.Context) func() {
-	if OtelEnabled() && gs.svcConfig != nil {
+	if OtelEnabled() {
 		gsLock.Lock()
 		defer gsLock.Unlock()
+
+		GetNewBearerToken(ctx)
 		if !gs.otelInit {
 			otelDone, _ = otel.Init(ctx,
 				gs.clientOpt.Name,
@@ -40,35 +43,6 @@ func OtelStartup(ctx context.Context) func() {
 
 			gs.otelInit = true
 			logging.Debug("initialized opentelemetry exporter")
-		}
-		newToken := GetNewBearerToken(ctx)
-		if !gs.otelMetricProviderConnected || newToken {
-			if gs.svcConfig.GetMetricConfig() != nil {
-				if err := otel.InitMetricProvider(ctx, gs.svcConfig.GetMetricConfig(), gs.bearerToken); err != nil {
-					logging.Error(err)
-				} else {
-					gs.otelMetricProviderConnected = true
-					if os.Getenv("STANZA_DEBUG") != "" || os.Getenv("STANZA_OTEL_DEBUG") != "" {
-						logging.Debug("connected to stdout metric exporter")
-					} else {
-						logging.Debug("connected to opentelemetry metric collector", "url", gs.svcConfig.GetMetricConfig().GetCollectorUrl())
-					}
-				}
-			}
-		}
-		if !gs.otelTraceProviderConnected || newToken {
-			if gs.svcConfig.GetTraceConfig() != nil {
-				if err := otel.InitTraceProvider(ctx, gs.svcConfig.GetTraceConfig(), gs.bearerToken); err != nil {
-					logging.Error(err)
-				} else {
-					gs.otelTraceProviderConnected = true
-					if os.Getenv("STANZA_DEBUG") != "" || os.Getenv("STANZA_OTEL_DEBUG") != "" {
-						logging.Debug("connected to stdout trace exporter")
-					} else {
-						logging.Debug("connected to opentelemetry trace collector", "url", gs.svcConfig.GetTraceConfig().GetCollectorUrl())
-					}
-				}
-			}
 		}
 	}
 	return otelDone
@@ -110,11 +84,38 @@ func GetServiceConfig(ctx context.Context) {
 		if res.GetConfigDataSent() {
 			gsLock.Lock()
 			defer gsLock.Unlock()
-			// TODO: compare versus current configure and trigger OTEL/Sentinel reloads if needed
-			gs.svcConfig = res.GetConfig()
-			gs.svcConfigTime = time.Now()
-			gs.svcConfigVersion = res.GetVersion()
-			logging.Debug("retrieved service config", "version", res.GetVersion())
+			errCount := 0
+			if gs.otelInit {
+				if gs.svcConfig.GetMetricConfig().String() != res.GetConfig().GetMetricConfig().String() {
+					if err := otel.InitMetricProvider(ctx, res.GetConfig().GetMetricConfig(), gs.bearerToken); err != nil {
+						errCount += 1
+						logging.Error(err)
+						otel.InitMetricProvider(ctx, gs.svcConfig.GetMetricConfig(), gs.bearerToken)
+					} else {
+						logging.Debug("accepted opentelemetry metric config",
+							"version", res.GetVersion())
+					}
+				}
+				if gs.svcConfig.GetTraceConfig().String() != res.GetConfig().GetTraceConfig().String() {
+					if err := otel.InitTraceProvider(ctx, res.GetConfig().GetTraceConfig(), gs.bearerToken); err != nil {
+						errCount += 1
+						logging.Error(err)
+						otel.InitTraceProvider(ctx, gs.svcConfig.GetTraceConfig(), gs.bearerToken)
+					} else {
+						logging.Debug("accepted opentelemetry trace config",
+							"version", res.GetVersion(),
+							"sample_rate", res.GetConfig().GetTraceConfig().GetSampleRateDefault())
+					}
+				}
+			}
+			if errCount > 0 {
+				logging.Error(fmt.Errorf("rejected service config"), "version", res.GetVersion())
+			} else {
+				gs.svcConfig = res.GetConfig()
+				gs.svcConfigTime = time.Now()
+				gs.svcConfigVersion = res.GetVersion()
+				logging.Debug("accepted service config", "version", res.GetVersion())
+			}
 		}
 	}
 }

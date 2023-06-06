@@ -13,6 +13,7 @@ import (
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -62,7 +63,7 @@ func newState(ctx context.Context, co ClientOptions) func() {
 			hubConn:                     nil,
 			bearerToken:                 "",
 			bearerTokenTime:             time.Time{},
-			svcConfig:                   nil,
+			svcConfig:                   &hubv1.ServiceConfig{},
 			svcConfigTime:               time.Time{},
 			svcConfigVersion:            "",
 			otelInit:                    false,
@@ -97,10 +98,13 @@ func connectHub(ctx context.Context) {
 			sentinelShutdown()
 			return
 		case <-time.After(MIN_POLLING_TIME):
-			if gs.hubConn != nil { // AND some kind of healthcheck/ping on hubConn success?
-				otelShutdown = OtelStartup(ctx)
-				GetServiceConfig(ctx)
-				sentinelShutdown = SentinelStartup(ctx)
+			if gs.hubConn != nil {
+				if gs.hubConn.GetState() == connectivity.Ready {
+					otelShutdown = OtelStartup(ctx)
+					GetServiceConfig(ctx)
+				} else {
+					gs.hubConn.Connect()
+				}
 			} else {
 				creds := credentials.NewTLS(&tls.Config{})
 				if os.Getenv("STANZA_HUB_NO_TLS") != "" { // disable TLS for local Hub development
@@ -123,7 +127,6 @@ func connectHub(ctx context.Context) {
 					gs.hubConn = hubConn
 					gs.hubAuthClient = hubv1.NewAuthServiceClient(hubConn)
 					gs.hubConfigClient = hubv1.NewConfigServiceClient(hubConn)
-					hubConn.Connect()
 				}
 			}
 		}
