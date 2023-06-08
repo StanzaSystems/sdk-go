@@ -72,7 +72,7 @@ func main() {
 
 	// middleware: stanza
 	if stanzaInitErr == nil {
-		app.Use(fiberstanza.Middleware("RootDecorator"))
+		app.Use(fiberstanza.Middleware(ctx, "RootDecorator"))
 	}
 
 	// healthcheck
@@ -83,7 +83,7 @@ func main() {
 	// Use ZenQuotes to get a random quote
 	app.Get("/", func(c *fiber.Ctx) error {
 		// resp, err := http.Get("https://zenquotes.io/api/random") // before Stanza looks like this
-		resp, err := fiberstanza.HttpGet("https://zenquotes.io/api/random",
+		resp, err := fiberstanza.HttpGet(ctx, "https://zenquotes.io/api/random",
 			fiberstanza.Decorate("ZenQuotes", fiberstanza.GetFeatureFromContext(c)))
 		if err != nil {
 			// Consider how you want to handle this error! This could be an error from ZenQuotes or a

@@ -3,15 +3,17 @@ package fiberstanza
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
 	"github.com/StanzaSystems/sdk-go/logging"
+	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/stanza"
-	"go.opentelemetry.io/otel/metric"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
+	"go.opentelemetry.io/otel/metric"
 )
 
 // Client defines options for a new Stanza Client
@@ -27,8 +29,8 @@ type Client struct {
 }
 
 // New creates a new fiberstanza middleware fiber.Handler
-func Middleware(decorator string) fiber.Handler {
-	h, err := stanza.NewHttpInboundHandler(decorator)
+func Middleware(ctx context.Context, decorator string) fiber.Handler {
+	h, err := stanza.NewHttpInboundHandler(ctx, decorator)
 	if err != nil {
 		logging.Error(fmt.Errorf("failed to initialize new http inbound meters: %v", err))
 	}
@@ -69,19 +71,37 @@ func Init(ctx context.Context, client Client) (func(), error) {
 	return stanza.Init(ctx, stanza.ClientOptions(client))
 }
 
-// HttpGet is a fiberstanza helper function (passthrough to stanza.HttpGetHandler)
-func HttpGet(url string, d Decorator) (*http.Response, error) {
-	return stanza.HttpGetHandler(url, d.Name, d.Feature)
+// HttpGet is a fiberstanza helper function (passthrough to stanza.NewHttpOutboundHandler)
+func HttpGet(ctx context.Context, url string, tlr *hubv1.GetTokenLeaseRequest) (*http.Response, error) {
+	return stanza.NewHttpOutboundHandler(ctx, http.MethodGet, url, http.NoBody, tlr)
 }
 
-type Decorator struct {
-	Name    string // required
-	Feature string // optional
+// HttpGet is a fiberstanza helper function (passthrough to stanza.NewHttpOutboundHandler)
+func HttpPost(ctx context.Context, url string, body io.Reader, tlr *hubv1.GetTokenLeaseRequest) (*http.Response, error) {
+	return stanza.NewHttpOutboundHandler(ctx, http.MethodPost, url, body, tlr)
+}
+
+type Opt struct {
+	PriorityBoost int32
+	DefaultWeight float32
 }
 
 // Decorate is a fiberstanza helper function
-func Decorate(decorator string, feature string) Decorator {
-	return Decorator{Name: decorator, Feature: feature}
+func Decorate(decorator string, feature string, opts ...Opt) *hubv1.GetTokenLeaseRequest {
+	dfs := &hubv1.DecoratorFeatureSelector{DecoratorName: decorator}
+	if feature != "" {
+		dfs.FeatureName = &feature
+	}
+	tlr := &hubv1.GetTokenLeaseRequest{Selector: dfs}
+	if len(opts) == 1 {
+		if opts[0].PriorityBoost != 0 {
+			tlr.PriorityBoost = &opts[0].PriorityBoost
+		}
+		if opts[0].DefaultWeight != 0 {
+			tlr.DefaultWeight = &opts[0].DefaultWeight
+		}
+	}
+	return tlr
 }
 
 // GetFeatureFromContext is a helper function to extract stanza feature name from
@@ -95,5 +115,9 @@ func GetFeatureFromContext(c *fiber.Ctx) string {
 	//	}
 	// ctx := otel.GetTextMapPropagator().Extract(req.Context(), propagation.HeaderCarrier(req.Header))
 	// return "FOOBAR"
+	return ""
+}
+
+func NoFeature() string {
 	return ""
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/StanzaSystems/sdk-go/sentinel"
 
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
 )
 
 // Set to less than the maximum duration of the Auth0 Bearer Token
@@ -22,6 +23,10 @@ const BEARER_TOKEN_REFRESH_JITTER = 600 // seconds
 // Set to how often we poll Hub for a new Service Config
 const SERVICE_CONFIG_REFRESH_INTERVAL = 30 * time.Second
 const SERVICE_CONFIG_REFRESH_JITTER = 6 // seconds
+
+// Set to how often we poll Hub for a new Decorator Config
+const DECORATOR_CONFIG_REFRESH_INTERVAL = 30 * time.Second
+const DECORATOR_CONFIG_REFRESH_JITTER = 6 // seconds
 
 // Must be created outside the *Startup functions (so we don't wipe these out every 5 seconds)
 var (
@@ -70,7 +75,7 @@ func GetNewBearerToken(ctx context.Context) bool {
 func GetServiceConfig(ctx context.Context) {
 	if time.Now().After(gs.svcConfigTime.Add(jitter(SERVICE_CONFIG_REFRESH_INTERVAL, SERVICE_CONFIG_REFRESH_JITTER))) {
 		md := metadata.New(map[string]string{"x-stanza-key": gs.clientOpt.APIKey})
-		res, _ := gs.hubConfigClient.GetServiceConfig(
+		res, err := gs.hubConfigClient.GetServiceConfig(
 			metadata.NewOutgoingContext(ctx, md),
 			&hubv1.GetServiceConfigRequest{
 				VersionSeen: gs.svcConfigVersion,
@@ -81,6 +86,9 @@ func GetServiceConfig(ctx context.Context) {
 				},
 			},
 		)
+		if err != nil {
+			logging.Error(err)
+		}
 		if res.GetConfigDataSent() {
 			gsLock.Lock()
 			defer gsLock.Unlock()
@@ -117,6 +125,51 @@ func GetServiceConfig(ctx context.Context) {
 				logging.Debug("accepted service config", "version", res.GetVersion())
 			}
 		}
+	}
+}
+
+func GetDecoratorConfigs(ctx context.Context) {
+	if len(gs.decoratorConfig) > 0 {
+		for decorator := range gs.decoratorConfig {
+			if time.Now().After(gs.decoratorConfigTime[decorator].Add(jitter(DECORATOR_CONFIG_REFRESH_INTERVAL, DECORATOR_CONFIG_REFRESH_JITTER))) {
+				GetDecoratorConfig(ctx, decorator)
+			}
+		}
+	}
+}
+
+func GetDecoratorConfig(ctx context.Context, decorator string) {
+	if _, ok := gs.decoratorConfig[decorator]; !ok {
+		gs.decoratorConfig[decorator] = &hubv1.DecoratorConfig{}
+		gs.decoratorConfigTime[decorator] = time.Time{}
+		gs.decoratorConfigVersion[decorator] = ""
+	}
+	if gs.hubConfigClient == nil {
+		return
+	}
+	md := metadata.New(map[string]string{"x-stanza-key": gs.clientOpt.APIKey})
+	res, err := gs.hubConfigClient.GetDecoratorConfig(
+		metadata.NewOutgoingContext(ctx, md),
+		&hubv1.GetDecoratorConfigRequest{
+			VersionSeen: proto.String(gs.decoratorConfigVersion[decorator]),
+			Selector: &hubv1.DecoratorServiceSelector{
+				Environment:    gs.clientOpt.Environment,
+				DecoratorName:  decorator,
+				ServiceName:    gs.clientOpt.Name,
+				ServiceRelease: gs.clientOpt.Release,
+			},
+		},
+	)
+	if err != nil {
+		logging.Error(err)
+	}
+	if res.GetConfigDataSent() {
+		gsLock.Lock()
+		defer gsLock.Unlock()
+		gs.decoratorConfig[decorator] = res.GetConfig()
+		gs.decoratorConfigTime[decorator] = time.Now()
+		gs.decoratorConfigVersion[decorator] = res.GetVersion()
+		logging.Debug("accepted decorator config", "version", res.GetVersion())
 	}
 }
 

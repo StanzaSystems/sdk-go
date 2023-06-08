@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/StanzaSystems/sdk-go/logging"
+	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
 
 	"github.com/alibaba/sentinel-golang/api"
 	"github.com/alibaba/sentinel-golang/core/base"
@@ -57,8 +58,8 @@ type InboundMeters struct {
 }
 
 type InboundHandler struct {
-	app             string
 	decorator       string
+	decoratorConfig map[string]*hubv1.DecoratorConfig
 	otelEnabled     bool
 	sentinelEnabled bool
 	propagators     propagation.TextMapPropagator
@@ -67,10 +68,10 @@ type InboundHandler struct {
 }
 
 // New returns a new InboundHandler
-func NewInboundHandler(app, decorator string, otelEnabled, sentinelEnabled bool) (*InboundHandler, error) {
+func NewInboundHandler(decorator string, decoratorConfig map[string]*hubv1.DecoratorConfig, otelEnabled, sentinelEnabled bool) (*InboundHandler, error) {
 	handler := &InboundHandler{
-		app:             app,
 		decorator:       decorator,
+		decoratorConfig: decoratorConfig,
 		otelEnabled:     otelEnabled,
 		sentinelEnabled: sentinelEnabled,
 		propagators:     otel.GetTextMapPropagator(),
@@ -156,7 +157,6 @@ func (h *InboundHandler) Meter() *InboundMeters {
 	return &h.meter
 }
 
-// func InboundHandler(ctx context.Context, name, decorator, route string, im *InboundMeters, req *http.Request) (context.Context, int) {
 func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string) (context.Context, int) {
 	ctx := h.propagators.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
 	m0, _ := baggage.NewMember(string(debugBaggageKey), "TRUE")
@@ -206,6 +206,10 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string) (c
 			return ctx, sc
 		}
 		e.Exit() // cleanly exit the Sentinel Entry
+	}
+
+	if h.decoratorConfig[h.decorator].GetCheckQuota() {
+		fmt.Println("TODO: Enable InboundHandler QuotaChecks")
 	}
 
 	sc := http.StatusOK
