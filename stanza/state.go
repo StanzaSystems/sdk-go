@@ -12,6 +12,7 @@ import (
 	"github.com/StanzaSystems/sdk-go/logging"
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
 
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
@@ -20,6 +21,7 @@ import (
 
 type state struct {
 	clientOpt       *ClientOptions
+	clientId        uuid.UUID
 	hubConn         *grpc.ClientConn
 	hubAuthClient   hubv1.AuthServiceClient
 	hubConfigClient hubv1.ConfigServiceClient
@@ -32,6 +34,11 @@ type state struct {
 	svcConfig        *hubv1.ServiceConfig
 	svcConfigTime    time.Time
 	svcConfigVersion string
+
+	// stored from GetDecoratorConfig polling
+	decoratorConfig        map[string]*hubv1.DecoratorConfig
+	decoratorConfigTime    map[string]time.Time
+	decoratorConfigVersion map[string]string
 
 	// OTEL
 	otelInit                    bool
@@ -60,12 +67,16 @@ func newState(ctx context.Context, co ClientOptions) func() {
 		// initialize new global state
 		gs = state{
 			clientOpt:                   &co,
+			clientId:                    uuid.New(),
 			hubConn:                     nil,
 			bearerToken:                 "",
 			bearerTokenTime:             time.Time{},
 			svcConfig:                   &hubv1.ServiceConfig{},
 			svcConfigTime:               time.Time{},
 			svcConfigVersion:            "",
+			decoratorConfig:             map[string]*hubv1.DecoratorConfig{},
+			decoratorConfigTime:         map[string]time.Time{},
+			decoratorConfigVersion:      map[string]string{},
 			otelInit:                    false,
 			otelMetricProviderConnected: false,
 			otelTraceProviderConnected:  false,
@@ -102,6 +113,7 @@ func connectHub(ctx context.Context) {
 				if gs.hubConn.GetState() == connectivity.Ready {
 					otelShutdown = OtelStartup(ctx)
 					GetServiceConfig(ctx)
+					GetDecoratorConfigs(ctx)
 				} else {
 					gs.hubConn.Connect()
 				}
