@@ -28,9 +28,15 @@ type Client struct {
 	StanzaHub   string // host:port (ipv4, ipv6, or resolvable hostname)
 }
 
+// Optional arguments
+type Opt struct {
+	PriorityBoost int32
+	DefaultWeight float32
+}
+
 // New creates a new fiberstanza middleware fiber.Handler
-func Middleware(ctx context.Context, decorator string) fiber.Handler {
-	h, err := stanza.NewHttpInboundHandler(ctx, decorator)
+func Middleware(ctx context.Context, decorator string, opts ...Opt) fiber.Handler {
+	h, err := stanza.NewHttpInboundHandler(ctx, Decorate(decorator, "", opts...))
 	if err != nil {
 		logging.Error(fmt.Errorf("failed to initialize new http inbound meters: %v", err))
 	}
@@ -79,11 +85,6 @@ func HttpGet(ctx context.Context, url string, tlr *hubv1.GetTokenLeaseRequest) (
 // HttpGet is a fiberstanza helper function (passthrough to stanza.NewHttpOutboundHandler)
 func HttpPost(ctx context.Context, url string, body io.Reader, tlr *hubv1.GetTokenLeaseRequest) (*http.Response, error) {
 	return stanza.NewHttpOutboundHandler(ctx, http.MethodPost, url, body, tlr)
-}
-
-type Opt struct {
-	PriorityBoost int32
-	DefaultWeight float32
 }
 
 // Decorate is a fiberstanza helper function

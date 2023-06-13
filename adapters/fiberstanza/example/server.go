@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -61,7 +62,7 @@ func main() {
 		})
 	defer stanzaExit()
 	if stanzaInitErr != nil {
-		logger.Error("stanza.init", zap.Error(stanzaInitErr))
+		logger.Fatal("stanza.init", zap.Error(stanzaInitErr))
 	}
 
 	// fiber: HTTP server
@@ -71,9 +72,7 @@ func main() {
 	app.Use(fiberzap.New(fiberzap.Config{Logger: zap.L()}))
 
 	// middleware: stanza
-	if stanzaInitErr == nil {
-		app.Use(fiberstanza.Middleware(ctx, "RootDecorator"))
-	}
+	app.Use(fiberstanza.Middleware(ctx, "RootDecorator"))
 
 	// healthcheck
 	app.Get("/healthz", func(c *fiber.Ctx) error {
@@ -83,20 +82,26 @@ func main() {
 	// Use ZenQuotes to get a random quote
 	app.Get("/", func(c *fiber.Ctx) error {
 		// resp, err := http.Get("https://zenquotes.io/api/random") // before Stanza looks like this
-		resp, err := fiberstanza.HttpGet(ctx, "https://zenquotes.io/api/random",
+		resp, _ := fiberstanza.HttpGet(ctx, "https://zenquotes.io/api/random",
 			fiberstanza.Decorate("ZenQuotes", fiberstanza.GetFeatureFromContext(c)))
-		if err != nil {
-			// Consider how you want to handle this error! This could be an error from ZenQuotes or a
-			// "429 Too Many Requests" from Stanza. For example, instead of returning the error directly,
-			// maybe display a user friendly "Something went wrong!" type of error page. Or if it's an
-			// optional component of a larger page, just skip rendering it without returning an error.
-			return err
-		}
-		defer resp.Body.Close()
-		json.NewDecoder(resp.Body).Decode(&zq)
 
-		return c.SendString(zq[0].Q + " —" + zq[0].A + "\n\n")
-		// return c.SendString("🍄")
+		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			// Success! 🎉
+			// Our outbound HTTP request succeeded, this is the "happy path"!
+			json.NewDecoder(resp.Body).Decode(&zq)
+			return c.SendString("❝" + zq[0].Q + "❞ -" + zq[0].A + "\n")
+		}
+
+		// Failure. 😭
+		// Consider how you want to handle this case! This could be a "429 Too Many Requests"
+		// (you can check for this explicitly) or it could be a transient 5xx. Either way we don't
+		// have the response we were hoping for and we have to decide how to handle it. You might
+		// consider displaying a user friendly "Something went wrong!" message, or if this is an
+		// optional component of a larger page, just skip rendering it.
+		//
+		// For example purposes we simple return the status code here.
+		return c.SendStatus(resp.StatusCode)
 	})
 
 	go app.Listen(":3000")

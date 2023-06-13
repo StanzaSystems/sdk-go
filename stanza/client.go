@@ -169,7 +169,7 @@ func GetDecoratorConfig(ctx context.Context, decorator string) {
 		gs.decoratorConfig[decorator] = res.GetConfig()
 		gs.decoratorConfigTime[decorator] = time.Now()
 		gs.decoratorConfigVersion[decorator] = res.GetVersion()
-		logging.Debug("accepted decorator config", "version", res.GetVersion())
+		logging.Debug("accepted decorator config", "decorator", decorator, "version", res.GetVersion())
 	}
 }
 

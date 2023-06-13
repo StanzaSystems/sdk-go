@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	httphandler "github.com/StanzaSystems/sdk-go/handlers/http"
 	"github.com/StanzaSystems/sdk-go/logging"
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
 
@@ -25,6 +26,8 @@ type state struct {
 	hubConn         *grpc.ClientConn
 	hubAuthClient   hubv1.AuthServiceClient
 	hubConfigClient hubv1.ConfigServiceClient
+	hubQuotaClient  hubv1.QuotaServiceClient
+	inboundHandlers []*httphandler.InboundHandler
 
 	// stored from GetBearerToken request
 	bearerToken     string
@@ -114,6 +117,9 @@ func connectHub(ctx context.Context) {
 					otelShutdown = OtelStartup(ctx)
 					GetServiceConfig(ctx)
 					GetDecoratorConfigs(ctx)
+					for _, ih := range gs.inboundHandlers {
+						ih.SetQuotaServiceClient(gs.hubQuotaClient)
+					}
 				} else {
 					gs.hubConn.Connect()
 				}
@@ -139,6 +145,7 @@ func connectHub(ctx context.Context) {
 					gs.hubConn = hubConn
 					gs.hubAuthClient = hubv1.NewAuthServiceClient(hubConn)
 					gs.hubConfigClient = hubv1.NewConfigServiceClient(hubConn)
+					gs.hubQuotaClient = hubv1.NewQuotaServiceClient(hubConn)
 				}
 			}
 		}

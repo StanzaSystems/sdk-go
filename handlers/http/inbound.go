@@ -58,8 +58,11 @@ type InboundMeters struct {
 }
 
 type InboundHandler struct {
+	apikey          string
 	decorator       string
 	decoratorConfig map[string]*hubv1.DecoratorConfig
+	qsc             hubv1.QuotaServiceClient
+	tlr             *hubv1.GetTokenLeaseRequest
 	otelEnabled     bool
 	sentinelEnabled bool
 	propagators     propagation.TextMapPropagator
@@ -68,10 +71,13 @@ type InboundHandler struct {
 }
 
 // New returns a new InboundHandler
-func NewInboundHandler(decorator string, decoratorConfig map[string]*hubv1.DecoratorConfig, otelEnabled, sentinelEnabled bool) (*InboundHandler, error) {
+func NewInboundHandler(apikey string, decoratorConfig map[string]*hubv1.DecoratorConfig, tlr *hubv1.GetTokenLeaseRequest, otelEnabled, sentinelEnabled bool) (*InboundHandler, error) {
 	handler := &InboundHandler{
-		decorator:       decorator,
+		apikey:          apikey,
+		decorator:       tlr.Selector.DecoratorName,
 		decoratorConfig: decoratorConfig,
+		qsc:             nil,
+		tlr:             tlr,
 		otelEnabled:     otelEnabled,
 		sentinelEnabled: sentinelEnabled,
 		propagators:     otel.GetTextMapPropagator(),
@@ -85,7 +91,7 @@ func NewInboundHandler(decorator string, decoratorConfig map[string]*hubv1.Decor
 		metric.WithInstrumentationVersion(instrumentationVersion),
 	)
 	im := InboundMeters{
-		Attributes: []attribute.KeyValue{decoratorKey.String(decorator)},
+		Attributes: []attribute.KeyValue{decoratorKey.String(tlr.Selector.DecoratorName)},
 	}
 
 	// sentinel meters
@@ -157,6 +163,12 @@ func (h *InboundHandler) Meter() *InboundMeters {
 	return &h.meter
 }
 
+func (h *InboundHandler) SetQuotaServiceClient(quotaServiceClient hubv1.QuotaServiceClient) {
+	if h.qsc == nil {
+		h.qsc = quotaServiceClient
+	}
+}
+
 func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string) (context.Context, int) {
 	ctx := h.propagators.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
 	m0, _ := baggage.NewMember(string(debugBaggageKey), "TRUE")
@@ -183,7 +195,7 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string) (c
 			h.meter.BlockedCountByType.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(
 				append(h.meter.Attributes, attribute.Key(blockedTypeKey).String(b.BlockType().String()))...)}...)
 
-			// TODO: allow sentinel "customize block fallback" to override this 429 default
+			// TODO: create "customize block fallback" to allow overriding this 429 default
 			sc := http.StatusTooManyRequests // default `429 Too Many Request`
 
 			span.AddEvent("Stanza blocked", trace.WithAttributes(
@@ -208,8 +220,9 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string) (c
 		e.Exit() // cleanly exit the Sentinel Entry
 	}
 
-	if h.decoratorConfig[h.decorator].GetCheckQuota() {
-		fmt.Println("TODO: Enable InboundHandler QuotaChecks")
+	// Todo: Add Feature from baggage to TokenLeaseRequest (if exists)
+	if !checkQuota(h.apikey, h.decoratorConfig[h.decorator], h.qsc, h.tlr) {
+		return ctx, http.StatusTooManyRequests
 	}
 
 	sc := http.StatusOK
