@@ -1,6 +1,8 @@
 package logging
 
 import (
+	"os"
+
 	"go.uber.org/zap"
 )
 
@@ -8,7 +10,9 @@ import (
 
 // Debug prints messages about all internal changes in the SDK.
 func Debug(msg string, keysAndValues ...interface{}) {
-	zap.S().Debugw(msg, keysAndValues...)
+	if os.Getenv("STANZA_DEBUG") != "" {
+		zap.S().Debugw(msg, keysAndValues...)
+	}
 }
 
 // Info prints messages about the general state of the SDK.
