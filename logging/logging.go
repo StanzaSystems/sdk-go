@@ -10,7 +10,7 @@ import (
 
 // Debug prints messages about all internal changes in the SDK.
 func Debug(msg string, keysAndValues ...interface{}) {
-	if os.Getenv("STANZA_DEBUG") != "" {
+	if os.Getenv("STANZA_DEBUG") != "" || os.Getenv("STANZA_DEBUG_LOGGING") != "" {
 		zap.S().Debugw(msg, keysAndValues...)
 	}
 }
