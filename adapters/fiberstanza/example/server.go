@@ -101,6 +101,7 @@ func main() {
 		// optional component of a larger page, just skip rendering it.
 		//
 		// For example purposes we simple return the status code here.
+		c.SendString("Stanza Outbound Rate Limited")
 		return c.SendStatus(resp.StatusCode)
 	})
 

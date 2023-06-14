@@ -65,6 +65,7 @@ func Middleware(ctx context.Context, decorator string, opts ...Opt) fiber.Handle
 		}
 		ctx, status := h.VerifyServingCapacity(&req, c.Route().Path)
 		if status != http.StatusOK {
+			c.SendString("Stanza Inbound Rate Limited")
 			return c.SendStatus(status)
 		}
 		c.SetUserContext(ctx)
