@@ -41,7 +41,7 @@ var (
 //   the statistical distribution of tokens used by this client).
 // This poller should also remove expired tokens.
 
-func checkQuota(apikey string, dc *hubv1.DecoratorConfig, qsc hubv1.QuotaServiceClient, tlr *hubv1.GetTokenLeaseRequest) bool {
+func checkQuota(apikey string, dc *hubv1.DecoratorConfig, qsc hubv1.QuotaServiceClient, tlr *hubv1.GetTokenLeaseRequest) (bool, string) {
 	consumedLeasesInit.Do(func() {
 		ctx, _ := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 		go batchTokenConsumer(ctx, apikey, qsc)
@@ -93,15 +93,15 @@ func checkQuota(apikey string, dc *hubv1.DecoratorConfig, qsc hubv1.QuotaService
 			// - back off for one second, and then attempt to fetch quota for 1% of requests. If over 90% of those
 			//   requests are successful, ramp up to 5%, 10%, 25%, 50% and 100% over successive seconds.
 			//   Re-enablement should be logged at INFO.
-			return true // just fail open (for now)
+			return true, "" // just fail open (for now)
 		}
 		leases := resp.GetLeases()
 		if leases == nil {
 			logging.Error(fmt.Errorf("stanza-hub returned nil leases, failing open"))
-			return true // unexpected error! Leases should never be nil, fail open and return true (for now)
+			return true, "" // unexpected error! Leases should never be nil, fail open and return true (for now)
 		}
 		if len(leases) == 0 {
-			return false // not an error, there were no leases available
+			return false, "" // not an error, there were no leases available
 		}
 		if len(leases[1:]) > 0 {
 			logging.Debug("obtained new batch of cacheable leases",
@@ -121,8 +121,9 @@ func checkQuota(apikey string, dc *hubv1.DecoratorConfig, qsc hubv1.QuotaService
 
 		// Consume first token from leases (not cached, doesn't require locking)
 		go consumeLease(dec, leases[0])
+		return true, leases[0].Token
 	}
-	return true
+	return true, ""
 }
 
 func consumeLease(dec string, lease *hubv1.TokenLease) {
