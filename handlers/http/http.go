@@ -3,7 +3,10 @@ package http
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/StanzaSystems/sdk-go/logging"
@@ -15,7 +18,8 @@ const (
 	instrumentationName    = "github.com/StanzaSystems/sdk-go/handlers/http"
 	instrumentationVersion = "0.0.1" // TODO: stanza sdk-go version/build number to go here
 
-	MAX_QUOTA_WAIT = time.Duration(2) * time.Second
+	MAX_QUOTA_WAIT               = 1 * time.Second
+	BATCH_TOKEN_CONSUME_INTERVAL = 200 * time.Millisecond
 )
 
 var (
@@ -23,6 +27,10 @@ var (
 	cachedLeasesLock    = make(map[string]*sync.RWMutex)
 	cachedLeasesGranted = make(map[string]time.Time)
 	cachedLeasesRenew   = make(map[string]bool)
+
+	consumedLeases     = []string{}
+	consumedLeasesLock = &sync.RWMutex{}
+	consumedLeasesInit sync.Once
 )
 
 // TODO: Implement a background poller for renewing cached leases per SDK spec:
@@ -34,6 +42,11 @@ var (
 // This poller should also remove expired tokens.
 
 func checkQuota(apikey string, dc *hubv1.DecoratorConfig, qsc hubv1.QuotaServiceClient, tlr *hubv1.GetTokenLeaseRequest) bool {
+	consumedLeasesInit.Do(func() {
+		ctx, _ := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+		go batchTokenConsumer(ctx, apikey, qsc)
+	})
+
 	dec := tlr.Selector.GetDecoratorName()
 	if dc.GetCheckQuota() && qsc != nil {
 		if _, ok := cachedLeases[dec]; !ok {
@@ -92,7 +105,7 @@ func checkQuota(apikey string, dc *hubv1.DecoratorConfig, qsc hubv1.QuotaService
 		}
 		if len(leases[1:]) > 0 {
 			logging.Debug("obtained new batch of cacheable leases",
-				"decorator", tlr.Selector.GetDecoratorName(),
+				"decorator", dec,
 				"count", len(leases[1:]))
 			// lock
 			// cache extra leases
@@ -107,12 +120,56 @@ func checkQuota(apikey string, dc *hubv1.DecoratorConfig, qsc hubv1.QuotaService
 		// If yes, what to do in case of this error?
 
 		// Consume first token from leases (not cached, doesn't require locking)
-		go qsc.SetTokenLeaseConsumed(metadata.NewOutgoingContext(ctx, md), // TODO: implement batch token consuming
-			&hubv1.SetTokenLeaseConsumedRequest{Tokens: []string{leases[0].Token}})
-		logging.Debug("consumed quota lease",
-			"decorator", tlr.Selector.GetDecoratorName(),
-			"feature", leases[0].GetFeature(),
-			"priority", leases[0].GetPriorityBoost())
+		go consumeLease(dec, leases[0])
 	}
 	return true
+}
+
+func consumeLease(dec string, lease *hubv1.TokenLease) {
+	consumedLeasesLock.Lock()
+	consumedLeases = append(consumedLeases, lease.GetToken())
+	consumedLeasesLock.Unlock()
+	logging.Debug("consumed quota lease",
+		"decorator", dec,
+		"feature", lease.GetFeature(),
+		"priority", lease.GetPriorityBoost())
+}
+
+func batchTokenConsumer(ctx context.Context, apikey string, qsc hubv1.QuotaServiceClient) {
+	md := metadata.New(map[string]string{"x-stanza-key": apikey})
+	for {
+		select {
+		case <-ctx.Done():
+			if qsc != nil {
+				// (attempt to) flush consumed token leases to hub when we exit
+				ctx, cancel := context.WithTimeout(context.Background(), MAX_QUOTA_WAIT)
+				defer cancel()
+				qsc.SetTokenLeaseConsumed(metadata.NewOutgoingContext(ctx, md),
+					&hubv1.SetTokenLeaseConsumedRequest{Tokens: consumedLeases})
+			}
+			return
+		case <-time.After(BATCH_TOKEN_CONSUME_INTERVAL):
+			if qsc != nil {
+				consumedLeasesLock.Lock()
+				num := len(consumedLeases)
+				consumedLeasesLock.Unlock()
+				if num > 0 {
+					consumedLeasesLock.Lock()
+					consumeTokenReq := &hubv1.SetTokenLeaseConsumedRequest{Tokens: consumedLeases}
+					consumedLeases = []string{}
+					consumedLeasesLock.Unlock()
+
+					ctx, cancel := context.WithTimeout(context.Background(), MAX_QUOTA_WAIT)
+					defer cancel()
+					_, err := qsc.SetTokenLeaseConsumed(metadata.NewOutgoingContext(ctx, md), consumeTokenReq)
+					if err != nil {
+						consumedLeasesLock.Lock()
+						consumedLeases = append(consumedLeases, consumeTokenReq.Tokens...)
+						consumedLeasesLock.Unlock()
+						logging.Error(err)
+					}
+				}
+			}
+		}
+	}
 }
