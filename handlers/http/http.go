@@ -119,7 +119,7 @@ func checkQuota(apikey string, dc *hubv1.DecoratorConfig, qsc hubv1.QuotaService
 		// Should I check for leases[0].GetFeature() != tlr.Selector.GetFeatureName()?
 		// If yes, what to do in case of this error?
 
-		// Consume first token from leases (not cached, doesn't require locking)
+		// Consume first token from leases (not cached, so this doesn't require cachedLeasesLock)
 		go consumeLease(dec, leases[0])
 		return true, leases[0].Token
 	}

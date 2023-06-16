@@ -19,7 +19,9 @@ func NewOutboundHandler(ctx context.Context, method string, url string, body io.
 		return nil, err
 	}
 	if ok, token := checkQuota(apikey, decoratorConfig, qsc, tlr); ok {
-		req.Header.Add("X-Stanza-Token", token)
+		if token != "" {
+			req.Header.Add("X-Stanza-Token", token)
+		}
 		return http.DefaultClient.Do(req)
 	} else {
 		return &http.Response{
