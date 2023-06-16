@@ -151,10 +151,9 @@ func batchTokenConsumer(ctx context.Context, apikey string, qsc hubv1.QuotaServi
 		case <-time.After(BATCH_TOKEN_CONSUME_INTERVAL):
 			if qsc != nil {
 				consumedLeasesLock.Lock()
-				num := len(consumedLeases)
-				consumedLeasesLock.Unlock()
-				if num > 0 {
-					consumedLeasesLock.Lock()
+				if len(consumedLeases) == 0 {
+					consumedLeasesLock.Unlock()
+				} else {
 					consumeTokenReq := &hubv1.SetTokenLeaseConsumedRequest{Tokens: consumedLeases}
 					consumedLeases = []string{}
 					consumedLeasesLock.Unlock()
@@ -163,10 +162,12 @@ func batchTokenConsumer(ctx context.Context, apikey string, qsc hubv1.QuotaServi
 					defer cancel()
 					_, err := qsc.SetTokenLeaseConsumed(metadata.NewOutgoingContext(ctx, md), consumeTokenReq)
 					if err != nil {
+						// if our request failed, put leases back (so they will be attempted again later)
 						consumedLeasesLock.Lock()
 						consumedLeases = append(consumedLeases, consumeTokenReq.Tokens...)
 						consumedLeasesLock.Unlock()
 						logging.Error(err)
+						// TODO: add an exponential backoff sleep here?
 					}
 				}
 			}
