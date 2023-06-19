@@ -213,12 +213,14 @@ func cachedLeaseManager(apikey string, qsc hubv1.QuotaServiceClient) {
 					}
 				}
 
-				// Add additional leases waiting to be cached now
+				// Add any additional leases waiting to be cached now
 				waitingLeasesLock[dec].Lock()
-				newCache = append(newCache, waitingLeases[dec]...)
-				cachedLeaseCount += len(waitingLeases[dec])
-				cachedLeasesUsed[dec] = 0
-				waitingLeases[dec] = []*hubv1.TokenLease{}
+				if len(waitingLeases[dec]) > 0 {
+					newCache = append(newCache, waitingLeases[dec]...)
+					cachedLeaseCount += len(waitingLeases[dec])
+					cachedLeasesUsed[dec] = 0
+					waitingLeases[dec] = []*hubv1.TokenLease{}
+				}
 				waitingLeasesLock[dec].Unlock()
 
 				// Make a GetTokenLease request if >80% of our tokens are already used (or expiring soon)
