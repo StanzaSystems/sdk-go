@@ -2,7 +2,6 @@ package http
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"sync"
@@ -11,7 +10,9 @@ import (
 
 	"github.com/StanzaSystems/sdk-go/logging"
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
+
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -23,10 +24,9 @@ const (
 )
 
 var (
-	cachedLeases        = make(map[string][]*hubv1.TokenLease)
-	cachedLeasesLock    = make(map[string]*sync.RWMutex)
-	cachedLeasesGranted = make(map[string]time.Time)
-	cachedLeasesRenew   = make(map[string]bool)
+	cachedLeases      = make(map[string][]*hubv1.TokenLease)
+	cachedLeasesLock  = make(map[string]*sync.RWMutex)
+	cachedLeasesRenew = make(map[string]bool)
 
 	consumedLeases     = []string{}
 	consumedLeasesLock = &sync.RWMutex{}
@@ -52,24 +52,25 @@ func checkQuota(apikey string, dc *hubv1.DecoratorConfig, qsc hubv1.QuotaService
 		if _, ok := cachedLeases[dec]; !ok {
 			cachedLeases[dec] = []*hubv1.TokenLease{}
 			cachedLeasesLock[dec] = &sync.RWMutex{}
-			cachedLeasesGranted[dec] = time.Time{}
 			cachedLeasesRenew[dec] = false
 		}
 
 		if len(tlr.GetSelector().GetTags()) == 0 { // fully skip using cached leases if Quota Tags are specified
 			cachedLeasesLock[dec].Lock()
 			if len(cachedLeases[dec]) > 0 {
-				// do we have a cachedLease at the right Feature+PriorityBoost?
-				//      (priority_boost is less than or equal to the priority_boost of the current request)
-				//   check expiration: time.Now().Add(time.Duration(.GetDurationMsec()) * time.Millisecond)
-				//      consumeLease(dec, cachedLeases[dec][x])
-				//      newCache := append(cachedLeases[dec][:x], cachedLeases[dec][x+1:]...)
-				//      cachedLeases[dec] = newCache
-				//      cachedLeasesLock[dec].Unlock()
-				//      return true
-				logging.Debug("TODO: handle consuming of cached leases")
-
-				// don't worry about removing expired tokens, the background poller should handle this
+				for k, tl := range cachedLeases[dec] {
+					if tl.GetFeature() == tlr.GetSelector().GetFeatureName() {
+						if tl.GetPriorityBoost() <= tlr.GetPriorityBoost() {
+							if time.Now().Before(tl.GetExpiresAt().AsTime()) {
+								// we have a cached lease for the given feature, at the right priority, which hasn't expired
+								newCache := append(cachedLeases[dec][:k], cachedLeases[dec][k+1:]...)
+								cachedLeases[dec] = newCache
+								cachedLeasesLock[dec].Unlock()
+								return true, tl.Token
+							}
+						}
+					}
+				}
 			}
 			// No cached lease available for Feature+PriorityBoost; unlock and proceed to make a GetTokenLease request below
 			cachedLeasesLock[dec].Unlock()
@@ -80,8 +81,6 @@ func checkQuota(apikey string, dc *hubv1.DecoratorConfig, qsc hubv1.QuotaService
 		defer cancel()
 
 		resp, err := qsc.GetTokenLease(metadata.NewOutgoingContext(ctx, md), tlr)
-		fmt.Println(resp)
-		fmt.Println(err)
 		if err != nil {
 			logging.Error(err)
 			// TODO: Implement Error Handling as specified in SDK spec:
@@ -98,10 +97,6 @@ func checkQuota(apikey string, dc *hubv1.DecoratorConfig, qsc hubv1.QuotaService
 			return true, "" // just fail open (for now)
 		}
 		leases := resp.GetLeases()
-		if leases == nil {
-			logging.Error(fmt.Errorf("stanza-hub returned nil leases, failing open"))
-			return true, "" // unexpected error! Leases should never be nil, fail open and return true (for now)
-		}
 		if len(leases) == 0 {
 			return false, "" // not an error, there were no leases available
 		}
@@ -109,12 +104,12 @@ func checkQuota(apikey string, dc *hubv1.DecoratorConfig, qsc hubv1.QuotaService
 			logging.Debug("obtained new batch of cacheable leases",
 				"decorator", dec,
 				"count", len(leases[1:]))
-			// lock
-			// cache extra leases
-			//   cachedLeases[dec] = append(cachedLeases[dec], leases[1:])
-			//   cachedLeasesExpire[dec] = time.Now()
-			// unlock
-			// OR just throw all these leases into a queue to be added to the cache???
+			for _, lease := range leases {
+				lease.ExpiresAt = timestamppb.New(time.Now().Add(time.Duration(lease.DurationMsec) * time.Millisecond))
+			}
+			cachedLeasesLock[dec].Lock()
+			cachedLeases[dec] = append(cachedLeases[dec], leases[1:]...)
+			cachedLeasesLock[dec].Unlock()
 		}
 
 		// TODO:
