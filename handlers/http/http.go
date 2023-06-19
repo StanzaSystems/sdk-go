@@ -20,39 +20,46 @@ const (
 	instrumentationVersion = "0.0.1" // TODO: stanza sdk-go version/build number to go here
 
 	MAX_QUOTA_WAIT               = 1 * time.Second
-	BATCH_TOKEN_CONSUME_INTERVAL = 200 * time.Millisecond
+	CACHED_LEASE_CHECK_INTERVAL  = 100 * time.Millisecond // TODO: what should this be set to?
+	BATCH_TOKEN_CONSUME_INTERVAL = 200 * time.Millisecond // TODO: what should this be set to?
 )
 
 var (
-	cachedLeases      = make(map[string][]*hubv1.TokenLease)
-	cachedLeasesLock  = make(map[string]*sync.RWMutex)
-	cachedLeasesRenew = make(map[string]bool)
+	waitingLeases     = make(map[string][]*hubv1.TokenLease)
+	waitingLeasesLock = make(map[string]*sync.RWMutex)
+
+	cachedLeases     = make(map[string][]*hubv1.TokenLease)
+	cachedLeasesLock = make(map[string]*sync.RWMutex)
+	cachedLeasesUsed = make(map[string]int)
+	cachedLeasesReq  = make(map[string]*hubv1.GetTokenLeaseRequest)
+	cachedLeasesInit sync.Once
 
 	consumedLeases     = []string{}
 	consumedLeasesLock = &sync.RWMutex{}
 	consumedLeasesInit sync.Once
 )
 
-// TODO: Implement a background poller for renewing cached leases per SDK spec:
-//   When most cached tokens have been used (80% of allocated tokens) OR most (80% or more) of the cached tokens are
-//   within 2 seconds of expiry, then another call to GetTokenLease must be performed and additional tokens stored
-//   locally for use. Background calls such as these should specify only the Decorator name and client ID, and omit
-//   the remaining parameters to the GetTokenLease endpoint (the Stanza Hub will return a set of tokens that matches
-//   the statistical distribution of tokens used by this client).
-// This poller should also remove expired tokens.
-
 func checkQuota(apikey string, dc *hubv1.DecoratorConfig, qsc hubv1.QuotaServiceClient, tlr *hubv1.GetTokenLeaseRequest) (bool, string) {
-	consumedLeasesInit.Do(func() {
-		ctx, _ := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-		go batchTokenConsumer(ctx, apikey, qsc)
-	})
+	// Start a background batch token consumer (the first time checkQuota is called)
+	consumedLeasesInit.Do(func() { go batchTokenConsumer(apikey, qsc) })
 
 	dec := tlr.Selector.GetDecoratorName()
 	if dc.GetCheckQuota() && qsc != nil {
 		if _, ok := cachedLeases[dec]; !ok {
 			cachedLeases[dec] = []*hubv1.TokenLease{}
 			cachedLeasesLock[dec] = &sync.RWMutex{}
-			cachedLeasesRenew[dec] = false
+			cachedLeasesUsed[dec] = 0
+			cachedLeasesReq[dec] = &hubv1.GetTokenLeaseRequest{
+				Selector: &hubv1.DecoratorFeatureSelector{
+					Environment:   tlr.Selector.GetEnvironment(),
+					DecoratorName: tlr.Selector.GetDecoratorName(),
+				},
+				ClientId: tlr.ClientId,
+			}
+		}
+		if _, ok := waitingLeases[dec]; !ok {
+			waitingLeases[dec] = []*hubv1.TokenLease{}
+			waitingLeasesLock[dec] = &sync.RWMutex{}
 		}
 
 		if len(tlr.GetSelector().GetTags()) == 0 { // fully skip using cached leases if Quota Tags are specified
@@ -65,6 +72,7 @@ func checkQuota(apikey string, dc *hubv1.DecoratorConfig, qsc hubv1.QuotaService
 								// we have a cached lease for the given feature, at the right priority, which hasn't expired
 								newCache := append(cachedLeases[dec][:k], cachedLeases[dec][k+1:]...)
 								cachedLeases[dec] = newCache
+								cachedLeasesUsed[dec] += 1
 								cachedLeasesLock[dec].Unlock()
 								return true, tl.Token
 							}
@@ -101,22 +109,23 @@ func checkQuota(apikey string, dc *hubv1.DecoratorConfig, qsc hubv1.QuotaService
 			return false, "" // not an error, there were no leases available
 		}
 		if len(leases[1:]) > 0 {
-			logging.Debug("obtained new batch of cacheable leases",
-				"decorator", dec,
-				"count", len(leases[1:]))
-			for _, lease := range leases {
-				lease.ExpiresAt = timestamppb.New(time.Now().Add(time.Duration(lease.DurationMsec) * time.Millisecond))
+			// Start a background cached lease manager (the first time we get extra leases from Stanza Hub)
+			cachedLeasesInit.Do(func() { go cachedLeaseManager(apikey, qsc) })
+
+			logging.Debug("obtained new batch of cacheable leases", "decorator", dec, "count", len(leases[1:]))
+			for _, lease := range leases[1:] {
+				if lease.ExpiresAt == nil {
+					lease.ExpiresAt = timestamppb.New(time.Now().Add(time.Duration(lease.DurationMsec) * time.Millisecond))
+				}
 			}
-			cachedLeasesLock[dec].Lock()
-			cachedLeases[dec] = append(cachedLeases[dec], leases[1:]...)
-			cachedLeasesLock[dec].Unlock()
+			// use a separate "waiting leases" lock here as we don't need/want to block a request on contention for
+			// the higher volume / harder to get "cached leases" lock
+			waitingLeasesLock[dec].Lock()
+			waitingLeases[dec] = append(waitingLeases[dec], leases[1:]...)
+			waitingLeasesLock[dec].Unlock()
 		}
 
-		// TODO:
-		// Should I check for leases[0].GetFeature() != tlr.Selector.GetFeatureName()?
-		// If yes, what to do in case of this error?
-
-		// Consume first token from leases (not cached, so this doesn't require cachedLeasesLock)
+		// Consume first token from leases (not cached, so this doesn't require the cached leases lock)
 		go consumeLease(dec, leases[0])
 		return true, leases[0].Token
 	}
@@ -133,7 +142,8 @@ func consumeLease(dec string, lease *hubv1.TokenLease) {
 		"priority", lease.GetPriorityBoost())
 }
 
-func batchTokenConsumer(ctx context.Context, apikey string, qsc hubv1.QuotaServiceClient) {
+func batchTokenConsumer(apikey string, qsc hubv1.QuotaServiceClient) {
+	ctx, _ := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	md := metadata.New(map[string]string{"x-stanza-key": apikey})
 	for {
 		select {
@@ -168,6 +178,62 @@ func batchTokenConsumer(ctx context.Context, apikey string, qsc hubv1.QuotaServi
 						// TODO: add an exponential backoff sleep here?
 					}
 				}
+			}
+		}
+	}
+}
+
+func cachedLeaseManager(apikey string, qsc hubv1.QuotaServiceClient) {
+	ctx, _ := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	md := metadata.New(map[string]string{"x-stanza-key": apikey})
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(CACHED_LEASE_CHECK_INTERVAL):
+			for dec := range cachedLeases {
+				cachedLeasesLock[dec].Lock()
+				newCache := []*hubv1.TokenLease{}
+				cachedLeaseCount := len(cachedLeases[dec])
+				expiringLeaseCount := 0
+
+				// Check for and remove any expired leases
+				for k, tl := range cachedLeases[dec] {
+					if time.Now().Before(tl.GetExpiresAt().AsTime()) {
+						newCache = append(newCache, cachedLeases[dec][k])
+						cachedLeasesUsed[dec] += 1
+					}
+				}
+
+				// Check for number of leases within 2 seconds of expiring
+				for _, tl := range newCache {
+					if time.Now().Before(tl.GetExpiresAt().AsTime().Add(-2 * time.Second)) {
+						expiringLeaseCount += 1
+					}
+				}
+
+				// Add additional leases waiting to be cached now
+				waitingLeasesLock[dec].Lock()
+				newCache = append(newCache, waitingLeases[dec]...)
+				cachedLeaseCount += len(waitingLeases[dec])
+				waitingLeases[dec] = []*hubv1.TokenLease{}
+				waitingLeasesLock[dec].Unlock()
+
+				// Make a GetTokenLease request if >80% of our tokens are already used (or expiring soon)
+				if qsc != nil {
+					if float32((cachedLeaseCount-expiringLeaseCount)/(cachedLeaseCount+cachedLeasesUsed[dec])) < 0.2 {
+						resp, err := qsc.GetTokenLease(metadata.NewOutgoingContext(ctx, md), cachedLeasesReq[dec])
+						if err != nil {
+							logging.Error(err)
+						}
+						if len(resp.GetLeases()) > 0 {
+							newCache = append(newCache, resp.GetLeases()...)
+							cachedLeasesUsed[dec] = 0
+						}
+					}
+				}
+				cachedLeases[dec] = newCache
+				cachedLeasesLock[dec].Unlock()
 			}
 		}
 	}
