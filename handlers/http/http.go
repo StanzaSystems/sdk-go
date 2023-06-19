@@ -61,10 +61,10 @@ func checkQuota(apikey string, dc *hubv1.DecoratorConfig, qsc hubv1.QuotaService
 			if len(cachedLeases[dec]) > 0 {
 				// do we have a cachedLease at the right Feature+PriorityBoost?
 				//      (priority_boost is less than or equal to the priority_boost of the current request)
-				//   check expiration: time.Now().Add(time.Duration(cachedLeases[dec][x].GetDurationMsec()) * time.Millisecond)
-				//      consume token
-				//          (The SetTokenLeaseConsumed endpoint will accept multiple tokens for batching notifications.)
-				//      remove from token cache
+				//   check expiration: time.Now().Add(time.Duration(.GetDurationMsec()) * time.Millisecond)
+				//      consumeLease(dec, cachedLeases[dec][x])
+				//      newCache := append(cachedLeases[dec][:x], cachedLeases[dec][x+1:]...)
+				//      cachedLeases[dec] = newCache
 				//      cachedLeasesLock[dec].Unlock()
 				//      return true
 				logging.Debug("TODO: handle consuming of cached leases")
@@ -80,6 +80,8 @@ func checkQuota(apikey string, dc *hubv1.DecoratorConfig, qsc hubv1.QuotaService
 		defer cancel()
 
 		resp, err := qsc.GetTokenLease(metadata.NewOutgoingContext(ctx, md), tlr)
+		fmt.Println(resp)
+		fmt.Println(err)
 		if err != nil {
 			logging.Error(err)
 			// TODO: Implement Error Handling as specified in SDK spec:

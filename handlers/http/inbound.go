@@ -221,7 +221,7 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string) (c
 	}
 
 	// Todo: Add Feature from baggage to TokenLeaseRequest (if exists)
-	if ok, _ := checkQuota(h.apikey, h.decoratorConfig[h.decorator], h.qsc, h.tlr); ok {
+	if ok, _ := checkQuota(h.apikey, h.decoratorConfig[h.decorator], h.qsc, h.tlr); !ok {
 		return ctx, http.StatusTooManyRequests
 	}
 
