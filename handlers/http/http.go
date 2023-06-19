@@ -20,7 +20,7 @@ const (
 	instrumentationVersion = "0.0.1" // TODO: stanza sdk-go version/build number to go here
 
 	MAX_QUOTA_WAIT               = 1 * time.Second
-	CACHED_LEASE_CHECK_INTERVAL  = 100 * time.Millisecond // TODO: what should this be set to?
+	CACHED_LEASE_CHECK_INTERVAL  = 200 * time.Millisecond // TODO: what should this be set to?
 	BATCH_TOKEN_CONSUME_INTERVAL = 200 * time.Millisecond // TODO: what should this be set to?
 )
 
@@ -201,6 +201,7 @@ func cachedLeaseManager(apikey string, qsc hubv1.QuotaServiceClient) {
 				for k, tl := range cachedLeases[dec] {
 					if time.Now().Before(tl.GetExpiresAt().AsTime()) {
 						newCache = append(newCache, cachedLeases[dec][k])
+					} else {
 						cachedLeasesUsed[dec] += 1
 					}
 				}
@@ -216,22 +217,30 @@ func cachedLeaseManager(apikey string, qsc hubv1.QuotaServiceClient) {
 				waitingLeasesLock[dec].Lock()
 				newCache = append(newCache, waitingLeases[dec]...)
 				cachedLeaseCount += len(waitingLeases[dec])
+				cachedLeasesUsed[dec] = 0
 				waitingLeases[dec] = []*hubv1.TokenLease{}
 				waitingLeasesLock[dec].Unlock()
 
 				// Make a GetTokenLease request if >80% of our tokens are already used (or expiring soon)
 				if qsc != nil {
 					if float32((cachedLeaseCount-expiringLeaseCount)/(cachedLeaseCount+cachedLeasesUsed[dec])) < 0.2 {
-						resp, err := qsc.GetTokenLease(metadata.NewOutgoingContext(ctx, md), cachedLeasesReq[dec])
-						if err != nil {
-							logging.Error(err)
-						}
-						if len(resp.GetLeases()) > 0 {
-							newCache = append(newCache, resp.GetLeases()...)
-							cachedLeasesUsed[dec] = 0
-						}
+						go func() {
+							ctx, cancel := context.WithTimeout(context.Background(), CACHED_LEASE_CHECK_INTERVAL)
+							defer cancel()
+							resp, err := qsc.GetTokenLease(metadata.NewOutgoingContext(ctx, md), cachedLeasesReq[dec])
+							if err != nil {
+								logging.Error(err)
+							}
+							if len(resp.GetLeases()) > 0 {
+								waitingLeasesLock[dec].Lock()
+								waitingLeases[dec] = append(waitingLeases[dec], resp.GetLeases()...)
+								waitingLeasesLock[dec].Unlock()
+							}
+						}()
 					}
 				}
+
+				// Update the cached leases store
 				cachedLeases[dec] = newCache
 				cachedLeasesLock[dec].Unlock()
 			}
