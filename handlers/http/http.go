@@ -139,7 +139,8 @@ func consumeLease(dec string, lease *hubv1.TokenLease) {
 	logging.Debug("consumed quota lease",
 		"decorator", dec,
 		"feature", lease.GetFeature(),
-		"priority", lease.GetPriorityBoost())
+		"weight", lease.GetWeight(),
+		"priority_boost", lease.GetPriorityBoost())
 }
 
 func batchTokenConsumer(apikey string, qsc hubv1.QuotaServiceClient) {
