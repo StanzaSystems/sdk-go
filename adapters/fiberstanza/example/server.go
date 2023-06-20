@@ -6,6 +6,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -16,6 +18,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"google.golang.org/grpc/metadata"
 )
 
 const (
@@ -71,7 +74,7 @@ func main() {
 	// middleware: logging
 	app.Use(fiberzap.New(fiberzap.Config{Logger: zap.L()}))
 
-	// middleware: stanza
+	// middleware: stanza inbound decorator
 	app.Use(fiberstanza.Middleware(ctx, "RootDecorator"))
 
 	// healthcheck
@@ -82,26 +85,67 @@ func main() {
 	// Use ZenQuotes to get a random quote
 	app.Get("/", func(c *fiber.Ctx) error {
 		// resp, err := http.Get("https://zenquotes.io/api/random") // before Stanza looks like this
+
+		// stanza outbound decorator
 		resp, _ := fiberstanza.HttpGet(ctx, "https://zenquotes.io/api/random",
 			fiberstanza.Decorate("ZenQuotes", fiberstanza.GetFeatureFromContext(c)))
-
 		defer resp.Body.Close()
+
+		// Success! 🎉
+		// Our outbound HTTP request succeeded, this is the "happy path"!
 		if resp.StatusCode == http.StatusOK {
-			// Success! 🎉
-			// Our outbound HTTP request succeeded, this is the "happy path"!
 			json.NewDecoder(resp.Body).Decode(&zq)
 			return c.SendString("❝" + zq[0].Q + "❞ -" + zq[0].A + "\n")
 		}
 
 		// Failure. 😭
 		// Consider how you want to handle this case! This could be a "429 Too Many Requests"
-		// (you can check for this explicitly) or it could be a transient 5xx. Either way we don't
+		// (which we check for explicitly) or it could be a transient 5xx. Either way we don't
 		// have the response we were hoping for and we have to decide how to handle it. You might
 		// consider displaying a user friendly "Something went wrong!" message, or if this is an
 		// optional component of a larger page, just skip rendering it.
 		//
-		// For example purposes we simple return the status code here.
-		c.SendString("Stanza Outbound Rate Limited")
+		// For example purposes we send a custom message in the body if it was rate limited.
+		if resp.StatusCode == http.StatusTooManyRequests {
+			c.SendString("Stanza Outbound Rate Limited")
+		}
+		return c.SendStatus(resp.StatusCode)
+	})
+
+	// Get account information from GitHub
+	app.Get("/account/:username", func(c *fiber.Ctx) error {
+		// Set outbound request priority boost based on `X-User-Plan` request header
+		opt := fiberstanza.Opt{PriorityBoost: 0, DefaultWeight: 1}
+		if plan, ok := c.GetReqHeaders()["X-User-Plan"]; ok {
+			if plan == "free" {
+				opt.PriorityBoost -= 1
+			} else if plan == "enterprise" {
+				opt.PriorityBoost += 1
+			}
+		}
+
+		// Use GITHUB_PAT environment variable as bearer token
+		md := metadata.New(map[string]string{"Authorization": fmt.Sprintf("Bearer %s", os.Getenv("GITHUB_PAT"))})
+
+		// Decorate outbound github.com request with GithubGuard
+		resp, err := fiberstanza.HttpGet(metadata.NewOutgoingContext(ctx, md),
+			fmt.Sprintf("https://api.github.com/users/%s", c.Params("username")),
+			fiberstanza.Decorate("GithubGuard", fiberstanza.GetFeatureFromContext(c), opt))
+		if err != nil {
+			logger.Error("GithubGuard", zap.Error(err))
+		}
+		defer resp.Body.Close()
+
+		// Success! 🎉
+		if resp.StatusCode == http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			return c.Send(body)
+		}
+
+		// Failure. 😭
+		if resp.StatusCode == http.StatusTooManyRequests {
+			c.SendString("Stanza Outbound Rate Limited")
+		}
 		return c.SendStatus(resp.StatusCode)
 	})
 
