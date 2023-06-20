@@ -88,6 +88,11 @@ func HttpPost(ctx context.Context, url string, body io.Reader, tlr *hubv1.GetTok
 	return stanza.NewHttpOutboundHandler(ctx, http.MethodPost, url, body, tlr)
 }
 
+// Add Headers to Context
+func WithHeaders(ctx context.Context, headers map[string]string) context.Context {
+	return context.WithValue(ctx, "StanzaOutboundHeaders", headers)
+}
+
 // Decorate is a fiberstanza helper function
 func Decorate(decorator string, feature string, opts ...Opt) *hubv1.GetTokenLeaseRequest {
 	dfs := &hubv1.DecoratorFeatureSelector{DecoratorName: decorator}

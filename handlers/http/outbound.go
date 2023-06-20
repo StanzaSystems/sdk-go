@@ -15,6 +15,12 @@ import (
 
 func NewOutboundHandler(ctx context.Context, method string, url string, body io.Reader, apikey string, decoratorConfig *hubv1.DecoratorConfig, qsc hubv1.QuotaServiceClient, tlr *hubv1.GetTokenLeaseRequest) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	headers := ctx.Value("StanzaOutboundHeaders")
+	if headers != nil {
+		for k, v := range headers.(map[string]string) {
+			req.Header.Set(k, v)
+		}
+	}
 	if err != nil {
 		return nil, err
 	}

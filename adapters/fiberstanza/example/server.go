@@ -18,7 +18,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"google.golang.org/grpc/metadata"
 )
 
 const (
@@ -124,11 +123,14 @@ func main() {
 			}
 		}
 
-		// Use GITHUB_PAT environment variable as bearer token
-		md := metadata.New(map[string]string{"Authorization": fmt.Sprintf("Bearer %s", os.Getenv("GITHUB_PAT"))})
+		// Optional add Headers to be sent with the outbound HTTP request
+		// Here we use the GITHUB_PAT environment variable as an Authorization bearer token
+		headers := make(map[string]string)
+		headers["Authorization"] = fmt.Sprintf("Bearer %s", os.Getenv("GITHUB_PAT"))
 
 		// Decorate outbound github.com request with GithubGuard
-		resp, err := fiberstanza.HttpGet(metadata.NewOutgoingContext(ctx, md),
+		resp, err := fiberstanza.HttpGet(
+			fiberstanza.WithHeaders(ctx, headers),
 			fmt.Sprintf("https://api.github.com/users/%s", c.Params("username")),
 			fiberstanza.Decorate("GithubGuard", fiberstanza.GetFeatureFromContext(c), opt))
 		if err != nil {
