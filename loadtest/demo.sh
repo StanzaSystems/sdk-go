@@ -21,7 +21,8 @@ then
     duration="30s"
     rate="10/s"
 
-    url="http://localhost:3000/image"
+    # https://ca.slack-edge.com/T029RQSE6-U014D01R5U6-1efa53dd27be-72
+    url="http://localhost:3000/test/aHR0cHM6Ly9jYS5zbGFjay1lZGdlLmNvbS9UMDI5UlFTRTYtVTAxNEQwMVI1VTYtMWVmYTUzZGQyN2JlLTcy"
     cmd="vegeta attack -duration=${duration} -rate=${rate}"
 
     rm *.gob &>/dev/null

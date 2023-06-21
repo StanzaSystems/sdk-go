@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -84,6 +85,55 @@ func main() {
 		return c.SendString("OK")
 	})
 
+	// Test a given URL to see when it rate limits
+	app.Get("/test/:url", func(c *fiber.Ctx) error {
+		url, err := base64.StdEncoding.DecodeString(c.Params("url"))
+		if err != nil {
+			logger.Error("StressTest", zap.Error(err))
+			return c.SendStatus(http.StatusTeapot)
+		}
+
+		// Set outbound request priority boost based on `X-User-Plan` request header
+		opt := fiberstanza.Opt{PriorityBoost: 0, DefaultWeight: 1}
+		if plan, ok := c.GetReqHeaders()["X-User-Plan"]; ok {
+			if plan == "free" {
+				opt.PriorityBoost -= 1
+			} else if plan == "enterprise" {
+				opt.PriorityBoost += 1
+			}
+		}
+
+		// Add Headers to be sent with the outbound HTTP request
+		headers := make(map[string]string)
+		headers["Referer"] = "https://gophers.slack.com/messages"
+		headers["User-Agent"] = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0"
+
+		// Decorate outbound request with ImageGuard
+		resp, err := fiberstanza.HttpGet(ctx, string(url),
+			fiberstanza.Decorate("StressTest", fiberstanza.GetFeatureFromContext(c), opt))
+		if err != nil {
+			logger.Error("StressTest", zap.Error(err))
+			if resp != nil && resp.StatusCode >= 400 {
+				return c.SendStatus(resp.StatusCode)
+			}
+			// Use a 503 in the face of errors without a proper error code
+			return c.SendStatus(http.StatusServiceUnavailable)
+		}
+		defer resp.Body.Close()
+
+		// Success! 🎉
+		if resp.StatusCode == http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			return c.SendString(fmt.Sprint(binary.Size(body)))
+		}
+
+		// Failure. 😭
+		if resp.StatusCode == http.StatusTooManyRequests {
+			c.SendString("Stanza Outbound Rate Limited")
+		}
+		return c.SendStatus(resp.StatusCode)
+	})
+
 	// Use ZenQuotes to get a random quote
 	app.Get("/quote", func(c *fiber.Ctx) error {
 		// resp, err := http.Get("https://zenquotes.io/api/random") // before Stanza looks like this
@@ -108,50 +158,6 @@ func main() {
 		// optional component of a larger page, just skip rendering it.
 		//
 		// For example purposes we send a custom message in the body if it was rate limited.
-		if resp.StatusCode == http.StatusTooManyRequests {
-			c.SendString("Stanza Outbound Rate Limited")
-		}
-		return c.SendStatus(resp.StatusCode)
-	})
-
-	// Get an image from a CDN
-	app.Get("/image", func(c *fiber.Ctx) error {
-		// Set outbound request priority boost based on `X-User-Plan` request header
-		opt := fiberstanza.Opt{PriorityBoost: 0, DefaultWeight: 1}
-		if plan, ok := c.GetReqHeaders()["X-User-Plan"]; ok {
-			if plan == "free" {
-				opt.PriorityBoost -= 1
-			} else if plan == "enterprise" {
-				opt.PriorityBoost += 1
-			}
-		}
-
-		// Add Headers to be sent with the outbound HTTP request
-		headers := make(map[string]string)
-		headers["Referer"] = "https://gophers.slack.com/messages"
-		headers["User-Agent"] = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0"
-
-		// Decorate outbound request with ImageGuard
-		resp, err := fiberstanza.HttpGet(ctx,
-			"https://ca.slack-edge.com/T029RQSE6-U014D01R5U6-1efa53dd27be",
-			fiberstanza.Decorate("ImageGuard", fiberstanza.GetFeatureFromContext(c), opt))
-		if err != nil {
-			logger.Error("ImageGuard", zap.Error(err))
-			if resp != nil && resp.StatusCode >= 400 {
-				return c.SendStatus(resp.StatusCode)
-			}
-			// Use a 503 in the face of errors without a proper error code
-			return c.SendStatus(http.StatusServiceUnavailable)
-		}
-		defer resp.Body.Close()
-
-		// Success! 🎉
-		if resp.StatusCode == http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			return c.SendString(fmt.Sprint(binary.Size(body)))
-		}
-
-		// Failure. 😭
 		if resp.StatusCode == http.StatusTooManyRequests {
 			c.SendString("Stanza Outbound Rate Limited")
 		}
