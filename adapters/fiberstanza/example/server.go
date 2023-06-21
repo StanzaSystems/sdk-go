@@ -85,7 +85,7 @@ func main() {
 	})
 
 	// Use ZenQuotes to get a random quote
-	app.Get("/", func(c *fiber.Ctx) error {
+	app.Get("/quote", func(c *fiber.Ctx) error {
 		// resp, err := http.Get("https://zenquotes.io/api/random") // before Stanza looks like this
 
 		// stanza outbound decorator
@@ -114,8 +114,8 @@ func main() {
 		return c.SendStatus(resp.StatusCode)
 	})
 
-	// Get account information from GitHub
-	app.Get("/account/:username", func(c *fiber.Ctx) error {
+	// Get user information from GitHub
+	app.Get("/github/:username", func(c *fiber.Ctx) error {
 		// Set outbound request priority boost based on `X-User-Plan` request header
 		opt := fiberstanza.Opt{PriorityBoost: 0, DefaultWeight: 1}
 		if plan, ok := c.GetReqHeaders()["X-User-Plan"]; ok {
@@ -198,7 +198,6 @@ func main() {
 		// Success! 🎉
 		if resp.StatusCode == http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
-			// logging.Debug("Google", "url", resp.Request.URL, "content-length", binary.Size(body))
 			return c.SendString(fmt.Sprintf("%s %d", word, binary.Size(body)))
 		}
 
