@@ -5,17 +5,21 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/StanzaSystems/sdk-go/adapters/fiberstanza"
+	"github.com/StanzaSystems/sdk-go/logging"
 	"github.com/gofiber/contrib/fiberzap"
 	"github.com/gofiber/fiber/v2"
+	"github.com/tjarratt/babble"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -147,6 +151,56 @@ func main() {
 		if resp.StatusCode == http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
 			return c.Send(body)
+		}
+
+		// Failure. 😭
+		if resp.StatusCode == http.StatusTooManyRequests {
+			c.SendString("Stanza Outbound Rate Limited")
+		}
+		return c.SendStatus(resp.StatusCode)
+	})
+
+	// Search Google for a random word
+	app.Get("/search", func(c *fiber.Ctx) error {
+		// Set outbound request priority boost based on `X-User-Plan` request header
+		opt := fiberstanza.Opt{PriorityBoost: 0, DefaultWeight: 1}
+		if plan, ok := c.GetReqHeaders()["X-User-Plan"]; ok {
+			if plan == "free" {
+				opt.PriorityBoost -= 1
+			} else if plan == "enterprise" {
+				opt.PriorityBoost += 1
+			}
+		}
+
+		// Get a random word
+		babbler := babble.NewBabbler()
+		babbler.Count = 1
+		word := strings.TrimSuffix(babbler.Babble(), "'s")
+
+		// Add Headers to be sent with the outbound HTTP request
+		headers := make(map[string]string)
+		headers["Referer"] = "https://developer.mozilla.org/en-US/docs/Web/JavaScript"
+		headers["User-Agent"] = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0"
+
+		// Decorate outbound google.com request with GoogleSearch
+		resp, err := fiberstanza.HttpGet(ctx,
+			fmt.Sprintf("https://www.google.com/search?q=%s", word),
+			fiberstanza.Decorate("GoogleSearch", fiberstanza.GetFeatureFromContext(c), opt))
+		if err != nil {
+			logger.Error("GoogleSearch", zap.Error(err))
+			if resp != nil && resp.StatusCode != 0 {
+				c.SendStatus(resp.StatusCode)
+			}
+			// Use a 503 in the face of errors without an otherwise specified status code
+			c.SendStatus(http.StatusServiceUnavailable)
+		}
+		defer resp.Body.Close()
+
+		// Success! 🎉
+		if resp.StatusCode == http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			logging.Debug("Google", "url", resp.Request.URL, "content-length", binary.Size(body))
+			return c.SendString(fmt.Sprintf("%s %d", word, binary.Size(body)))
 		}
 
 		// Failure. 😭
