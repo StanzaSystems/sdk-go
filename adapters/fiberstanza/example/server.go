@@ -16,7 +16,6 @@ import (
 	"syscall"
 
 	"github.com/StanzaSystems/sdk-go/adapters/fiberstanza"
-	"github.com/StanzaSystems/sdk-go/logging"
 	"github.com/gofiber/contrib/fiberzap"
 	"github.com/gofiber/fiber/v2"
 	"github.com/tjarratt/babble"
@@ -139,11 +138,11 @@ func main() {
 			fiberstanza.Decorate("GithubGuard", fiberstanza.GetFeatureFromContext(c), opt))
 		if err != nil {
 			logger.Error("GithubGuard", zap.Error(err))
-			if resp != nil && resp.StatusCode != 0 {
-				c.SendStatus(resp.StatusCode)
+			if resp != nil && resp.StatusCode >= 400 {
+				return c.SendStatus(resp.StatusCode)
 			}
 			// Use a 503 in the face of errors without an otherwise specified status code
-			c.SendStatus(http.StatusServiceUnavailable)
+			return c.SendStatus(http.StatusServiceUnavailable)
 		}
 		defer resp.Body.Close()
 
@@ -188,19 +187,63 @@ func main() {
 			fiberstanza.Decorate("GoogleSearch", fiberstanza.GetFeatureFromContext(c), opt))
 		if err != nil {
 			logger.Error("GoogleSearch", zap.Error(err))
-			if resp != nil && resp.StatusCode != 0 {
-				c.SendStatus(resp.StatusCode)
+			if resp != nil && resp.StatusCode >= 400 {
+				return c.SendStatus(resp.StatusCode)
 			}
-			// Use a 503 in the face of errors without an otherwise specified status code
-			c.SendStatus(http.StatusServiceUnavailable)
+			// Use a 503 in the face of errors without a proper error code
+			return c.SendStatus(http.StatusServiceUnavailable)
 		}
 		defer resp.Body.Close()
 
 		// Success! 🎉
 		if resp.StatusCode == http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
-			logging.Debug("Google", "url", resp.Request.URL, "content-length", binary.Size(body))
+			// logging.Debug("Google", "url", resp.Request.URL, "content-length", binary.Size(body))
 			return c.SendString(fmt.Sprintf("%s %d", word, binary.Size(body)))
+		}
+
+		// Failure. 😭
+		if resp.StatusCode == http.StatusTooManyRequests {
+			c.SendString("Stanza Outbound Rate Limited")
+		}
+		return c.SendStatus(resp.StatusCode)
+	})
+
+	// Get an image from a CDN
+	app.Get("/image", func(c *fiber.Ctx) error {
+		// Set outbound request priority boost based on `X-User-Plan` request header
+		opt := fiberstanza.Opt{PriorityBoost: 0, DefaultWeight: 1}
+		if plan, ok := c.GetReqHeaders()["X-User-Plan"]; ok {
+			if plan == "free" {
+				opt.PriorityBoost -= 1
+			} else if plan == "enterprise" {
+				opt.PriorityBoost += 1
+			}
+		}
+
+		// Add Headers to be sent with the outbound HTTP request
+		headers := make(map[string]string)
+		headers["Referer"] = "https://gophers.slack.com/messages"
+		headers["User-Agent"] = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0"
+
+		// Decorate outbound request with ImageGuard
+		resp, err := fiberstanza.HttpGet(ctx,
+			"https://ca.slack-edge.com/T029RQSE6-U014D01R5U6-1efa53dd27be",
+			fiberstanza.Decorate("ImageGuard", fiberstanza.GetFeatureFromContext(c), opt))
+		if err != nil {
+			logger.Error("ImageGuard", zap.Error(err))
+			if resp != nil && resp.StatusCode >= 400 {
+				return c.SendStatus(resp.StatusCode)
+			}
+			// Use a 503 in the face of errors without a proper error code
+			return c.SendStatus(http.StatusServiceUnavailable)
+		}
+		defer resp.Body.Close()
+
+		// Success! 🎉
+		if resp.StatusCode == http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			return c.SendString(fmt.Sprint(binary.Size(body)))
 		}
 
 		// Failure. 😭

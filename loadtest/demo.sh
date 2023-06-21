@@ -18,11 +18,10 @@ function spinner() {
 
 if [ -x $(which vegata) ]
 then
-    # TODO: make duration and rate overrideable
-    duration="60s"
+    duration="30s"
     rate="10/s"
 
-    url="http://localhost:3000/account/sre-is-msg"
+    url="http://localhost:3000/image"
     cmd="vegeta attack -duration=${duration} -rate=${rate}"
 
     rm *.gob &>/dev/null
