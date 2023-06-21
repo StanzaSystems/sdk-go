@@ -135,6 +135,11 @@ func main() {
 			fiberstanza.Decorate("GithubGuard", fiberstanza.GetFeatureFromContext(c), opt))
 		if err != nil {
 			logger.Error("GithubGuard", zap.Error(err))
+			if resp != nil && resp.StatusCode != 0 {
+				c.SendStatus(resp.StatusCode)
+			}
+			// Use a 503 in the face of errors without an otherwise specified status code
+			c.SendStatus(http.StatusServiceUnavailable)
 		}
 		defer resp.Body.Close()
 
