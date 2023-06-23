@@ -65,6 +65,7 @@ func main() {
 			Name:        name,
 			Release:     release,
 			Environment: environment,
+			// StanzaHub:   "hub.demo.getstanza.io:9020",
 		})
 	defer stanzaExit()
 	if stanzaInitErr != nil {

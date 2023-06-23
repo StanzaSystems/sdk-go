@@ -22,7 +22,9 @@ then
     rate="10/s"
 
     # https://ca.slack-edge.com/T029RQSE6-U014D01R5U6-1efa53dd27be-72
-    url="http://localhost:3000/test/aHR0cHM6Ly9jYS5zbGFjay1lZGdlLmNvbS9UMDI5UlFTRTYtVTAxNEQwMVI1VTYtMWVmYTUzZGQyN2JlLTcy"
+    #url="http://localhost:3000/test/aHR0cHM6Ly9jYS5zbGFjay1lZGdlLmNvbS9UMDI5UlFTRTYtVTAxNEQwMVI1VTYtMWVmYTUzZGQyN2JlLTcy"
+    # http://localhost:3000/healthz
+    url="http://localhost:3000/test/aHR0cDovL2xvY2FsaG9zdDozMDAwL2hlYWx0aHo="
     cmd="vegeta attack -duration=${duration} -rate=${rate}"
 
     rm *.gob &>/dev/null
