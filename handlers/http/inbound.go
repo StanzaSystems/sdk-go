@@ -20,7 +20,6 @@ import (
 )
 
 const (
-	httpServerDecorator          = "stanza.http.server.request.decorator"
 	httpServerAllowedCount       = "stanza.http.server.sentinel.allowed"
 	httpServerBlockedCount       = "stanza.http.server.sentinel.blocked"
 	httpServerBlockedCountByType = "stanza.http.server.sentinel.blocked.by"
@@ -37,7 +36,6 @@ const (
 
 var (
 	debugBaggageKey   = attribute.Key("hub.getstanza.io/StanzaDebug")
-	decoratorKey      = attribute.Key(httpServerDecorator)
 	blockedMessageKey = attribute.Key(httpServerBlockedMessage)
 	blockedValueKey   = attribute.Key(httpServerBlockedValue)
 	blockedTypeKey    = attribute.Key(httpServerBlockedType)
@@ -207,7 +205,7 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string) (c
 			))
 
 			logging.Error(fmt.Errorf("stanza blocked"),
-				httpServerDecorator, h.decorator,
+				"stanza.decorator", h.decorator,
 				httpServerBlockedMessage, b.BlockMsg(),
 				httpServerBlockedType, b.BlockType().String(),
 				httpServerBlockedValue, b.TriggeredValue(),

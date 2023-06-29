@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	httphandler "github.com/StanzaSystems/sdk-go/handlers/http"
 	"github.com/StanzaSystems/sdk-go/logging"
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/stanza"
@@ -33,6 +34,11 @@ type Opt struct {
 	PriorityBoost int32
 	DefaultWeight float32
 }
+
+var (
+	outboundHandler *httphandler.OutboundHandler = nil
+	seenDecorators  map[string]bool              = make(map[string]bool)
+)
 
 // New creates a new fiberstanza middleware fiber.Handler
 func Middleware(ctx context.Context, decorator string, opts ...Opt) fiber.Handler {
@@ -75,17 +81,25 @@ func Middleware(ctx context.Context, decorator string, opts ...Opt) fiber.Handle
 
 // Init is a fiberstanza helper function (passthrough to stanza.Init)
 func Init(ctx context.Context, client Client) (func(), error) {
-	return stanza.Init(ctx, stanza.ClientOptions(client))
+	exit, err := stanza.Init(ctx, stanza.ClientOptions(client))
+	if outboundHandler == nil {
+		var err error
+		outboundHandler, err = stanza.NewHttpOutboundHandler()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return exit, err
 }
 
 // HttpGet is a fiberstanza helper function (passthrough to stanza.NewHttpOutboundHandler)
 func HttpGet(ctx context.Context, url string, tlr *hubv1.GetTokenLeaseRequest) (*http.Response, error) {
-	return stanza.NewHttpOutboundHandler(ctx, http.MethodGet, url, http.NoBody, tlr)
+	return outboundHandler.Get(ctx, url, tlr)
 }
 
-// HttpGet is a fiberstanza helper function (passthrough to stanza.NewHttpOutboundHandler)
+// HttpPost is a fiberstanza helper function (passthrough to stanza.NewHttpOutboundHandler)
 func HttpPost(ctx context.Context, url string, body io.Reader, tlr *hubv1.GetTokenLeaseRequest) (*http.Response, error) {
-	return stanza.NewHttpOutboundHandler(ctx, http.MethodPost, url, body, tlr)
+	return outboundHandler.Post(ctx, url, body, tlr)
 }
 
 // Add Headers to Context
@@ -95,6 +109,10 @@ func WithHeaders(ctx context.Context, headers map[string]string) context.Context
 
 // Decorate is a fiberstanza helper function
 func Decorate(decorator string, feature string, opts ...Opt) *hubv1.GetTokenLeaseRequest {
+	if _, ok := seenDecorators[decorator]; !ok {
+		stanza.GetDecoratorConfig(context.Background(), decorator)
+		seenDecorators[decorator] = true
+	}
 	dfs := &hubv1.DecoratorFeatureSelector{DecoratorName: decorator}
 	if feature != "" {
 		dfs.FeatureName = &feature

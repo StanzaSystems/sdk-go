@@ -28,6 +28,7 @@ type state struct {
 	hubConfigClient hubv1.ConfigServiceClient
 	hubQuotaClient  hubv1.QuotaServiceClient
 	inboundHandlers []*httphandler.InboundHandler
+	outboundHandler *httphandler.OutboundHandler
 
 	// stored from GetBearerToken request
 	bearerToken     string
@@ -117,6 +118,12 @@ func connectHub(ctx context.Context) {
 					otelShutdown = OtelStartup(ctx)
 					GetServiceConfig(ctx)
 					GetDecoratorConfigs(ctx)
+					if gs.outboundHandler != nil {
+						gs.outboundHandler.SetQuotaServiceClient(gs.hubQuotaClient)
+						for d := range gs.decoratorConfig {
+							gs.outboundHandler.SetDecoratorConfig(d, gs.decoratorConfig[d])
+						}
+					}
 					for _, ih := range gs.inboundHandlers {
 						ih.SetQuotaServiceClient(gs.hubQuotaClient)
 					}
