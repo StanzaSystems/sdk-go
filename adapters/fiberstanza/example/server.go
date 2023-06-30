@@ -79,7 +79,7 @@ func main() {
 	app.Use(fiberzap.New(fiberzap.Config{Logger: zap.L()}))
 
 	// middleware: stanza inbound decorator
-	app.Use(fiberstanza.Middleware(ctx, "RootDecorator"))
+	app.Use(fiberstanza.New("RootDecorator"))
 
 	// healthcheck
 	app.Get("/healthz", func(c *fiber.Ctx) error {

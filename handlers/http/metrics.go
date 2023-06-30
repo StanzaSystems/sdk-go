@@ -21,43 +21,50 @@ const (
 	// Standard HTTP Client Metrics:
 	// https://opentelemetry.io/docs/specs/otel/metrics/semantic_conventions/http-metrics/#http-client
 	// httpClientDuration     = "http.client.duration"      // histogram
-	// httpClientRequestSize  = "http.client.request.size"  // histogram
-	// httpClientResponseSize = "http.client.response.size" // histogram
+	httpClientRequestSize  = "http.client.request.size"  // histogram
+	httpClientResponseSize = "http.client.response.size" // histogram
 
 	// Standard HTTP Server Metrics:
 	// https://opentelemetry.io/docs/specs/otel/metrics/semantic_conventions/http-metrics/#http-server
 	// httpServerDuration       = "http.server.duration"        // histogram
-	// httpServerRequestSize    = "http.server.request.size"    // histogram
-	// httpServerResponseSize   = "http.server.response.size"   // histogram
-	// httpServerActiveRequests = "http.server.active_requests" // counter
+	httpServerRequestSize    = "http.server.request.size"    // histogram
+	httpServerResponseSize   = "http.server.response.size"   // histogram
+	httpServerActiveRequests = "http.server.active_requests" // counter
 )
 
 var (
-	clientIdKey    = attribute.Key("client_id")
-	customerIdKey  = attribute.Key("customer_id")
-	decoratorKey   = attribute.Key("decorator")
-	environmentKey = attribute.Key("environment")
-	featureKey     = attribute.Key("feature")
-	serviceKey     = attribute.Key("service")
+	debugBaggageKey = attribute.Key("hub.getstanza.io/StanzaDebug")
+	clientIdKey     = attribute.Key("client_id")
+	customerIdKey   = attribute.Key("customer_id")
+	decoratorKey    = attribute.Key("decorator")
+	environmentKey  = attribute.Key("environment")
+	featureKey      = attribute.Key("feature")
+	serviceKey      = attribute.Key("service")
+	reasonKey       = attribute.Key("reason")
+
+	httpRequestMethodKey = attribute.Key("http.request.method")
+	httpResponseCodeKey  = attribute.Key("http.response.status_code")
 
 	httpMeter *Meter = nil
 )
 
 type Meter struct {
-	AllowedCount   metric.Int64Counter
-	BlockedCount   metric.Int64Counter
-	FailedCount    metric.Int64Counter
-	SucceededCount metric.Int64Counter
-	Duration       metric.Float64Histogram
-	RequestSize    metric.Int64Histogram
-	ResponseSize   metric.Int64Histogram
+	AllowedCount         metric.Int64Counter
+	BlockedCount         metric.Int64Counter
+	FailedCount          metric.Int64Counter
+	SucceededCount       metric.Int64Counter
+	Duration             metric.Float64Histogram
+	ClientRequestSize    metric.Int64Histogram
+	ClientResponseSize   metric.Int64Histogram
+	ServerRequestSize    metric.Int64Histogram
+	ServerResponseSize   metric.Int64Histogram
+	ServerActiveRequests metric.Int64UpDownCounter
 }
 
 func GetMeter() (*Meter, error) {
 	if httpMeter != nil {
 		return httpMeter, nil
 	}
-
 	meter := otel.Meter(
 		instrumentationName,
 		metric.WithInstrumentationVersion(instrumentationVersion),
@@ -100,6 +107,44 @@ func GetMeter() (*Meter, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	m.ClientRequestSize, err = meter.Int64Histogram(
+		httpClientRequestSize,
+		metric.WithUnit("By"),
+		metric.WithDescription("measures the size of HTTP request messages"))
+	if err != nil {
+		return nil, err
+	}
+	m.ClientResponseSize, err = meter.Int64Histogram(
+		httpClientResponseSize,
+		metric.WithUnit("By"),
+		metric.WithDescription("measures the size of HTTP response messages"))
+	if err != nil {
+		return nil, err
+	}
+
+	m.ServerRequestSize, err = meter.Int64Histogram(
+		httpServerRequestSize,
+		metric.WithUnit("By"),
+		metric.WithDescription("measures the size of HTTP request messages"))
+	if err != nil {
+		return nil, err
+	}
+	m.ServerResponseSize, err = meter.Int64Histogram(
+		httpServerResponseSize,
+		metric.WithUnit("By"),
+		metric.WithDescription("measures the size of HTTP response messages"))
+	if err != nil {
+		return nil, err
+	}
+	m.ServerActiveRequests, err = meter.Int64UpDownCounter(
+		httpServerActiveRequests,
+		metric.WithUnit("1"),
+		metric.WithDescription("measures the number of concurrent HTTP requests in-flight"))
+	if err != nil {
+		return nil, err
+	}
+
 	httpMeter = &m
 	return httpMeter, nil
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
 
@@ -41,24 +42,27 @@ var (
 )
 
 // New creates a new fiberstanza middleware fiber.Handler
-func Middleware(ctx context.Context, decorator string, opts ...Opt) fiber.Handler {
-	h, err := stanza.NewHttpInboundHandler(ctx, Decorate(decorator, "", opts...))
+func New(decorator string, opts ...Opt) fiber.Handler {
+	h, err := stanza.NewHttpInboundHandler()
 	if err != nil {
-		logging.Error(fmt.Errorf("failed to initialize new http inbound meters: %v", err))
+		logging.Error(fmt.Errorf("failed to initialize new http inbound handler: %v", err))
 	}
+	h.SetTokenLeaseRequest(decorator, Decorate(decorator, "", opts...))
 
 	return func(c *fiber.Ctx) error {
 		start := time.Now()
 		savedCtx, cancel := context.WithCancel(c.UserContext())
 
-		addAttr := []metric.AddOption{metric.WithAttributes(h.Meter().Attributes...)}
-		recAttr := []metric.RecordOption{metric.WithAttributes(h.Meter().Attributes...)}
-		h.Meter().ActiveRequests.Add(savedCtx, 1, addAttr...)
+		addAttr := []metric.AddOption{metric.WithAttributes(h.Attributes()...)}
+		recAttr := []metric.RecordOption{metric.WithAttributes(append(h.Attributes(),
+			attribute.Key("http.request.method").String(string(c.Request().Header.Method())),
+			attribute.Key("http.response.status_code").Int(c.Response().StatusCode()))...)}
+		h.Meter().ServerActiveRequests.Add(savedCtx, 1, addAttr...)
 		defer func() {
 			h.Meter().Duration.Record(savedCtx, float64(time.Since(start).Microseconds())/1000, recAttr...)
-			h.Meter().RequestSize.Record(savedCtx, int64(len(c.Request().Body())), recAttr...)
-			h.Meter().ResponseSize.Record(savedCtx, int64(len(c.Response().Body())), recAttr...)
-			h.Meter().ActiveRequests.Add(savedCtx, -1, addAttr...)
+			h.Meter().ServerRequestSize.Record(savedCtx, int64(len(c.Request().Body())), recAttr...)
+			h.Meter().ServerResponseSize.Record(savedCtx, int64(len(c.Response().Body())), recAttr...)
+			h.Meter().ServerActiveRequests.Add(savedCtx, -1, addAttr...)
 			c.SetUserContext(savedCtx)
 			cancel()
 		}()
@@ -67,9 +71,12 @@ func Middleware(ctx context.Context, decorator string, opts ...Opt) fiber.Handle
 		var req http.Request
 		if err := fasthttpadaptor.ConvertRequest(c.Context(), &req, true); err != nil {
 			logging.Error(fmt.Errorf("failed to convert request from fasthttp: %v", err))
+			h.Meter().FailedCount.Add(c.UserContext(), 1, addAttr...)
 			return c.Next() // log error and fail open
+		} else {
+			h.Meter().SucceededCount.Add(c.UserContext(), 1, addAttr...)
 		}
-		ctx, status := h.VerifyServingCapacity(&req, c.Route().Path)
+		ctx, status := h.VerifyServingCapacity(&req, c.Route().Path, decorator)
 		if status != http.StatusOK {
 			c.SendString("Stanza Inbound Rate Limited")
 			return c.SendStatus(status)

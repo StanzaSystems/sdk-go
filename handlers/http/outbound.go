@@ -47,7 +47,7 @@ func NewOutboundHandler(apikey, clientId, customerId, environment, service strin
 		),
 		attr: []attribute.KeyValue{
 			clientIdKey.String(clientId),
-			customerIdKey.String(clientId),
+			customerIdKey.String(customerId),
 			environmentKey.String(environment),
 			serviceKey.String(service),
 		},
@@ -91,10 +91,6 @@ func (h *OutboundHandler) Request(ctx context.Context, httpMethod, url string, b
 	)
 
 	start := time.Now()
-	defer func() {
-		h.meter.Duration.Record(ctx, float64(time.Since(start).Microseconds())/1000, []metric.RecordOption{metric.WithAttributes(attr...)}...)
-	}()
-
 	tlr.ClientId = &h.clientId
 	tlr.Selector.Environment = h.environment
 	if req, err := http.NewRequestWithContext(ctx, httpMethod, url, body); err != nil {
@@ -107,6 +103,12 @@ func (h *OutboundHandler) Request(ctx context.Context, httpMethod, url string, b
 		} else {
 			h.meter.SucceededCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		}
+		recAttr := []metric.RecordOption{metric.WithAttributes(append(attr,
+			httpRequestMethodKey.String(httpMethod),
+			httpResponseCodeKey.Int(resp.StatusCode))...)}
+		h.meter.ClientRequestSize.Record(ctx, resp.ContentLength, recAttr...)
+		h.meter.ClientResponseSize.Record(ctx, req.ContentLength, recAttr...)
+		h.meter.Duration.Record(ctx, float64(time.Since(start).Microseconds())/1000, recAttr...)
 		return resp, err
 	}
 }
