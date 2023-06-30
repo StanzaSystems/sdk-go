@@ -48,6 +48,11 @@ func New(decorator string, opts ...Opt) fiber.Handler {
 		h, err := stanza.NewHttpInboundHandler()
 		if err != nil {
 			logging.Error(fmt.Errorf("failed to create HTTP inbound handler: %v", err))
+			return func(c *fiber.Ctx) error {
+				// with no InboundHandler there is nothing we can do but fail open
+				logging.Error(fmt.Errorf("no HTTP inbound handler, failing open"))
+				return c.Next()
+			}
 		}
 		h.SetTokenLeaseRequest(decorator, Decorate(decorator, "", opts...))
 		inboundHandler = h
