@@ -16,9 +16,6 @@ import (
 )
 
 const (
-	instrumentationName    = "github.com/StanzaSystems/sdk-go/handlers/http"
-	instrumentationVersion = "0.0.1" // TODO: stanza sdk-go version/build number to go here
-
 	MAX_QUOTA_WAIT               = 1 * time.Second
 	CACHED_LEASE_CHECK_INTERVAL  = 200 * time.Millisecond // TODO: what should this be set to?
 	BATCH_TOKEN_CONSUME_INTERVAL = 200 * time.Millisecond // TODO: what should this be set to?

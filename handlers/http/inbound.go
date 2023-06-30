@@ -2,7 +2,6 @@ package http
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 
 	"github.com/StanzaSystems/sdk-go/logging"
@@ -19,148 +18,72 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const (
-	httpServerDecorator          = "stanza.http.server.request.decorator"
-	httpServerAllowedCount       = "stanza.http.server.sentinel.allowed"
-	httpServerBlockedCount       = "stanza.http.server.sentinel.blocked"
-	httpServerBlockedCountByType = "stanza.http.server.sentinel.blocked.by"
-	httpServerBlockedMessage     = "stanza.http.server.sentinel.blocked.message"
-	httpServerBlockedType        = "stanza.http.server.sentinel.blocked.type"
-	httpServerBlockedValue       = "stanza.http.server.sentinel.blocked.value"
-	httpServerBlockedRule        = "stanza.http.server.sentinel.blocked.rule"
-	httpServerTotalCount         = "stanza.http.server.sentinel.total"
-	httpServerDuration           = "stanza.http.server.duration"
-	httpServerRequestSize        = "stanza.http.server.request.size"
-	httpServerResponseSize       = "stanza.http.server.response.size"
-	httpServerActiveRequests     = "stanza.http.server.active"
-)
-
-var (
-	debugBaggageKey   = attribute.Key("hub.getstanza.io/StanzaDebug")
-	decoratorKey      = attribute.Key(httpServerDecorator)
-	blockedMessageKey = attribute.Key(httpServerBlockedMessage)
-	blockedValueKey   = attribute.Key(httpServerBlockedValue)
-	blockedTypeKey    = attribute.Key(httpServerBlockedType)
-	blockedRuleKey    = attribute.Key(httpServerBlockedRule)
-)
-
-type InboundMeters struct {
-	Attributes []attribute.KeyValue
-
-	AllowedCount       metric.Int64Counter
-	BlockedCount       metric.Int64Counter
-	BlockedCountByType metric.Int64Counter
-	TotalCount         metric.Int64Counter
-	Duration           metric.Float64Histogram
-	RequestSize        metric.Int64Histogram
-	ResponseSize       metric.Int64Histogram
-	ActiveRequests     metric.Int64UpDownCounter
-}
-
 type InboundHandler struct {
 	apikey          string
-	decorator       string
-	decoratorConfig map[string]*hubv1.DecoratorConfig
-	qsc             hubv1.QuotaServiceClient
-	tlr             *hubv1.GetTokenLeaseRequest
+	clientId        string
+	customerId      string
+	environment     string
 	otelEnabled     bool
 	sentinelEnabled bool
+
+	decoratorConfig map[string]*hubv1.DecoratorConfig
+	tlr             map[string]*hubv1.GetTokenLeaseRequest
+	qsc             hubv1.QuotaServiceClient
 	propagators     propagation.TextMapPropagator
 	tracer          trace.Tracer
-	meter           InboundMeters
+	meter           *Meter
+	attr            []attribute.KeyValue
 }
 
 // New returns a new InboundHandler
-func NewInboundHandler(apikey string, decoratorConfig map[string]*hubv1.DecoratorConfig, tlr *hubv1.GetTokenLeaseRequest, otelEnabled, sentinelEnabled bool) (*InboundHandler, error) {
+func NewInboundHandler(apikey, clientId, environment, service string, otelEnabled, sentinelEnabled bool) (*InboundHandler, error) {
 	handler := &InboundHandler{
 		apikey:          apikey,
-		decorator:       tlr.Selector.DecoratorName,
-		decoratorConfig: decoratorConfig,
-		qsc:             nil,
-		tlr:             tlr,
+		clientId:        clientId,
+		environment:     environment,
 		otelEnabled:     otelEnabled,
 		sentinelEnabled: sentinelEnabled,
+		decoratorConfig: make(map[string]*hubv1.DecoratorConfig),
+		tlr:             make(map[string]*hubv1.GetTokenLeaseRequest),
+		qsc:             nil,
 		propagators:     otel.GetTextMapPropagator(),
 		tracer: otel.GetTracerProvider().Tracer(
 			instrumentationName,
 			trace.WithInstrumentationVersion(instrumentationVersion),
 		),
+		attr: []attribute.KeyValue{
+			clientIdKey.String(clientId),
+			environmentKey.String(environment),
+			serviceKey.String(service),
+		},
 	}
-	meter := otel.Meter(
-		instrumentationName,
-		metric.WithInstrumentationVersion(instrumentationVersion),
-	)
-	im := InboundMeters{
-		Attributes: []attribute.KeyValue{decoratorKey.String(tlr.Selector.DecoratorName)},
+	if m, err := GetMeter(); err != nil {
+		return nil, err
+	} else {
+		handler.meter = m
+		return handler, nil
 	}
-
-	// sentinel meters
-	var err error
-	im.AllowedCount, err = meter.Int64Counter(
-		httpServerAllowedCount,
-		metric.WithUnit("1"),
-		metric.WithDescription("measures the number of inbound HTTP requests that were allowed"))
-	if err != nil {
-		return handler, err
-	}
-	im.BlockedCount, err = meter.Int64Counter(
-		httpServerBlockedCount,
-		metric.WithUnit("1"),
-		metric.WithDescription("measures the number of inbound HTTP requests that were backpressured"))
-	if err != nil {
-		return handler, err
-	}
-	im.BlockedCountByType, err = meter.Int64Counter(
-		httpServerBlockedCountByType,
-		metric.WithUnit("1"),
-		metric.WithDescription("measures the number of inbound HTTP requests that were backpressured"))
-	if err != nil {
-		return handler, err
-	}
-	im.TotalCount, err = meter.Int64Counter(
-		httpServerTotalCount,
-		metric.WithUnit("1"),
-		metric.WithDescription("measures the number of inbound HTTP requests that were checked"))
-	if err != nil {
-		return handler, err
-	}
-
-	// generic HTTP server meters
-	im.Duration, err = meter.Float64Histogram(
-		httpServerDuration,
-		metric.WithUnit("ms"),
-		metric.WithDescription("measures the duration inbound HTTP requests"))
-	if err != nil {
-		return handler, err
-	}
-	im.RequestSize, err = meter.Int64Histogram(
-		httpServerRequestSize,
-		metric.WithUnit("By"),
-		metric.WithDescription("measures the size of HTTP request messages"))
-	if err != nil {
-		return handler, err
-	}
-	im.ResponseSize, err = meter.Int64Histogram(
-		httpServerResponseSize,
-		metric.WithUnit("By"),
-		metric.WithDescription("measures the size of HTTP response messages"))
-	if err != nil {
-		return handler, err
-	}
-	im.ActiveRequests, err = meter.Int64UpDownCounter(
-		httpServerActiveRequests,
-		metric.WithUnit("1"),
-		metric.WithDescription("measures the number of concurrent HTTP requests in-flight"))
-	if err != nil {
-		return handler, err
-	}
-
-	handler.meter = im
-	return handler, nil
 }
 
-func (h *InboundHandler) Meter() *InboundMeters {
-	return &h.meter
+func (h *InboundHandler) Attributes() []attribute.KeyValue {
+	return h.attr
+}
+
+func (h *InboundHandler) Meter() *Meter {
+	return h.meter
+}
+
+func (h *InboundHandler) SetCustomerId(id string) {
+	if h.customerId == "" {
+		h.customerId = id
+		h.attr = append(h.attr, customerIdKey.String(id))
+	}
+}
+
+func (h *InboundHandler) SetDecoratorConfig(d string, dc *hubv1.DecoratorConfig) {
+	if h.decoratorConfig[d] == nil {
+		h.decoratorConfig[d] = dc
+	}
 }
 
 func (h *InboundHandler) SetQuotaServiceClient(quotaServiceClient hubv1.QuotaServiceClient) {
@@ -169,11 +92,24 @@ func (h *InboundHandler) SetQuotaServiceClient(quotaServiceClient hubv1.QuotaSer
 	}
 }
 
-func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string) (context.Context, int) {
+func (h *InboundHandler) SetTokenLeaseRequest(d string, tlr *hubv1.GetTokenLeaseRequest) {
+	tlr.ClientId = &h.clientId
+	tlr.Selector.Environment = h.environment
+	if h.tlr[d] == nil {
+		h.tlr[d] = tlr
+	}
+}
+
+func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, decorator string) (context.Context, int) {
 	ctx := h.propagators.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
 	m0, _ := baggage.NewMember(string(debugBaggageKey), "TRUE")
 	b0, _ := baggage.New(m0)
 	ctx = baggage.ContextWithBaggage(ctx, b0)
+
+	attr := append(h.attr,
+		decoratorKey.String(decorator),
+		featureKey.String(""), // TODO: set feature from baggage
+	)
 
 	// generic HTTP server trace
 	if route == "" {
@@ -186,51 +122,39 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string) (c
 	ctx, span := h.tracer.Start(ctx, route, opts...)
 	defer span.End()
 
-	attr := []metric.AddOption{metric.WithAttributes(h.meter.Attributes...)}
 	if h.sentinelEnabled {
-		e, b := api.Entry(h.decorator, api.WithTrafficType(base.Inbound), api.WithResourceType(base.ResTypeWeb))
+		e, b := api.Entry(decorator, api.WithTrafficType(base.Inbound), api.WithResourceType(base.ResTypeWeb))
 		if b != nil {
-			h.meter.TotalCount.Add(ctx, 1, attr...)
-			h.meter.BlockedCount.Add(ctx, 1, attr...)
-			h.meter.BlockedCountByType.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(
-				append(h.meter.Attributes, attribute.Key(blockedTypeKey).String(b.BlockType().String()))...)}...)
-
 			// TODO: create "customize block fallback" to allow overriding this 429 default
 			sc := http.StatusTooManyRequests // default `429 Too Many Request`
 
-			span.AddEvent("Stanza blocked", trace.WithAttributes(
-				decoratorKey.String(h.decorator),
-				blockedMessageKey.String(b.BlockMsg()),
-				blockedTypeKey.String(b.BlockType().String()),
-				blockedValueKey.String(fmt.Sprint(b.TriggeredValue())),
-				blockedRuleKey.String(b.TriggeredRule().String()),
-			))
-
-			logging.Error(fmt.Errorf("stanza blocked"),
-				httpServerDecorator, h.decorator,
-				httpServerBlockedMessage, b.BlockMsg(),
-				httpServerBlockedType, b.BlockType().String(),
-				httpServerBlockedValue, b.TriggeredValue(),
-			)
 			logging.Debug("Stanza blocked",
-				httpServerBlockedRule, b.TriggeredRule().String(),
+				"decorator", decorator,
+				"sentinel.block_msg", b.BlockMsg(),
+				"sentinel.block_type", b.BlockType().String(),
+				"sentinel.block_value", b.TriggeredValue(),
+				"sentinel.block_rule", b.TriggeredRule().String(),
 			)
+			attrWithReason := append(attr, reasonKey.String(b.BlockType().String()))
+			span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
+			h.meter.BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
 			return ctx, sc
 		}
 		e.Exit() // cleanly exit the Sentinel Entry
 	}
 
 	// Todo: Add Feature from baggage to TokenLeaseRequest (if exists)
-	if ok, _ := checkQuota(h.apikey, h.decoratorConfig[h.decorator], h.qsc, h.tlr); !ok {
+	if ok, _ := checkQuota(h.apikey, h.decoratorConfig[decorator], h.qsc, h.tlr[decorator]); !ok {
+		attrWithReason := append(attr, reasonKey.String("quota"))
+		span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
+		h.meter.BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
 		return ctx, http.StatusTooManyRequests
 	}
 
 	sc := http.StatusOK
-	span.AddEvent("Stanza allowed", trace.WithAttributes(
-		decoratorKey.String(h.decorator),
-	))
-	h.meter.TotalCount.Add(ctx, 1, attr...)
-	h.meter.AllowedCount.Add(ctx, 1, attr...)
 	h.propagators.Inject(ctx, propagation.HeaderCarrier(r.Header))
+
+	span.AddEvent("Stanza allowed", trace.WithAttributes(attr...))
+	h.meter.AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 	return ctx, sc // return success
 }

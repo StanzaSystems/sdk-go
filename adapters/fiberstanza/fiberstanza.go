@@ -7,12 +7,14 @@ import (
 	"net/http"
 	"time"
 
+	httphandler "github.com/StanzaSystems/sdk-go/handlers/http"
 	"github.com/StanzaSystems/sdk-go/logging"
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/stanza"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
 
@@ -34,25 +36,43 @@ type Opt struct {
 	DefaultWeight float32
 }
 
+var (
+	inboundHandler  *httphandler.InboundHandler  = nil
+	outboundHandler *httphandler.OutboundHandler = nil
+	seenDecorators  map[string]bool              = make(map[string]bool)
+)
+
 // New creates a new fiberstanza middleware fiber.Handler
-func Middleware(ctx context.Context, decorator string, opts ...Opt) fiber.Handler {
-	h, err := stanza.NewHttpInboundHandler(ctx, Decorate(decorator, "", opts...))
-	if err != nil {
-		logging.Error(fmt.Errorf("failed to initialize new http inbound meters: %v", err))
+func New(decorator string, opts ...Opt) fiber.Handler {
+	if inboundHandler == nil {
+		h, err := stanza.NewHttpInboundHandler()
+		if err != nil {
+			logging.Error(fmt.Errorf("failed to create HTTP inbound handler: %v", err))
+			return func(c *fiber.Ctx) error {
+				// with no InboundHandler there is nothing we can do but fail open
+				logging.Error(fmt.Errorf("no HTTP inbound handler, failing open"))
+				return c.Next()
+			}
+		}
+		h.SetTokenLeaseRequest(decorator, Decorate(decorator, "", opts...))
+		inboundHandler = h
 	}
+	h := inboundHandler
 
 	return func(c *fiber.Ctx) error {
 		start := time.Now()
 		savedCtx, cancel := context.WithCancel(c.UserContext())
 
-		addAttr := []metric.AddOption{metric.WithAttributes(h.Meter().Attributes...)}
-		recAttr := []metric.RecordOption{metric.WithAttributes(h.Meter().Attributes...)}
-		h.Meter().ActiveRequests.Add(savedCtx, 1, addAttr...)
+		addAttr := []metric.AddOption{metric.WithAttributes(h.Attributes()...)}
+		recAttr := []metric.RecordOption{metric.WithAttributes(append(h.Attributes(),
+			attribute.Key("http.request.method").String(string(c.Request().Header.Method())),
+			attribute.Key("http.response.status_code").Int(c.Response().StatusCode()))...)}
+		h.Meter().ServerActiveRequests.Add(savedCtx, 1, addAttr...)
 		defer func() {
-			h.Meter().Duration.Record(savedCtx, float64(time.Since(start).Microseconds())/1000, recAttr...)
-			h.Meter().RequestSize.Record(savedCtx, int64(len(c.Request().Body())), recAttr...)
-			h.Meter().ResponseSize.Record(savedCtx, int64(len(c.Response().Body())), recAttr...)
-			h.Meter().ActiveRequests.Add(savedCtx, -1, addAttr...)
+			h.Meter().ServerDuration.Record(savedCtx, float64(time.Since(start).Microseconds())/1000, recAttr...)
+			h.Meter().ServerRequestSize.Record(savedCtx, int64(len(c.Request().Body())), recAttr...)
+			h.Meter().ServerResponseSize.Record(savedCtx, int64(len(c.Response().Body())), recAttr...)
+			h.Meter().ServerActiveRequests.Add(savedCtx, -1, addAttr...)
 			c.SetUserContext(savedCtx)
 			cancel()
 		}()
@@ -61,9 +81,12 @@ func Middleware(ctx context.Context, decorator string, opts ...Opt) fiber.Handle
 		var req http.Request
 		if err := fasthttpadaptor.ConvertRequest(c.Context(), &req, true); err != nil {
 			logging.Error(fmt.Errorf("failed to convert request from fasthttp: %v", err))
+			h.Meter().FailedCount.Add(c.UserContext(), 1, addAttr...)
 			return c.Next() // log error and fail open
+		} else {
+			h.Meter().SucceededCount.Add(c.UserContext(), 1, addAttr...)
 		}
-		ctx, status := h.VerifyServingCapacity(&req, c.Route().Path)
+		ctx, status := h.VerifyServingCapacity(&req, c.Route().Path, decorator)
 		if status != http.StatusOK {
 			c.SendString("Stanza Inbound Rate Limited")
 			return c.SendStatus(status)
@@ -75,17 +98,26 @@ func Middleware(ctx context.Context, decorator string, opts ...Opt) fiber.Handle
 
 // Init is a fiberstanza helper function (passthrough to stanza.Init)
 func Init(ctx context.Context, client Client) (func(), error) {
-	return stanza.Init(ctx, stanza.ClientOptions(client))
+	exit, err := stanza.Init(ctx, stanza.ClientOptions(client))
+	if outboundHandler == nil {
+		var err error
+		outboundHandler, err = stanza.NewHttpOutboundHandler()
+		if err != nil {
+			logging.Error(fmt.Errorf("failed to create HTTP outbound handler: %v", err))
+			return nil, err
+		}
+	}
+	return exit, err
 }
 
 // HttpGet is a fiberstanza helper function (passthrough to stanza.NewHttpOutboundHandler)
 func HttpGet(ctx context.Context, url string, tlr *hubv1.GetTokenLeaseRequest) (*http.Response, error) {
-	return stanza.NewHttpOutboundHandler(ctx, http.MethodGet, url, http.NoBody, tlr)
+	return outboundHandler.Get(ctx, url, tlr)
 }
 
-// HttpGet is a fiberstanza helper function (passthrough to stanza.NewHttpOutboundHandler)
+// HttpPost is a fiberstanza helper function (passthrough to stanza.NewHttpOutboundHandler)
 func HttpPost(ctx context.Context, url string, body io.Reader, tlr *hubv1.GetTokenLeaseRequest) (*http.Response, error) {
-	return stanza.NewHttpOutboundHandler(ctx, http.MethodPost, url, body, tlr)
+	return outboundHandler.Post(ctx, url, body, tlr)
 }
 
 // Add Headers to Context
@@ -95,6 +127,10 @@ func WithHeaders(ctx context.Context, headers map[string]string) context.Context
 
 // Decorate is a fiberstanza helper function
 func Decorate(decorator string, feature string, opts ...Opt) *hubv1.GetTokenLeaseRequest {
+	if _, ok := seenDecorators[decorator]; !ok {
+		stanza.GetDecoratorConfig(context.Background(), decorator)
+		seenDecorators[decorator] = true
+	}
 	dfs := &hubv1.DecoratorFeatureSelector{DecoratorName: decorator}
 	if feature != "" {
 		dfs.FeatureName = &feature
