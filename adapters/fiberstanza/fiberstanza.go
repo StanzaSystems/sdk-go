@@ -37,17 +37,22 @@ type Opt struct {
 }
 
 var (
+	inboundHandler  *httphandler.InboundHandler  = nil
 	outboundHandler *httphandler.OutboundHandler = nil
 	seenDecorators  map[string]bool              = make(map[string]bool)
 )
 
 // New creates a new fiberstanza middleware fiber.Handler
 func New(decorator string, opts ...Opt) fiber.Handler {
-	h, err := stanza.NewHttpInboundHandler()
-	if err != nil {
-		logging.Error(fmt.Errorf("failed to initialize new http inbound handler: %v", err))
+	if inboundHandler == nil {
+		h, err := stanza.NewHttpInboundHandler()
+		if err != nil {
+			logging.Error(fmt.Errorf("failed to initialize new http inbound handler: %v", err))
+		}
+		h.SetTokenLeaseRequest(decorator, Decorate(decorator, "", opts...))
+		inboundHandler = h
 	}
-	h.SetTokenLeaseRequest(decorator, Decorate(decorator, "", opts...))
+	h := inboundHandler
 
 	return func(c *fiber.Ctx) error {
 		start := time.Now()
