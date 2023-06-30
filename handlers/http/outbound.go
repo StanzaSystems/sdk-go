@@ -19,6 +19,7 @@ import (
 type OutboundHandler struct {
 	apikey          string
 	clientId        string
+	customerId      string
 	environment     string
 	otelEnabled     bool
 	sentinelEnabled bool
@@ -31,7 +32,7 @@ type OutboundHandler struct {
 	attr            []attribute.KeyValue
 }
 
-func NewOutboundHandler(apikey, clientId, customerId, environment, service string, otelEnabled, sentinelEnabled bool) (*OutboundHandler, error) {
+func NewOutboundHandler(apikey, clientId, environment, service string, otelEnabled, sentinelEnabled bool) (*OutboundHandler, error) {
 	handler := &OutboundHandler{
 		apikey:          apikey,
 		clientId:        clientId,
@@ -47,7 +48,6 @@ func NewOutboundHandler(apikey, clientId, customerId, environment, service strin
 		),
 		attr: []attribute.KeyValue{
 			clientIdKey.String(clientId),
-			customerIdKey.String(customerId),
 			environmentKey.String(environment),
 			serviceKey.String(service),
 		},
@@ -62,6 +62,13 @@ func NewOutboundHandler(apikey, clientId, customerId, environment, service strin
 
 func (h *OutboundHandler) Meter() *Meter {
 	return h.meter
+}
+
+func (h *OutboundHandler) SetCustomerId(id string) {
+	if h.customerId == "" {
+		h.customerId = id
+		h.attr = append(h.attr, customerIdKey.String(id))
+	}
 }
 
 func (h *OutboundHandler) SetDecoratorConfig(d string, dc *hubv1.DecoratorConfig) {

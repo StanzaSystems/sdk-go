@@ -20,6 +20,9 @@ import (
 
 type InboundHandler struct {
 	apikey          string
+	clientId        string
+	customerId      string
+	environment     string
 	otelEnabled     bool
 	sentinelEnabled bool
 
@@ -33,9 +36,11 @@ type InboundHandler struct {
 }
 
 // New returns a new InboundHandler
-func NewInboundHandler(apikey, clientId, customerId, environment, service string, otelEnabled, sentinelEnabled bool) (*InboundHandler, error) {
+func NewInboundHandler(apikey, clientId, environment, service string, otelEnabled, sentinelEnabled bool) (*InboundHandler, error) {
 	handler := &InboundHandler{
 		apikey:          apikey,
+		clientId:        clientId,
+		environment:     environment,
 		otelEnabled:     otelEnabled,
 		sentinelEnabled: sentinelEnabled,
 		decoratorConfig: make(map[string]*hubv1.DecoratorConfig),
@@ -48,7 +53,6 @@ func NewInboundHandler(apikey, clientId, customerId, environment, service string
 		),
 		attr: []attribute.KeyValue{
 			clientIdKey.String(clientId),
-			customerIdKey.String(customerId),
 			environmentKey.String(environment),
 			serviceKey.String(service),
 		},
@@ -69,6 +73,13 @@ func (h *InboundHandler) Meter() *Meter {
 	return h.meter
 }
 
+func (h *InboundHandler) SetCustomerId(id string) {
+	if h.customerId == "" {
+		h.customerId = id
+		h.attr = append(h.attr, customerIdKey.String(id))
+	}
+}
+
 func (h *InboundHandler) SetDecoratorConfig(d string, dc *hubv1.DecoratorConfig) {
 	if h.decoratorConfig[d] == nil {
 		h.decoratorConfig[d] = dc
@@ -82,6 +93,8 @@ func (h *InboundHandler) SetQuotaServiceClient(quotaServiceClient hubv1.QuotaSer
 }
 
 func (h *InboundHandler) SetTokenLeaseRequest(d string, tlr *hubv1.GetTokenLeaseRequest) {
+	tlr.ClientId = &h.clientId
+	tlr.Selector.Environment = h.environment
 	if h.tlr[d] == nil {
 		h.tlr[d] = tlr
 	}

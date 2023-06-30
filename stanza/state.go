@@ -119,12 +119,14 @@ func connectHub(ctx context.Context) {
 					GetServiceConfig(ctx)
 					GetDecoratorConfigs(ctx)
 					if gs.outboundHandler != nil {
+						gs.outboundHandler.SetCustomerId(gs.svcConfig.GetCustomerId())
 						gs.outboundHandler.SetQuotaServiceClient(gs.hubQuotaClient)
 						for d := range gs.decoratorConfig {
 							gs.outboundHandler.SetDecoratorConfig(d, gs.decoratorConfig[d])
 						}
 					}
 					if gs.inboundHandler != nil {
+						gs.inboundHandler.SetCustomerId(gs.svcConfig.GetCustomerId())
 						gs.inboundHandler.SetQuotaServiceClient(gs.hubQuotaClient)
 						for d := range gs.decoratorConfig {
 							gs.inboundHandler.SetDecoratorConfig(d, gs.decoratorConfig[d])

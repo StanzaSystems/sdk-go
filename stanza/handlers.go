@@ -8,7 +8,6 @@ func NewHttpOutboundHandler() (*httphandler.OutboundHandler, error) {
 	h, err := httphandler.NewOutboundHandler(
 		gs.clientOpt.APIKey,
 		gs.clientId.String(),
-		"", // TODO: Customer ID
 		gs.clientOpt.Environment,
 		gs.clientOpt.Name,
 		OtelEnabled(),
@@ -21,7 +20,6 @@ func NewHttpInboundHandler() (*httphandler.InboundHandler, error) {
 	h, err := httphandler.NewInboundHandler(
 		gs.clientOpt.APIKey,
 		gs.clientId.String(),
-		"", // TODO: Customer ID
 		gs.clientOpt.Environment,
 		gs.clientOpt.Name,
 		OtelEnabled(),
