@@ -5,22 +5,16 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
-
-// const (
-// 	// Standard HTTP Client Metrics:
-// 	// https://opentelemetry.io/docs/specs/otel/metrics/semantic_conventions/http-metrics/#http-client
-// 	httpClientDuration     = "http.client.duration"      // histogram
-// 	httpClientRequestSize  = "http.client.request.size"  // histogram
-// 	httpClientResponseSize = "http.client.response.size" // histogram
-// )
 
 type OutboundHandler struct {
 	apikey          string
@@ -37,7 +31,7 @@ type OutboundHandler struct {
 	attr            []attribute.KeyValue
 }
 
-func NewOutboundHandler(apikey, environment, clientId string, otelEnabled, sentinelEnabled bool) (*OutboundHandler, error) {
+func NewOutboundHandler(apikey, clientId, customerId, environment, service string, otelEnabled, sentinelEnabled bool) (*OutboundHandler, error) {
 	handler := &OutboundHandler{
 		apikey:          apikey,
 		clientId:        clientId,
@@ -52,9 +46,10 @@ func NewOutboundHandler(apikey, environment, clientId string, otelEnabled, senti
 			trace.WithInstrumentationVersion(instrumentationVersion),
 		),
 		attr: []attribute.KeyValue{
-			// CustomerID
 			clientIdKey.String(clientId),
+			customerIdKey.String(clientId),
 			environmentKey.String(environment),
+			serviceKey.String(service),
 		},
 	}
 	if m, err := GetMeter(); err != nil {
@@ -63,6 +58,10 @@ func NewOutboundHandler(apikey, environment, clientId string, otelEnabled, senti
 		handler.meter = m
 		return handler, nil
 	}
+}
+
+func (h *OutboundHandler) Meter() *Meter {
+	return h.meter
 }
 
 func (h *OutboundHandler) SetDecoratorConfig(d string, dc *hubv1.DecoratorConfig) {
@@ -78,32 +77,42 @@ func (h *OutboundHandler) SetQuotaServiceClient(quotaServiceClient hubv1.QuotaSe
 }
 
 func (h *OutboundHandler) Get(ctx context.Context, url string, tlr *hubv1.GetTokenLeaseRequest) (*http.Response, error) {
-	tlr.ClientId = &h.clientId
-	tlr.Selector.Environment = h.environment
-	if req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody); err != nil {
-		return nil, err
-	} else {
-		return h.Request(ctx, req, tlr)
-	}
+	return h.Request(ctx, http.MethodGet, url, http.NoBody, tlr)
 }
 
 func (h *OutboundHandler) Post(ctx context.Context, url string, body io.Reader, tlr *hubv1.GetTokenLeaseRequest) (*http.Response, error) {
-	tlr.ClientId = &h.clientId
-	tlr.Selector.Environment = h.environment
-	if req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body); err != nil {
-		return nil, err
-	} else {
-		return h.Request(ctx, req, tlr)
-	}
+	return h.Request(ctx, http.MethodPost, url, body, tlr)
 }
 
-func (h *OutboundHandler) Request(ctx context.Context, req *http.Request, tlr *hubv1.GetTokenLeaseRequest) (*http.Response, error) {
+func (h *OutboundHandler) Request(ctx context.Context, httpMethod, url string, body io.Reader, tlr *hubv1.GetTokenLeaseRequest) (*http.Response, error) {
 	attr := append(h.attr,
 		decoratorKey.String(tlr.Selector.GetDecoratorName()),
 		featureKey.String(tlr.Selector.GetFeatureName()),
 	)
-	h.meter.TotalCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
-	headers := ctx.Value("StanzaOutboundHeaders")
+
+	start := time.Now()
+	defer func() {
+		h.meter.Duration.Record(ctx, float64(time.Since(start).Microseconds())/1000, []metric.RecordOption{metric.WithAttributes(attr...)}...)
+	}()
+
+	tlr.ClientId = &h.clientId
+	tlr.Selector.Environment = h.environment
+	if req, err := http.NewRequestWithContext(ctx, httpMethod, url, body); err != nil {
+		h.meter.FailedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+		return nil, err
+	} else {
+		resp, err := h.request(ctx, req, tlr, attr)
+		if err != nil {
+			h.meter.FailedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+		} else {
+			h.meter.SucceededCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+		}
+		return resp, err
+	}
+}
+
+func (h *OutboundHandler) request(ctx context.Context, req *http.Request, tlr *hubv1.GetTokenLeaseRequest, attr []attribute.KeyValue) (*http.Response, error) {
+	headers := ctx.Value("StanzaOutboundHeaders") // TODO: make this a proper key
 	if headers != nil {
 		for k, v := range headers.(map[string]string) {
 			req.Header.Set(k, v)
@@ -113,8 +122,10 @@ func (h *OutboundHandler) Request(ctx context.Context, req *http.Request, tlr *h
 		if token != "" {
 			req.Header.Add("X-Stanza-Token", token)
 		}
+		h.meter.AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		return http.DefaultClient.Do(req)
 	} else {
+		h.meter.BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		return &http.Response{
 			Status:     fmt.Sprintf("%d Too Many Request", http.StatusTooManyRequests),
 			StatusCode: http.StatusTooManyRequests,

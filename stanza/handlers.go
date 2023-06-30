@@ -13,8 +13,10 @@ import (
 func NewHttpOutboundHandler() (*httphandler.OutboundHandler, error) {
 	h, err := httphandler.NewOutboundHandler(
 		gs.clientOpt.APIKey,
-		gs.clientOpt.Environment,
 		gs.clientId.String(),
+		"", // TODO: Customer ID
+		gs.clientOpt.Environment,
+		gs.clientOpt.Name,
 		OtelEnabled(),
 		SentinelEnabled())
 	gs.outboundHandler = h
