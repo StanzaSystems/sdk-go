@@ -104,6 +104,7 @@ func GetMeter() (*Meter, error) {
 	if err != nil {
 		return nil, err
 	}
+	// TODO: Figure out how/if Latency is different from Client/Server Duration
 	// m.Latency, err = meter.Float64Histogram(
 	// 	stanzaRequestLatency,
 	// 	metric.WithUnit("ms"),
