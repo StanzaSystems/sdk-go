@@ -16,17 +16,17 @@ const (
 	stanzaRequestBlocked   = "stanza.request.blocked"   // counter
 	stanzaRequestFailed    = "stanza.request.failed"    // counter
 	stanzaRequestSucceeded = "stanza.request.succeeded" // counter
-	stanzaRequestDuration  = "stanza.request.duration"  // histogram (milliseconds)
+	// stanzaRequestLatency   = "stanza.request.latency"   // histogram (milliseconds)
 
 	// Standard HTTP Client Metrics:
 	// https://opentelemetry.io/docs/specs/otel/metrics/semantic_conventions/http-metrics/#http-client
-	// httpClientDuration     = "http.client.duration"      // histogram
+	httpClientDuration     = "http.client.duration"      // histogram
 	httpClientRequestSize  = "http.client.request.size"  // histogram
 	httpClientResponseSize = "http.client.response.size" // histogram
 
 	// Standard HTTP Server Metrics:
 	// https://opentelemetry.io/docs/specs/otel/metrics/semantic_conventions/http-metrics/#http-server
-	// httpServerDuration       = "http.server.duration"        // histogram
+	httpServerDuration       = "http.server.duration"        // histogram
 	httpServerRequestSize    = "http.server.request.size"    // histogram
 	httpServerResponseSize   = "http.server.response.size"   // histogram
 	httpServerActiveRequests = "http.server.active_requests" // counter
@@ -49,13 +49,17 @@ var (
 )
 
 type Meter struct {
-	AllowedCount         metric.Int64Counter
-	BlockedCount         metric.Int64Counter
-	FailedCount          metric.Int64Counter
-	SucceededCount       metric.Int64Counter
-	Duration             metric.Float64Histogram
-	ClientRequestSize    metric.Int64Histogram
-	ClientResponseSize   metric.Int64Histogram
+	AllowedCount   metric.Int64Counter
+	BlockedCount   metric.Int64Counter
+	FailedCount    metric.Int64Counter
+	SucceededCount metric.Int64Counter
+	// Latency             metric.Float64Histogram
+
+	ClientDuration     metric.Float64Histogram
+	ClientRequestSize  metric.Int64Histogram
+	ClientResponseSize metric.Int64Histogram
+
+	ServerDuration       metric.Float64Histogram
 	ServerRequestSize    metric.Int64Histogram
 	ServerResponseSize   metric.Int64Histogram
 	ServerActiveRequests metric.Int64UpDownCounter
@@ -100,47 +104,61 @@ func GetMeter() (*Meter, error) {
 	if err != nil {
 		return nil, err
 	}
-	m.Duration, err = meter.Float64Histogram(
-		stanzaRequestDuration,
+	// m.Latency, err = meter.Float64Histogram(
+	// 	stanzaRequestLatency,
+	// 	metric.WithUnit("ms"),
+	// 	metric.WithDescription("measures the execution time of HTTP requests"))
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	m.ClientDuration, err = meter.Float64Histogram(
+		httpClientDuration,
 		metric.WithUnit("ms"),
-		metric.WithDescription("measures the duration of HTTP requests"))
+		metric.WithDescription("measures the execution time of HTTP client requests"))
 	if err != nil {
 		return nil, err
 	}
-
 	m.ClientRequestSize, err = meter.Int64Histogram(
 		httpClientRequestSize,
 		metric.WithUnit("By"),
-		metric.WithDescription("measures the size of HTTP request messages"))
+		metric.WithDescription("measures the size of HTTP client request messages"))
 	if err != nil {
 		return nil, err
 	}
 	m.ClientResponseSize, err = meter.Int64Histogram(
 		httpClientResponseSize,
 		metric.WithUnit("By"),
-		metric.WithDescription("measures the size of HTTP response messages"))
+		metric.WithDescription("measures the size of HTTP client response messages"))
 	if err != nil {
 		return nil, err
 	}
 
+	m.ServerDuration, err = meter.Float64Histogram(
+		httpServerDuration,
+		metric.WithUnit("ms"),
+		metric.WithDescription("measures the execution time of HTTP server requests"))
+	if err != nil {
+		return nil, err
+	}
 	m.ServerRequestSize, err = meter.Int64Histogram(
 		httpServerRequestSize,
 		metric.WithUnit("By"),
-		metric.WithDescription("measures the size of HTTP request messages"))
+		metric.WithDescription("measures the size of HTTP server request messages"))
 	if err != nil {
 		return nil, err
 	}
 	m.ServerResponseSize, err = meter.Int64Histogram(
 		httpServerResponseSize,
 		metric.WithUnit("By"),
-		metric.WithDescription("measures the size of HTTP response messages"))
+		metric.WithDescription("measures the size of HTTP server response messages"))
 	if err != nil {
 		return nil, err
 	}
 	m.ServerActiveRequests, err = meter.Int64UpDownCounter(
 		httpServerActiveRequests,
 		metric.WithUnit("1"),
-		metric.WithDescription("measures the number of concurrent HTTP requests in-flight"))
+		metric.WithDescription("measures the number of concurrent HTTP server requests in-flight"))
 	if err != nil {
 		return nil, err
 	}

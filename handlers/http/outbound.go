@@ -90,13 +90,13 @@ func (h *OutboundHandler) Request(ctx context.Context, httpMethod, url string, b
 		featureKey.String(tlr.Selector.GetFeatureName()),
 	)
 
-	start := time.Now()
 	tlr.ClientId = &h.clientId
 	tlr.Selector.Environment = h.environment
 	if req, err := http.NewRequestWithContext(ctx, httpMethod, url, body); err != nil {
 		h.meter.FailedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		return nil, err
 	} else {
+		start := time.Now()
 		resp, err := h.request(ctx, req, tlr, attr)
 		if err != nil {
 			h.meter.FailedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
@@ -108,7 +108,7 @@ func (h *OutboundHandler) Request(ctx context.Context, httpMethod, url string, b
 			httpResponseCodeKey.Int(resp.StatusCode))...)}
 		h.meter.ClientRequestSize.Record(ctx, resp.ContentLength, recAttr...)
 		h.meter.ClientResponseSize.Record(ctx, req.ContentLength, recAttr...)
-		h.meter.Duration.Record(ctx, float64(time.Since(start).Microseconds())/1000, recAttr...)
+		h.meter.ClientDuration.Record(ctx, float64(time.Since(start).Microseconds())/1000, recAttr...)
 		return resp, err
 	}
 }

@@ -59,7 +59,7 @@ func New(decorator string, opts ...Opt) fiber.Handler {
 			attribute.Key("http.response.status_code").Int(c.Response().StatusCode()))...)}
 		h.Meter().ServerActiveRequests.Add(savedCtx, 1, addAttr...)
 		defer func() {
-			h.Meter().Duration.Record(savedCtx, float64(time.Since(start).Microseconds())/1000, recAttr...)
+			h.Meter().ServerDuration.Record(savedCtx, float64(time.Since(start).Microseconds())/1000, recAttr...)
 			h.Meter().ServerRequestSize.Record(savedCtx, int64(len(c.Request().Body())), recAttr...)
 			h.Meter().ServerResponseSize.Record(savedCtx, int64(len(c.Response().Body())), recAttr...)
 			h.Meter().ServerActiveRequests.Add(savedCtx, -1, addAttr...)
