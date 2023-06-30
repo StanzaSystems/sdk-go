@@ -47,7 +47,7 @@ func New(decorator string, opts ...Opt) fiber.Handler {
 	if inboundHandler == nil {
 		h, err := stanza.NewHttpInboundHandler()
 		if err != nil {
-			logging.Error(fmt.Errorf("failed to initialize new http inbound handler: %v", err))
+			logging.Error(fmt.Errorf("failed to create HTTP inbound handler: %v", err))
 		}
 		h.SetTokenLeaseRequest(decorator, Decorate(decorator, "", opts...))
 		inboundHandler = h
@@ -98,6 +98,7 @@ func Init(ctx context.Context, client Client) (func(), error) {
 		var err error
 		outboundHandler, err = stanza.NewHttpOutboundHandler()
 		if err != nil {
+			logging.Error(fmt.Errorf("failed to create HTTP outbound handler: %v", err))
 			return nil, err
 		}
 	}
