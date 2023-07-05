@@ -36,7 +36,7 @@ func Init(ctx context.Context, co ClientOptions) (func(), error) {
 		co.Environment = "dev"
 	}
 	if co.StanzaHub == "" {
-		co.StanzaHub = "hub.dev.getstanza.dev:9020" // for now, should be "hub.getstanza.io:9020"
+		co.StanzaHub = "hub.getstanza.io:9020"
 	}
 
 	// Initialize new global state
