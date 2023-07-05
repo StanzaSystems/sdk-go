@@ -22,21 +22,41 @@ type ClientOptions struct {
 // if StanzaHub can't be reached.
 func Init(ctx context.Context, co ClientOptions) (func(), error) {
 	if co.APIKey == "" {
-		return func() {}, errors.New("missing required Stanza API key")
+		if os.Getenv("STANZA_API_KEY") != "" {
+			co.APIKey = os.Getenv("STANZA_API_KEY")
+		} else {
+			return func() {}, errors.New("missing required Stanza API key")
+		}
 	}
 
 	// Set client defaults
 	if co.Name == "" {
-		co.Name = "unknown_service"
+		if os.Getenv("STANZA_SERVICE_NAME") != "" {
+			co.Name = os.Getenv("STANZA_SERVICE_NAME")
+		} else {
+			co.Name = "unknown_service"
+		}
 	}
 	if co.Release == "" {
-		co.Release = "0.0.0"
+		if os.Getenv("STANZA_SERVICE_RELEASE") != "" {
+			co.Release = os.Getenv("STANZA_SERVICE_RELEASE")
+		} else {
+			co.Release = "0.0.0"
+		}
 	}
 	if co.Environment == "" {
-		co.Environment = "dev"
+		if os.Getenv("STANZA_ENVIRONMENT") != "" {
+			co.Environment = os.Getenv("STANZA_ENVIRONMENT")
+		} else {
+			co.Environment = "dev"
+		}
 	}
 	if co.StanzaHub == "" {
-		co.StanzaHub = "hub.getstanza.io:9020"
+		if os.Getenv("STANZA_HUB_ADDRESS") != "" {
+			co.StanzaHub = os.Getenv("STANZA_HUB_ADDRESS")
+		} else {
+			co.StanzaHub = "hub.getstanza.io:9020"
+		}
 	}
 
 	// Initialize new global state
