@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/StanzaSystems/sdk-go/keys"
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
+	"google.golang.org/protobuf/proto"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
@@ -100,6 +102,11 @@ func (h *OutboundHandler) Request(ctx context.Context, httpMethod, url string, b
 		if featFromBaggage != "" { // Otherwise inspect OTEL baggage for Feature
 			tlr.Selector.FeatureName = &featFromBaggage
 		}
+	}
+	boostFromBaggage := baggage.FromContext(ctx).Member("stz-boost").Value()
+	boostInt, err := strconv.Atoi(boostFromBaggage)
+	if err == nil {
+		tlr.PriorityBoost = proto.Int32(tlr.GetPriorityBoost() + int32(boostInt))
 	}
 
 	attr := append(h.attr,
