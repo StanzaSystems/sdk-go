@@ -30,6 +30,7 @@ func Init(ctx context.Context, name, rel, env string) (func(), error) {
 			semconv.DeploymentEnvironmentKey.String(env),
 		),
 	)
+
 	mp = &metric.MeterProvider{}
 	tp = &trace.TracerProvider{}
 	return func() {

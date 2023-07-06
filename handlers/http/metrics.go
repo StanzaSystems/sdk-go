@@ -33,14 +33,13 @@ const (
 )
 
 var (
-	debugBaggageKey = attribute.Key("hub.getstanza.io/StanzaDebug")
-	clientIdKey     = attribute.Key("client_id")
-	customerIdKey   = attribute.Key("customer_id")
-	decoratorKey    = attribute.Key("decorator")
-	environmentKey  = attribute.Key("environment")
-	featureKey      = attribute.Key("feature")
-	serviceKey      = attribute.Key("service")
-	reasonKey       = attribute.Key("reason")
+	clientIdKey    = attribute.Key("client_id")
+	customerIdKey  = attribute.Key("customer_id")
+	decoratorKey   = attribute.Key("decorator")
+	environmentKey = attribute.Key("environment")
+	featureKey     = attribute.Key("feature")
+	serviceKey     = attribute.Key("service")
+	reasonKey      = attribute.Key("reason")
 
 	httpRequestMethodKey = attribute.Key("http.request.method")
 	httpResponseCodeKey  = attribute.Key("http.response.status_code")

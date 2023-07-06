@@ -11,7 +11,6 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
 	"google.golang.org/grpc/credentials"
@@ -34,10 +33,6 @@ func initDebugTracer(resource *resource.Resource, config *hubv1.TraceConfig) (*t
 		trace.WithResource(resource),
 	)
 	otel.SetTracerProvider(tp)
-	otel.SetTextMapPropagator(
-		propagation.NewCompositeTextMapPropagator(
-			propagation.TraceContext{},
-			propagation.Baggage{}))
 	return tp, nil
 }
 
@@ -94,9 +89,5 @@ func initGrpcTracer(ctx context.Context, resource *resource.Resource, config *hu
 		trace.WithResource(resource),
 	)
 	otel.SetTracerProvider(tp)
-	otel.SetTextMapPropagator(
-		propagation.NewCompositeTextMapPropagator(
-			propagation.TraceContext{},
-			propagation.Baggage{}))
 	return tp, nil
 }

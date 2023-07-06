@@ -3,9 +3,11 @@ package http
 import (
 	"context"
 	"net/http"
+	"strconv"
 
 	"github.com/StanzaSystems/sdk-go/logging"
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/alibaba/sentinel-golang/api"
 	"github.com/alibaba/sentinel-golang/core/base"
@@ -102,13 +104,13 @@ func (h *InboundHandler) SetTokenLeaseRequest(d string, tlr *hubv1.GetTokenLease
 
 func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, decorator string) (context.Context, int) {
 	ctx := h.propagators.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
-	m0, _ := baggage.NewMember(string(debugBaggageKey), "TRUE")
-	b0, _ := baggage.New(m0)
-	ctx = baggage.ContextWithBaggage(ctx, b0)
+	b := baggage.FromContext(ctx)
+	featFromBaggage := b.Member("stz-feat")
+	boostFromBaggage := b.Member("stz-boost")
 
 	attr := append(h.attr,
 		decoratorKey.String(decorator),
-		featureKey.String(""), // TODO: set feature from baggage
+		featureKey.String(featFromBaggage.Value()),
 	)
 
 	// generic HTTP server trace
@@ -143,8 +145,13 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, de
 		e.Exit() // cleanly exit the Sentinel Entry
 	}
 
-	// Todo: Add Feature from baggage to TokenLeaseRequest (if exists)
-	if ok, _ := checkQuota(h.apikey, h.decoratorConfig[decorator], h.qsc, h.tlr[decorator]); !ok {
+	tlr := h.tlr[decorator]
+	tlr.Selector.FeatureName = proto.String(featFromBaggage.Value())
+	boostInt, err := strconv.Atoi(boostFromBaggage.Value())
+	if err == nil {
+		tlr.PriorityBoost = proto.Int32(int32(boostInt))
+	}
+	if ok, _ := checkQuota(h.apikey, h.decoratorConfig[decorator], h.qsc, tlr); !ok {
 		attrWithReason := append(attr, reasonKey.String("quota"))
 		span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
 		h.meter.BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
@@ -152,7 +159,7 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, de
 	}
 
 	sc := http.StatusOK
-	h.propagators.Inject(ctx, propagation.HeaderCarrier(r.Header))
+	// h.propagators.Inject(ctx, propagation.HeaderCarrier(r.Header))
 
 	span.AddEvent("Stanza allowed", trace.WithAttributes(attr...))
 	h.meter.AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
