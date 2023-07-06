@@ -82,7 +82,6 @@ func main() {
 
 	// healthcheck
 	app.Get("/healthz", func(c *fiber.Ctx) error {
-		fmt.Println(c.GetReqHeaders())
 		return c.SendString("OK")
 	})
 
