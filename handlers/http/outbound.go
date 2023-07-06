@@ -5,12 +5,17 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
+	"github.com/StanzaSystems/sdk-go/keys"
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
+	"google.golang.org/protobuf/proto"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
@@ -92,11 +97,25 @@ func (h *OutboundHandler) Post(ctx context.Context, url string, body io.Reader, 
 }
 
 func (h *OutboundHandler) Request(ctx context.Context, httpMethod, url string, body io.Reader, tlr *hubv1.GetTokenLeaseRequest) (*http.Response, error) {
+	if tlr.Selector.GetFeatureName() == "" { // If Feature is supplied, use it
+		featFromBaggage := baggage.FromContext(ctx).Member("stz-feat").Value()
+		if featFromBaggage != "" { // Otherwise inspect OTEL baggage for Feature
+			tlr.Selector.FeatureName = &featFromBaggage
+		}
+	}
+	boostFromBaggage := baggage.FromContext(ctx).Member("stz-boost").Value()
+	boostInt, err := strconv.Atoi(boostFromBaggage)
+	if err == nil {
+		tlr.PriorityBoost = proto.Int32(tlr.GetPriorityBoost() + int32(boostInt))
+	}
+
 	attr := append(h.attr,
 		decoratorKey.String(tlr.Selector.GetDecoratorName()),
 		featureKey.String(tlr.Selector.GetFeatureName()),
 	)
 
+	// TODO: Add a Span around this Request, like otelhttp does:
+	// https://pkg.go.dev/go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp#Get
 	tlr.ClientId = &h.clientId
 	tlr.Selector.Environment = h.environment
 	if req, err := http.NewRequestWithContext(ctx, httpMethod, url, body); err != nil {
@@ -121,18 +140,21 @@ func (h *OutboundHandler) Request(ctx context.Context, httpMethod, url string, b
 }
 
 func (h *OutboundHandler) request(ctx context.Context, req *http.Request, tlr *hubv1.GetTokenLeaseRequest, attr []attribute.KeyValue) (*http.Response, error) {
-	headers := ctx.Value("StanzaOutboundHeaders") // TODO: make this a proper key
-	if headers != nil {
-		for k, v := range headers.(map[string]string) {
-			req.Header.Set(k, v)
-		}
-	}
 	if ok, token := checkQuota(h.apikey, h.decoratorConfig[tlr.Selector.DecoratorName], h.qsc, tlr); ok {
 		if token != "" {
 			req.Header.Add("X-Stanza-Token", token)
 		}
+		if ctx.Value(keys.OutboundHeadersKey) != nil {
+			for k, v := range ctx.Value(keys.OutboundHeadersKey).(http.Header) {
+				req.Header.Set(k, v[0])
+			}
+		}
 		h.meter.AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
-		return http.DefaultClient.Do(req)
+		httpClient := &http.Client{
+			Transport: otelhttp.NewTransport(
+				http.DefaultTransport,
+			)}
+		return httpClient.Do(req)
 	} else {
 		h.meter.BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		return &http.Response{

@@ -10,6 +10,11 @@ require (
 )
 
 require (
+	github.com/felixge/httpsnoop v1.0.3 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.42.0 // indirect
+)
+
+require (
 	github.com/StanzaSystems/sdk-go v0.0.0-20230606181019-88862ce45515 // indirect
 	github.com/alibaba/sentinel-golang v1.0.4 // indirect
 	github.com/andybalholm/brotli v1.0.5 // indirect

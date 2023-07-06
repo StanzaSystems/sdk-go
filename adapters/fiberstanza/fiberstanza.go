@@ -8,14 +8,17 @@ import (
 	"time"
 
 	httphandler "github.com/StanzaSystems/sdk-go/handlers/http"
+	"github.com/StanzaSystems/sdk-go/keys"
 	"github.com/StanzaSystems/sdk-go/logging"
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/stanza"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 // Client defines options for a new Stanza Client
@@ -32,8 +35,18 @@ type Client struct {
 
 // Optional arguments
 type Opt struct {
+	Headers       http.Header
+	Feature       string
 	PriorityBoost int32
 	DefaultWeight float32
+}
+
+type decorateRequest struct {
+	c       *fiber.Ctx
+	tlr     *hubv1.GetTokenLeaseRequest
+	headers http.Header
+	url     string
+	body    io.Reader
 }
 
 var (
@@ -54,7 +67,7 @@ func New(decorator string, opts ...Opt) fiber.Handler {
 				return c.Next()
 			}
 		}
-		h.SetTokenLeaseRequest(decorator, Decorate(decorator, "", opts...))
+		h.SetTokenLeaseRequest(decorator, tokenLeaseRequest(decorator, opts...))
 		inboundHandler = h
 	}
 	h := inboundHandler
@@ -77,7 +90,6 @@ func New(decorator string, opts ...Opt) fiber.Handler {
 			cancel()
 		}()
 
-		// TODO(msg): implement HttpInboundHandler as fasthttp handler instead of converting to net/http?
 		var req http.Request
 		if err := fasthttpadaptor.ConvertRequest(c.Context(), &req, true); err != nil {
 			logging.Error(fmt.Errorf("failed to convert request from fasthttp: %v", err))
@@ -111,32 +123,50 @@ func Init(ctx context.Context, client Client) (func(), error) {
 }
 
 // HttpGet is a fiberstanza helper function (passthrough to stanza.NewHttpOutboundHandler)
-func HttpGet(ctx context.Context, url string, tlr *hubv1.GetTokenLeaseRequest) (*http.Response, error) {
-	return outboundHandler.Get(ctx, url, tlr)
+func HttpGet(req decorateRequest) (*http.Response, error) {
+	return outboundHandler.Get(WithHeaders(req.c, req.headers), req.url, req.tlr)
 }
 
 // HttpPost is a fiberstanza helper function (passthrough to stanza.NewHttpOutboundHandler)
-func HttpPost(ctx context.Context, url string, body io.Reader, tlr *hubv1.GetTokenLeaseRequest) (*http.Response, error) {
-	return outboundHandler.Post(ctx, url, body, tlr)
+func HttpPost(req decorateRequest) (*http.Response, error) {
+	return outboundHandler.Post(WithHeaders(req.c, req.headers), req.url, req.body, req.tlr)
 }
 
 // Add Headers to Context
-func WithHeaders(ctx context.Context, headers map[string]string) context.Context {
-	return context.WithValue(ctx, "StanzaOutboundHeaders", headers)
+func WithHeaders(c *fiber.Ctx, headers http.Header) context.Context {
+	var req http.Request
+	if err := fasthttpadaptor.ConvertRequest(c.Context(), &req, true); err != nil {
+		logging.Error(fmt.Errorf("failed to convert request from fasthttp: %v", err))
+	}
+	ctx := otel.GetTextMapPropagator().Extract(req.Context(), propagation.HeaderCarrier(req.Header))
+	return context.WithValue(ctx, keys.OutboundHeadersKey, headers)
 }
 
 // Decorate is a fiberstanza helper function
-func Decorate(decorator string, feature string, opts ...Opt) *hubv1.GetTokenLeaseRequest {
+func Decorate(c *fiber.Ctx, decorator string, url string, opts ...Opt) decorateRequest {
 	if _, ok := seenDecorators[decorator]; !ok {
 		stanza.GetDecoratorConfig(context.Background(), decorator)
 		seenDecorators[decorator] = true
 	}
-	dfs := &hubv1.DecoratorFeatureSelector{DecoratorName: decorator}
-	if feature != "" {
-		dfs.FeatureName = &feature
+	req := decorateRequest{c: c, headers: make(http.Header)}
+	tlr := tokenLeaseRequest(decorator, opts...)
+	if len(opts) == 1 {
+		if opts[0].Headers != nil {
+			req.headers = opts[0].Headers
+		}
 	}
+	req.tlr = tlr
+	req.url = url
+	return req
+}
+
+func tokenLeaseRequest(decorator string, opts ...Opt) *hubv1.GetTokenLeaseRequest {
+	dfs := &hubv1.DecoratorFeatureSelector{DecoratorName: decorator}
 	tlr := &hubv1.GetTokenLeaseRequest{Selector: dfs}
 	if len(opts) == 1 {
+		if opts[0].Feature != "" {
+			tlr.Selector.FeatureName = &opts[0].Feature
+		}
 		if opts[0].PriorityBoost != 0 {
 			tlr.PriorityBoost = &opts[0].PriorityBoost
 		}
@@ -145,22 +175,4 @@ func Decorate(decorator string, feature string, opts ...Opt) *hubv1.GetTokenLeas
 		}
 	}
 	return tlr
-}
-
-// GetFeatureFromContext is a helper function to extract stanza feature name from
-// OTEL baggage (which is hiding in the fiber.Ctx)
-func GetFeatureFromContext(c *fiber.Ctx) string {
-	// TODO: actually extract STANZA_FEATURE from OTEL Baggage
-	//
-	// var req http.Request	//
-	//	if err := fasthttpadaptor.ConvertRequest(c.Context(), &req, true); err != nil {
-	//		logging.Error(fmt.Errorf("failed to convert request from fasthttp: %v", err))
-	//	}
-	// ctx := otel.GetTextMapPropagator().Extract(req.Context(), propagation.HeaderCarrier(req.Header))
-	// return "FOOBAR"
-	return ""
-}
-
-func NoFeature() string {
-	return ""
 }

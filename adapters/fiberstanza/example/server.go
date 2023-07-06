@@ -85,62 +85,13 @@ func main() {
 		return c.SendString("OK")
 	})
 
-	// Test a given URL to see when it rate limits
-	app.Get("/test/:url", func(c *fiber.Ctx) error {
-		url, err := base64.StdEncoding.DecodeString(c.Params("url"))
-		if err != nil {
-			logger.Error("StressTest", zap.Error(err))
-			return c.SendStatus(http.StatusTeapot)
-		}
-
-		// Set outbound request priority boost based on `X-User-Plan` request header
-		opt := fiberstanza.Opt{PriorityBoost: 0, DefaultWeight: 1}
-		if plan, ok := c.GetReqHeaders()["X-User-Plan"]; ok {
-			if plan == "free" {
-				opt.PriorityBoost -= 1
-			} else if plan == "enterprise" {
-				opt.PriorityBoost += 1
-			}
-		}
-
-		// Add Headers to be sent with the outbound HTTP request
-		headers := make(map[string]string)
-		headers["Referer"] = "https://gophers.slack.com/messages"
-		headers["User-Agent"] = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0"
-
-		// Decorate outbound request with ImageGuard
-		resp, err := fiberstanza.HttpGet(ctx, string(url),
-			fiberstanza.Decorate("StressTest", fiberstanza.GetFeatureFromContext(c), opt))
-		if err != nil {
-			logger.Error("StressTest", zap.Error(err))
-			if resp != nil && resp.StatusCode >= 400 {
-				return c.SendStatus(resp.StatusCode)
-			}
-			// Use a 503 in the face of errors without a proper error code
-			return c.SendStatus(http.StatusServiceUnavailable)
-		}
-		defer resp.Body.Close()
-
-		// Success! 🎉
-		if resp.StatusCode == http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			return c.SendString(fmt.Sprint(binary.Size(body)))
-		}
-
-		// Failure. 😭
-		if resp.StatusCode == http.StatusTooManyRequests {
-			c.SendString("Stanza Outbound Rate Limited")
-		}
-		return c.SendStatus(resp.StatusCode)
-	})
-
 	// Use ZenQuotes to get a random quote
 	app.Get("/quote", func(c *fiber.Ctx) error {
-		// resp, err := http.Get("https://zenquotes.io/api/random") // before Stanza looks like this
 
-		// stanza outbound decorator
-		resp, _ := fiberstanza.HttpGet(ctx, "https://zenquotes.io/api/random",
-			fiberstanza.Decorate("ZenQuotes", fiberstanza.GetFeatureFromContext(c)))
+		// Outbound request with ZenQuotes Decorator
+		resp, _ :=
+			fiberstanza.HttpGet(
+				fiberstanza.Decorate(c, "ZenQuotes", "https://zenquotes.io/api/random"))
 		defer resp.Body.Close()
 
 		// Success! 🎉
@@ -178,14 +129,15 @@ func main() {
 
 		// Optional add Headers to be sent with the outbound HTTP request
 		// Here we use the GITHUB_PAT environment variable as an Authorization bearer token
-		headers := make(map[string]string)
-		headers["Authorization"] = fmt.Sprintf("Bearer %s", os.Getenv("GITHUB_PAT"))
+		headers := make(http.Header)
+		headers.Add("Authorization", fmt.Sprintf("Bearer %s", os.Getenv("GITHUB_PAT")))
+		opt.Headers = headers
 
 		// Decorate outbound github.com request with GithubGuard
-		resp, err := fiberstanza.HttpGet(
-			fiberstanza.WithHeaders(ctx, headers),
-			fmt.Sprintf("https://api.github.com/users/%s", c.Params("username")),
-			fiberstanza.Decorate("GithubGuard", fiberstanza.GetFeatureFromContext(c), opt))
+		url := fmt.Sprintf("https://api.github.com/users/%s", c.Params("username"))
+		resp, err :=
+			fiberstanza.HttpGet(
+				fiberstanza.Decorate(c, "GithubGuard", url, opt))
 		if err != nil {
 			logger.Error("GithubGuard", zap.Error(err))
 			if resp != nil && resp.StatusCode >= 400 {
@@ -227,14 +179,16 @@ func main() {
 		word := strings.TrimSuffix(babbler.Babble(), "'s")
 
 		// Add Headers to be sent with the outbound HTTP request
-		headers := make(map[string]string)
-		headers["Referer"] = "https://developer.mozilla.org/en-US/docs/Web/JavaScript"
-		headers["User-Agent"] = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0"
+		headers := make(http.Header)
+		headers.Add("Referer", "https://developer.mozilla.org/en-US/docs/Web/JavaScript")
+		headers.Add("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0")
+		opt.Headers = headers
 
 		// Decorate outbound google.com request with GoogleSearch
-		resp, err := fiberstanza.HttpGet(ctx,
-			fmt.Sprintf("https://www.google.com/search?q=%s", word),
-			fiberstanza.Decorate("GoogleSearch", fiberstanza.GetFeatureFromContext(c), opt))
+		resp, err := fiberstanza.HttpGet(
+			fiberstanza.Decorate(c, "GoogleSearch",
+				fmt.Sprintf("https://www.google.com/search?q=%s", word), opt))
+
 		if err != nil {
 			logger.Error("GoogleSearch", zap.Error(err))
 			if resp != nil && resp.StatusCode >= 400 {
@@ -249,6 +203,57 @@ func main() {
 		if resp.StatusCode == http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
 			return c.SendString(fmt.Sprintf("%s %d", word, binary.Size(body)))
+		}
+
+		// Failure. 😭
+		if resp.StatusCode == http.StatusTooManyRequests {
+			c.SendString("Stanza Outbound Rate Limited")
+		}
+		return c.SendStatus(resp.StatusCode)
+	})
+
+	// Test a given URL to see when it rate limits
+	app.Get("/test/:url", func(c *fiber.Ctx) error {
+		url, err := base64.StdEncoding.DecodeString(c.Params("url"))
+		if err != nil {
+			logger.Error("StressTest", zap.Error(err))
+			return c.SendStatus(http.StatusTeapot)
+		}
+
+		// Set outbound request priority boost based on `X-User-Plan` request header
+		opt := fiberstanza.Opt{PriorityBoost: 0, DefaultWeight: 1}
+		if plan, ok := c.GetReqHeaders()["X-User-Plan"]; ok {
+			if plan == "free" {
+				opt.PriorityBoost -= 1
+			} else if plan == "enterprise" {
+				opt.PriorityBoost += 1
+			}
+		}
+
+		// Add Headers to be sent with the outbound HTTP request
+		headers := make(http.Header)
+		headers.Add("Referer", "https://gophers.slack.com/messages")
+		headers.Add("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0")
+		opt.Headers = headers
+
+		// Decorate outbound request with StressTest
+		resp, err :=
+			fiberstanza.HttpGet(
+				fiberstanza.Decorate(c, "StressTest", string(url), opt))
+		if err != nil {
+			logger.Error("StressTest", zap.Error(err))
+			if resp != nil && resp.StatusCode >= 400 {
+				return c.SendStatus(resp.StatusCode)
+			}
+			// Use a 503 in the face of errors without a proper error code
+			return c.SendStatus(http.StatusServiceUnavailable)
+		}
+		defer resp.Body.Close()
+
+		// Success! 🎉
+		if resp.StatusCode == http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			return c.SendString(fmt.Sprint(binary.Size(body)))
 		}
 
 		// Failure. 😭
