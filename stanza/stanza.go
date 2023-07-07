@@ -67,7 +67,8 @@ func Init(ctx context.Context, co ClientOptions) (func(), error) {
 	otel.SetTextMapPropagator(
 		propagation.NewCompositeTextMapPropagator(
 			propagation.TraceContext{},
-			propagation.Baggage{}))
+			propagation.Baggage{},
+			StanzaHeaders{}))
 
 	// Initialize new global state
 	hubDone := newState(ctx, co)
