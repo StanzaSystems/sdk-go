@@ -5,17 +5,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/StanzaSystems/sdk-go/keys"
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
-	"google.golang.org/protobuf/proto"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
@@ -97,55 +94,9 @@ func (h *OutboundHandler) Post(ctx context.Context, url string, body io.Reader, 
 }
 
 func (h *OutboundHandler) Request(ctx context.Context, httpMethod, url string, body io.Reader, tlr *hubv1.GetTokenLeaseRequest) (*http.Response, error) {
-	if tlr.Selector.GetFeatureName() == "" { // If Feature is already supplied, use it
-		featFromBaggage := baggage.FromContext(ctx).Member(keys.StzFeat).Value()
-		if featFromBaggage != "" { // Otherwise inspect OTEL baggage
-			tlr.Selector.FeatureName = proto.String(featFromBaggage)
-		} else if ctx.Value(keys.UberctxStzFeatKey) != nil { // Otherwise inspect Jaeger uberctx
-			tlr.Selector.FeatureName = proto.String(ctx.Value(keys.UberctxStzFeatKey).(string))
-		} else if ctx.Value(keys.OtStzFeatKey) != nil { // Otherwise inspect Datadog ot-baggage
-			tlr.Selector.FeatureName = proto.String(ctx.Value(keys.OtStzFeatKey).(string))
-		}
-	}
-	if tlr.Selector.GetFeatureName() != "" {
-		if stzFeat, err := baggage.NewMember(keys.StzFeat, tlr.Selector.GetFeatureName()); err == nil {
-			if bag, err := baggage.FromContext(ctx).SetMember(stzFeat); err == nil {
-				ctx = baggage.ContextWithBaggage(ctx, bag)
-			}
-		}
-		oh := ctx.Value(keys.OutboundHeadersKey).(http.Header)
-		oh.Set(string(keys.UberctxStzFeatKey), tlr.Selector.GetFeatureName()) // uberctx (jaeger)
-		oh.Set(string(keys.OtStzFeatKey), tlr.Selector.GetFeatureName())      // ot-baggage (datadog)
-		ctx = context.WithValue(ctx, keys.OutboundHeadersKey, oh)
-	}
-
-	// Handle additional PriorityBoost (from OTEL baggage or known headers)
-	boostFromBaggage := baggage.FromContext(ctx).Member(keys.StzBoost).Value()
-	if boostFromBaggage != "" {
-		if boostInt, err := strconv.Atoi(boostFromBaggage); err == nil { // Inspect OTEL baggage
-			tlr.PriorityBoost = proto.Int32(tlr.GetPriorityBoost() + int32(boostInt))
-		}
-	} else if ctx.Value(keys.UberctxStzBoostKey) != nil { // Otherwise inspect Jaeger uberctx
-		if boostInt, err := strconv.Atoi(ctx.Value(keys.UberctxStzBoostKey).(string)); err == nil {
-			tlr.PriorityBoost = proto.Int32(tlr.GetPriorityBoost() + int32(boostInt))
-		}
-	} else if ctx.Value(keys.OtStzBoostKey) != nil { // Otherwise inspect Datadog ot-baggage
-		if boostInt, err := strconv.Atoi(ctx.Value(keys.OtStzBoostKey).(string)); err == nil {
-			tlr.PriorityBoost = proto.Int32(tlr.GetPriorityBoost() + int32(boostInt))
-		}
-	}
-	if tlr.GetPriorityBoost() != 0 {
-		boostStr := strconv.Itoa(int(tlr.GetPriorityBoost()))
-		if stzBoost, err := baggage.NewMember(keys.StzBoost, boostStr); err == nil {
-			if bag, err := baggage.FromContext(ctx).SetMember(stzBoost); err == nil {
-				ctx = baggage.ContextWithBaggage(ctx, bag)
-			}
-		}
-		oh := ctx.Value(keys.OutboundHeadersKey).(http.Header)
-		oh.Set(string(keys.UberctxStzBoostKey), boostStr) // uberctx (jaeger)
-		oh.Set(string(keys.OtStzBoostKey), boostStr)      // ot-baggage (datadog)
-		ctx = context.WithValue(ctx, keys.OutboundHeadersKey, oh)
-	}
+	// Inspect Baggage and Headers for Feature and PriorityBoost, propagate through context if found
+	ctx, tlr.Selector.FeatureName = getFeature(ctx, tlr.Selector.GetFeatureName())
+	ctx, tlr.PriorityBoost = getPriorityBoost(ctx, tlr.GetPriorityBoost())
 
 	// Add Decorator and Feature to OTEL attributes
 	attr := append(h.attr,

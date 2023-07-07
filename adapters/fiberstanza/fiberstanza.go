@@ -144,10 +144,6 @@ func WithHeaders(c *fiber.Ctx, headers http.Header) context.Context {
 
 // Decorate is a fiberstanza helper function
 func Decorate(c *fiber.Ctx, decorator string, url string, opts ...Opt) decorateRequest {
-	if _, ok := seenDecorators[decorator]; !ok {
-		stanza.GetDecoratorConfig(context.Background(), decorator)
-		seenDecorators[decorator] = true
-	}
 	req := decorateRequest{c: c, headers: make(http.Header)}
 	tlr := tokenLeaseRequest(decorator, opts...)
 	if len(opts) == 1 {
@@ -161,6 +157,10 @@ func Decorate(c *fiber.Ctx, decorator string, url string, opts ...Opt) decorateR
 }
 
 func tokenLeaseRequest(decorator string, opts ...Opt) *hubv1.GetTokenLeaseRequest {
+	if _, ok := seenDecorators[decorator]; !ok {
+		stanza.GetDecoratorConfig(context.Background(), decorator)
+		seenDecorators[decorator] = true
+	}
 	dfs := &hubv1.DecoratorFeatureSelector{DecoratorName: decorator}
 	tlr := &hubv1.GetTokenLeaseRequest{Selector: dfs}
 	if len(opts) == 1 {
