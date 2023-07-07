@@ -3,17 +3,14 @@ package http
 import (
 	"context"
 	"net/http"
-	"strconv"
 
 	"github.com/StanzaSystems/sdk-go/logging"
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/alibaba/sentinel-golang/api"
 	"github.com/alibaba/sentinel-golang/core/base"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/semconv/v1.20.0/httpconv"
@@ -104,13 +101,20 @@ func (h *InboundHandler) SetTokenLeaseRequest(d string, tlr *hubv1.GetTokenLease
 
 func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, decorator string) (context.Context, int) {
 	ctx := h.propagators.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
-	b := baggage.FromContext(ctx)
-	featFromBaggage := b.Member("stz-feat")
-	boostFromBaggage := b.Member("stz-boost")
 
+	// Make copies of TokenLeaseRequest and Selector
+	tlr := *h.tlr[decorator]
+	sel := *h.tlr[decorator].Selector
+
+	// Inspect Baggage and Headers for Feature and PriorityBoost, propagate through context if found
+	ctx, sel.FeatureName = getFeature(ctx, sel.GetFeatureName())
+	ctx, tlr.PriorityBoost = getPriorityBoost(ctx, tlr.GetPriorityBoost())
+	tlr.Selector = &sel
+
+	// Add Decorator and Feature to OTEL attributes
 	attr := append(h.attr,
-		decoratorKey.String(decorator),
-		featureKey.String(featFromBaggage.Value()),
+		decoratorKey.String(sel.GetDecoratorName()),
+		featureKey.String(sel.GetFeatureName()),
 	)
 
 	// generic HTTP server trace
@@ -127,9 +131,6 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, de
 	if h.sentinelEnabled {
 		e, b := api.Entry(decorator, api.WithTrafficType(base.Inbound), api.WithResourceType(base.ResTypeWeb))
 		if b != nil {
-			// TODO: create "customize block fallback" to allow overriding this 429 default
-			sc := http.StatusTooManyRequests // default `429 Too Many Request`
-
 			logging.Debug("Stanza blocked",
 				"decorator", decorator,
 				"sentinel.block_msg", b.BlockMsg(),
@@ -140,28 +141,19 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, de
 			attrWithReason := append(attr, reasonKey.String(b.BlockType().String()))
 			span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
 			h.meter.BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
-			return ctx, sc
+			return ctx, http.StatusTooManyRequests
 		}
 		e.Exit() // cleanly exit the Sentinel Entry
 	}
 
-	tlr := h.tlr[decorator]
-	tlr.Selector.FeatureName = proto.String(featFromBaggage.Value())
-	boostInt, err := strconv.Atoi(boostFromBaggage.Value())
-	if err == nil {
-		tlr.PriorityBoost = proto.Int32(int32(boostInt))
-	}
-	if ok, _ := checkQuota(h.apikey, h.decoratorConfig[decorator], h.qsc, tlr); !ok {
+	if ok, _ := checkQuota(h.apikey, h.decoratorConfig[decorator], h.qsc, &tlr); !ok {
 		attrWithReason := append(attr, reasonKey.String("quota"))
 		span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
 		h.meter.BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
 		return ctx, http.StatusTooManyRequests
 	}
 
-	sc := http.StatusOK
-	// h.propagators.Inject(ctx, propagation.HeaderCarrier(r.Header))
-
 	span.AddEvent("Stanza allowed", trace.WithAttributes(attr...))
 	h.meter.AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
-	return ctx, sc // return success
+	return ctx, http.StatusOK // return success
 }
