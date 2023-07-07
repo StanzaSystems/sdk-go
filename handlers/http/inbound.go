@@ -15,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/semconv/v1.20.0/httpconv"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/protobuf/proto"
 )
 
 type InboundHandler struct {
@@ -101,20 +102,16 @@ func (h *InboundHandler) SetTokenLeaseRequest(d string, tlr *hubv1.GetTokenLease
 
 func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, decorator string) (context.Context, int) {
 	ctx := h.propagators.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
-
-	// Make copies of TokenLeaseRequest and Selector
-	tlr := *h.tlr[decorator]
-	sel := *h.tlr[decorator].Selector
+	tlr := proto.Clone(h.tlr[decorator]).(*hubv1.GetTokenLeaseRequest)
 
 	// Inspect Baggage and Headers for Feature and PriorityBoost, propagate through context if found
-	ctx, sel.FeatureName = getFeature(ctx, sel.GetFeatureName())
+	ctx, tlr.Selector.FeatureName = getFeature(ctx, tlr.Selector.GetFeatureName())
 	ctx, tlr.PriorityBoost = getPriorityBoost(ctx, tlr.GetPriorityBoost())
-	tlr.Selector = &sel
 
 	// Add Decorator and Feature to OTEL attributes
 	attr := append(h.attr,
-		decoratorKey.String(sel.GetDecoratorName()),
-		featureKey.String(sel.GetFeatureName()),
+		decoratorKey.String(tlr.Selector.GetDecoratorName()),
+		featureKey.String(tlr.Selector.GetFeatureName()),
 	)
 
 	// generic HTTP server trace
@@ -146,7 +143,7 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, de
 		e.Exit() // cleanly exit the Sentinel Entry
 	}
 
-	if ok, _ := checkQuota(h.apikey, h.decoratorConfig[decorator], h.qsc, &tlr); !ok {
+	if ok, _ := checkQuota(h.apikey, h.decoratorConfig[decorator], h.qsc, tlr); !ok {
 		attrWithReason := append(attr, reasonKey.String("quota"))
 		span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
 		h.meter.BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
