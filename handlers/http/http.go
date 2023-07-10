@@ -2,7 +2,6 @@ package http
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"sync"
@@ -272,7 +271,6 @@ func validateTokens(apikey, environment, decorator string, dc *hubv1.DecoratorCo
 			return true // deadline reached, log error and fail open
 		default:
 			resp, err := qsc.ValidateToken(metadata.NewOutgoingContext(ctx, md), vtr)
-			fmt.Println(resp)
 			if err != nil {
 				logging.Error(err)
 				return true // error from Stanza Hub, log error and fail open
