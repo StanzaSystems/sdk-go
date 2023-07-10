@@ -143,6 +143,13 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, de
 		e.Exit() // cleanly exit the Sentinel Entry
 	}
 
+	if ok := validateTokens(h.apikey, h.environment, decorator, h.decoratorConfig[decorator], h.qsc, r.Header.Values("x-stanza-token")); !ok {
+		attrWithReason := append(attr, reasonKey.String("invalid token"))
+		span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
+		h.meter.BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
+		return ctx, http.StatusTooManyRequests
+	}
+
 	if ok, _ := checkQuota(h.apikey, h.decoratorConfig[decorator], h.qsc, tlr); !ok {
 		attrWithReason := append(attr, reasonKey.String("quota"))
 		span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))

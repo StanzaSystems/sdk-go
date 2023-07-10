@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"sync"
@@ -246,4 +247,52 @@ func cachedLeaseManager(apikey string, qsc hubv1.QuotaServiceClient) {
 			}
 		}
 	}
+}
+
+func validateTokens(apikey, environment, decorator string, dc *hubv1.DecoratorConfig, qsc hubv1.QuotaServiceClient, tokens []string) bool {
+	if !dc.GetValidateIngressTokens() {
+		return true // if we weren't asked to validate ingress tokens, don't
+	}
+	if len(tokens) == 0 {
+		logging.Warn("validate ingress tokens was specified, but no tokens were found", "decorator", decorator)
+		return false // fail fast in the case where we are supposed to validate, but no tokens found
+	}
+
+	ds := &hubv1.DecoratorSelector{Environment: environment, Name: decorator}
+	vtr := &hubv1.ValidateTokenRequest{Tokens: tokenInfos(tokens, ds)}
+
+	md := metadata.New(map[string]string{"x-stanza-key": apikey})
+	ctx, cancel := context.WithTimeout(context.Background(), MAX_QUOTA_WAIT)
+	defer cancel()
+
+	for {
+		select {
+		case <-ctx.Done():
+			logging.Error(ctx.Err())
+			return true // deadline reached, log error and fail open
+		default:
+			resp, err := qsc.ValidateToken(metadata.NewOutgoingContext(ctx, md), vtr)
+			fmt.Println(resp)
+			if err != nil {
+				logging.Error(err)
+				return true // error from Stanza Hub, log error and fail open
+			}
+			for _, t := range resp.GetTokensValid() {
+				if !t.Valid {
+					return false
+				}
+			}
+			return true
+		}
+	}
+}
+
+func tokenInfos(tokens []string, ds *hubv1.DecoratorSelector) (ti []*hubv1.TokenInfo) {
+	for _, t := range tokens {
+		ti = append(ti, &hubv1.TokenInfo{
+			Token:     t,
+			Decorator: ds,
+		})
+	}
+	return ti
 }
