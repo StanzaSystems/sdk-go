@@ -58,7 +58,7 @@ func Init(ctx context.Context, co ClientOptions) (func(), error) {
 		if os.Getenv("STANZA_HUB_ADDRESS") != "" {
 			co.StanzaHub = os.Getenv("STANZA_HUB_ADDRESS")
 		} else {
-			co.StanzaHub = "hub.getstanza.io:9020"
+			co.StanzaHub = "hub.stanzasys.co:9020"
 		}
 	}
 
