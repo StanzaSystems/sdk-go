@@ -115,6 +115,40 @@ func GetServiceConfig(ctx context.Context) {
 							"sample_rate", res.GetConfig().GetTraceConfig().GetSampleRateDefault())
 					}
 				}
+				if sc := gs.svcConfig.GetSentinelConfig(); sc != nil {
+					if sc.GetCircuitbreakerRulesJson() != "" {
+						if err := os.WriteFile(gs.sentinelRules["circuitbreaker"],
+							[]byte(sc.GetCircuitbreakerRulesJson()), filePerms); err != nil {
+							logging.Error(err, "version", res.GetVersion())
+						} else {
+							logging.Debug("accepted sentinel circuitbreaker config", "version", res.GetVersion())
+						}
+					}
+					if sc.GetFlowRulesJson() != "" {
+						if err := os.WriteFile(gs.sentinelRules["flow"],
+							[]byte(sc.GetFlowRulesJson()), filePerms); err != nil {
+							logging.Error(err, "version", res.GetVersion())
+						} else {
+							logging.Debug("accepted sentinel flow config", "version", res.GetVersion())
+						}
+					}
+					if sc.GetIsolationRulesJson() != "" {
+						if err := os.WriteFile(gs.sentinelRules["isolation"],
+							[]byte(sc.GetIsolationRulesJson()), filePerms); err != nil {
+							logging.Error(err, "version", res.GetVersion())
+						} else {
+							logging.Debug("accepted sentinel isolation config", "version", res.GetVersion())
+						}
+					}
+					if sc.GetSystemRulesJson() != "" {
+						if err := os.WriteFile(gs.sentinelRules["system"],
+							[]byte(sc.GetSystemRulesJson()), filePerms); err != nil {
+							logging.Error(err, "version", res.GetVersion())
+						} else {
+							logging.Debug("accepted sentinel system config", "version", res.GetVersion())
+						}
+					}
+				}
 			}
 			if errCount > 0 {
 				logging.Error(fmt.Errorf("rejected service config"), "version", res.GetVersion())
@@ -174,25 +208,17 @@ func GetDecoratorConfig(ctx context.Context, decorator string) {
 }
 
 func SentinelStartup(ctx context.Context) func() {
-	if SentinelEnabled() && gs.svcConfig != nil {
-		if !gs.sentinelConnected { // or X amount of time has passed
-			sc := gs.svcConfig.GetSentinelConfig()
-			if sc != nil {
-				// TODO: should init datasource per type
-				if sc.GetCircuitbreakerRulesJson() != "" ||
-					sc.GetFlowRulesJson() != "" ||
-					sc.GetIsolationRulesJson() != "" ||
-					sc.GetSystemRulesJson() != "" {
-					// TODO: need to add a gs.svcConfig.SentinelConfig -> gs.sentinelDatasource writer
-					sentinelDone = sentinel.Init(gs.clientOpt.Name, gs.sentinelDatasource)
-
-					gsLock.Lock()
-					defer gsLock.Unlock()
-					gs.sentinelConnected = true
-					gs.sentinelConnectedTime = time.Now()
-					logging.Debug("successfully connected sentinel watcher")
-				}
-			}
+	var err error
+	if SentinelEnabled() && !gs.sentinelConnected {
+		sentinelDone, err = sentinel.Init(gs.clientOpt.Name, gs.sentinelRules)
+		if err != nil {
+			logging.Error(err)
+		} else {
+			gsLock.Lock()
+			gs.sentinelConnected = true
+			gs.sentinelConnectedTime = time.Now()
+			gsLock.Unlock()
+			logging.Debug("successfully connected sentinel watcher")
 		}
 	}
 	return func() {
