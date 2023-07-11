@@ -44,13 +44,14 @@ var zq []struct {
 func main() {
 	// Flag parsing -- most important being apikey
 	flag.StringVar(&env, "environment", "dev", "Environment: for example, dev, staging, qa (default dev)")
-	flag.StringVar(&apikey, "apikey", "", "(Mandatory) The API key to use with our service: obtained in the portal")
 	flag.IntVar(&listenport, "listenport", 3000, "Port to listen/accept requests on")
 	flag.BoolVar(&debug, "debug", true, "Debugging on/off")
 	flag.Parse()
 
-	if apikey == "" {
-		fmt.Printf("Error: Mandatory API key not supplied\n")
+	if apienv, ok := os.LookupEnv("STANZA_API_KEY"); ok {
+		apikey = apienv
+	} else {
+		fmt.Printf("Error: Mandatory API key not supplied (by env-var)\n")
 		os.Exit(-1)
 	}
 
