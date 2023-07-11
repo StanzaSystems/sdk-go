@@ -21,9 +21,9 @@ your local Stanza Hub and any other options.
 
 The SDK supports adding flow control, traffic shaping, concurrency limiting, circuit breaking, and adaptive system protection (via [Sentinel](https://github.com/alibaba/sentinel-golang)) to your service and externally managing the configs with the Stanza Control Plane.
 
-See samples to get started. (TODO)
+The `adapters/fiberstanza/example` directory is a good place to start.
 
-Documentation is available here. You can also find the API documentation here.
+Documentation is available [here](https://docs.dev.getstanza.dev/).
 
 ## Community
 
