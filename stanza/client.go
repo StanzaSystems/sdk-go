@@ -115,39 +115,31 @@ func GetServiceConfig(ctx context.Context) {
 							"sample_rate", res.GetConfig().GetTraceConfig().GetSampleRateDefault())
 					}
 				}
-				if sc := gs.svcConfig.GetSentinelConfig(); sc != nil {
-					if sc.GetCircuitbreakerRulesJson() != "" {
-						if err := os.WriteFile(gs.sentinelRules["circuitbreaker"],
-							[]byte(sc.GetCircuitbreakerRulesJson()), filePerms); err != nil {
+			}
+			if gs.sentinelInit {
+				if sc := res.GetConfig().GetSentinelConfig(); sc != nil {
+					if rules := sc.GetCircuitbreakerRulesJson(); rules != "" {
+						if err := os.WriteFile(gs.sentinelRules["circuitbreaker"], []byte(rules), filePerms); err != nil {
 							logging.Error(err, "version", res.GetVersion())
-						} else {
-							logging.Debug("accepted sentinel circuitbreaker config", "version", res.GetVersion())
 						}
 					}
-					if sc.GetFlowRulesJson() != "" {
-						if err := os.WriteFile(gs.sentinelRules["flow"],
-							[]byte(sc.GetFlowRulesJson()), filePerms); err != nil {
+					if rules := sc.GetFlowRulesJson(); rules != "" {
+						if err := os.WriteFile(gs.sentinelRules["flow"], []byte(rules), filePerms); err != nil {
 							logging.Error(err, "version", res.GetVersion())
-						} else {
-							logging.Debug("accepted sentinel flow config", "version", res.GetVersion())
 						}
 					}
-					if sc.GetIsolationRulesJson() != "" {
-						if err := os.WriteFile(gs.sentinelRules["isolation"],
-							[]byte(sc.GetIsolationRulesJson()), filePerms); err != nil {
+					if rules := sc.GetIsolationRulesJson(); rules != "" {
+						if err := os.WriteFile(
+							gs.sentinelRules["isolation"], []byte(rules), filePerms); err != nil {
 							logging.Error(err, "version", res.GetVersion())
-						} else {
-							logging.Debug("accepted sentinel isolation config", "version", res.GetVersion())
 						}
 					}
-					if sc.GetSystemRulesJson() != "" {
-						if err := os.WriteFile(gs.sentinelRules["system"],
-							[]byte(sc.GetSystemRulesJson()), filePerms); err != nil {
+					if rules := sc.GetSystemRulesJson(); rules != "" {
+						if err := os.WriteFile(gs.sentinelRules["system"], []byte(rules), filePerms); err != nil {
 							logging.Error(err, "version", res.GetVersion())
-						} else {
-							logging.Debug("accepted sentinel system config", "version", res.GetVersion())
 						}
 					}
+					logging.Debug("accepted sentinel config", "version", res.GetVersion())
 				}
 			}
 			if errCount > 0 {
@@ -208,17 +200,17 @@ func GetDecoratorConfig(ctx context.Context, decorator string) {
 }
 
 func SentinelStartup(ctx context.Context) func() {
-	var err error
-	if SentinelEnabled() && !gs.sentinelConnected {
-		sentinelDone, err = sentinel.Init(gs.clientOpt.Name, gs.sentinelRules)
+	if SentinelEnabled() && !gs.sentinelInit {
+		done, err := sentinel.Init(gs.clientOpt.Name, gs.sentinelRules)
 		if err != nil {
 			logging.Error(err)
 		} else {
+			sentinelDone = done
 			gsLock.Lock()
-			gs.sentinelConnected = true
-			gs.sentinelConnectedTime = time.Now()
+			gs.sentinelInit = true
+			gs.sentinelInitTime = time.Now()
 			gsLock.Unlock()
-			logging.Debug("successfully connected sentinel watcher")
+			logging.Debug("initialized sentinel rules watcher")
 		}
 	}
 	return func() {

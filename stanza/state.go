@@ -55,10 +55,10 @@ type state struct {
 	otelTraceProviderConnected  bool
 
 	// sentinel
-	sentinelConnected     bool
-	sentinelConnectedTime time.Time
-	sentinelDatasource    string
-	sentinelRules         map[string]string
+	sentinelInit       bool
+	sentinelInitTime   time.Time
+	sentinelDatasource string
+	sentinelRules      map[string]string
 }
 
 var (
@@ -90,8 +90,8 @@ func newState(ctx context.Context, co ClientOptions) func() {
 			otelInit:                    false,
 			otelMetricProviderConnected: false,
 			otelTraceProviderConnected:  false,
-			sentinelConnected:           false,
-			sentinelConnectedTime:       time.Time{},
+			sentinelInit:                false,
+			sentinelInitTime:            time.Time{},
 		}
 
 		// pre-create empty sentinel rules files
@@ -103,7 +103,7 @@ func newState(ctx context.Context, co ClientOptions) func() {
 			"system":         filepath.Join(gs.sentinelDatasource, "system_rules.json"),
 		}
 		for _, fn := range gs.sentinelRules {
-			err := os.WriteFile(fn, []byte{}, filePerms)
+			err := os.WriteFile(fn, []byte("[]"), filePerms)
 			if err != nil {
 				logging.Error(err)
 			}
