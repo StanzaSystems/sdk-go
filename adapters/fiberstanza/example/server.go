@@ -8,11 +8,13 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -24,11 +26,13 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-const (
-	name        = "fiber-example"
-	release     = "0.0.0"
-	environment = "dev"
-	debug       = true
+var (
+	name       = "fiber-example"
+	release    = "0.0.0"
+	env        = "dev"
+	debug      bool
+	apikey     string
+	listenport int
 )
 
 // For decoding ZenQuotes (https://zenquotes.io) JSON
@@ -38,6 +42,18 @@ var zq []struct {
 }
 
 func main() {
+	// Flag parsing -- most important being apikey
+	flag.StringVar(&env, "environment", "dev", "Environment: for example, dev, staging, qa (default dev)")
+	flag.StringVar(&apikey, "apikey", "", "(Mandatory) The API key to use with our service: obtained in the portal")
+	flag.IntVar(&listenport, "listenport", 3000, "Port to listen/accept requests on")
+	flag.BoolVar(&debug, "debug", true, "Debugging on/off")
+	flag.Parse()
+
+	if apikey == "" {
+		fmt.Printf("Error: Mandatory API key not supplied\n")
+		os.Exit(-1)
+	}
+
 	// Create an interruptible context to use for graceful server shutdowns
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -46,7 +62,7 @@ func main() {
 	zc := zap.NewProductionConfig()
 	zc.DisableStacktrace = true
 	zc.DisableCaller = true
-	if environment == "dev" {
+	if env == "dev" {
 		zc.Level = zap.NewAtomicLevelAt(zapcore.InfoLevel)
 	} else {
 		zc.Level = zap.NewAtomicLevelAt(zapcore.WarnLevel)
@@ -61,10 +77,10 @@ func main() {
 	// Init Stanza fault tolerance library
 	stanzaExit, stanzaInitErr := fiberstanza.Init(ctx,
 		fiberstanza.Client{
-			APIKey:      "c6af1e6b-78f4-40c1-9428-2c890dcfdd7f",
+			APIKey:      apikey,
 			Name:        name,
 			Release:     release,
-			Environment: environment,
+			Environment: env,
 		})
 	defer stanzaExit()
 	if stanzaInitErr != nil {
@@ -262,8 +278,9 @@ func main() {
 		}
 		return c.SendStatus(resp.StatusCode)
 	})
-
-	go app.Listen(":3000")
+	logger.Info("Stanza example server listening ", zap.Int("port", listenport))
+	listenstr := ":" + strconv.Itoa(listenport)
+	go app.Listen(listenstr)
 
 	// GRACEFUL SHUTDOWN
 	// - watches for a "Done" signal to the context we setup at the start
