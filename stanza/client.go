@@ -116,6 +116,32 @@ func GetServiceConfig(ctx context.Context) {
 					}
 				}
 			}
+			if gs.sentinelInit {
+				if sc := res.GetConfig().GetSentinelConfig(); sc != nil {
+					if rules := sc.GetCircuitbreakerRulesJson(); rules != "" {
+						if err := os.WriteFile(gs.sentinelRules["circuitbreaker"], []byte(rules), filePerms); err != nil {
+							logging.Error(err, "version", res.GetVersion())
+						}
+					}
+					if rules := sc.GetFlowRulesJson(); rules != "" {
+						if err := os.WriteFile(gs.sentinelRules["flow"], []byte(rules), filePerms); err != nil {
+							logging.Error(err, "version", res.GetVersion())
+						}
+					}
+					if rules := sc.GetIsolationRulesJson(); rules != "" {
+						if err := os.WriteFile(
+							gs.sentinelRules["isolation"], []byte(rules), filePerms); err != nil {
+							logging.Error(err, "version", res.GetVersion())
+						}
+					}
+					if rules := sc.GetSystemRulesJson(); rules != "" {
+						if err := os.WriteFile(gs.sentinelRules["system"], []byte(rules), filePerms); err != nil {
+							logging.Error(err, "version", res.GetVersion())
+						}
+					}
+					logging.Debug("accepted sentinel config", "version", res.GetVersion())
+				}
+			}
 			if errCount > 0 {
 				logging.Error(fmt.Errorf("rejected service config"), "version", res.GetVersion())
 			} else {
@@ -174,25 +200,17 @@ func GetDecoratorConfig(ctx context.Context, decorator string) {
 }
 
 func SentinelStartup(ctx context.Context) func() {
-	if SentinelEnabled() && gs.svcConfig != nil {
-		if !gs.sentinelConnected { // or X amount of time has passed
-			sc := gs.svcConfig.GetSentinelConfig()
-			if sc != nil {
-				// TODO: should init datasource per type
-				if sc.GetCircuitbreakerRulesJson() != "" ||
-					sc.GetFlowRulesJson() != "" ||
-					sc.GetIsolationRulesJson() != "" ||
-					sc.GetSystemRulesJson() != "" {
-					// TODO: need to add a gs.svcConfig.SentinelConfig -> gs.sentinelDatasource writer
-					sentinelDone = sentinel.Init(gs.clientOpt.Name, gs.sentinelDatasource)
-
-					gsLock.Lock()
-					defer gsLock.Unlock()
-					gs.sentinelConnected = true
-					gs.sentinelConnectedTime = time.Now()
-					logging.Debug("successfully connected sentinel watcher")
-				}
-			}
+	if SentinelEnabled() && !gs.sentinelInit {
+		done, err := sentinel.Init(gs.clientOpt.Name, gs.sentinelRules)
+		if err != nil {
+			logging.Error(err)
+		} else {
+			sentinelDone = done
+			gsLock.Lock()
+			gs.sentinelInit = true
+			gs.sentinelInitTime = time.Now()
+			gsLock.Unlock()
+			logging.Debug("initialized sentinel rules watcher")
 		}
 	}
 	return func() {

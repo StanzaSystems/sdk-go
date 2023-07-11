@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -18,6 +19,10 @@ import (
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+)
+
+const (
+	filePerms = 0660
 )
 
 type state struct {
@@ -50,9 +55,10 @@ type state struct {
 	otelTraceProviderConnected  bool
 
 	// sentinel
-	sentinelConnected     bool
-	sentinelConnectedTime time.Time
-	sentinelDatasource    string
+	sentinelInit       bool
+	sentinelInitTime   time.Time
+	sentinelDatasource string
+	sentinelRules      map[string]string
 }
 
 var (
@@ -84,10 +90,24 @@ func newState(ctx context.Context, co ClientOptions) func() {
 			otelInit:                    false,
 			otelMetricProviderConnected: false,
 			otelTraceProviderConnected:  false,
-			sentinelConnected:           false,
-			sentinelConnectedTime:       time.Time{},
+			sentinelInit:                false,
+			sentinelInitTime:            time.Time{},
 		}
+
+		// pre-create empty sentinel rules files
 		gs.sentinelDatasource, _ = os.MkdirTemp("", "sentinel")
+		gs.sentinelRules = map[string]string{
+			"circuitbreaker": filepath.Join(gs.sentinelDatasource, "circuitbreaker_rules.json"),
+			"flow":           filepath.Join(gs.sentinelDatasource, "flow_rules.json"),
+			"isolation":      filepath.Join(gs.sentinelDatasource, "isolation_rules.json"),
+			"system":         filepath.Join(gs.sentinelDatasource, "system_rules.json"),
+		}
+		for _, fn := range gs.sentinelRules {
+			err := os.WriteFile(fn, []byte("[]"), filePerms)
+			if err != nil {
+				logging.Error(err)
+			}
+		}
 
 		// connect to stanza-hub
 		go connectHub(ctx)
@@ -116,6 +136,7 @@ func connectHub(ctx context.Context) {
 			if gs.hubConn != nil {
 				if gs.hubConn.GetState() == connectivity.Ready {
 					otelShutdown = OtelStartup(ctx)
+					sentinelShutdown = SentinelStartup(ctx)
 					GetServiceConfig(ctx)
 					GetDecoratorConfigs(ctx)
 					if gs.outboundHandler != nil {
