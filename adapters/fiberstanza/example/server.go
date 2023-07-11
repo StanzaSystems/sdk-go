@@ -77,7 +77,7 @@ func main() {
 	// Init Stanza fault tolerance library
 	stanzaExit, stanzaInitErr := fiberstanza.Init(ctx,
 		fiberstanza.Client{
-			APIKey:      apikey,
+			APIKey:      apikey, // Note: this should be set via the environment variable STANZA_API_KEY
 			Name:        name,
 			Release:     release,
 			Environment: env,
