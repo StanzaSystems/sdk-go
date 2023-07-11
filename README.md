@@ -1,6 +1,6 @@
 # Stanza Go SDK
 
-Stanza is a... <one sentence summary here>
+Stanza is a developer-oriented system for increasing reliability based on traffic management and prioritisation, quota allocation, and rate-limiting. On the back-end, it helps prevent problems related to overload and excessive use of third-party APIs. On the front-end, it helps you to segment and prioritise your traffic, react automatically to overload or other conditions, and inspect the state of your critical user journeys.
 
 "Stanza Go SDK" provides higher-order functions ("decorators") for adding Stanza fault tolerance to your Golang application.
 
