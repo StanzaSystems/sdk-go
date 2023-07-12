@@ -28,7 +28,8 @@ func Init(ctx context.Context, co ClientOptions) (func(), error) {
 		if os.Getenv("STANZA_API_KEY") != "" {
 			co.APIKey = os.Getenv("STANZA_API_KEY")
 		} else {
-			return func() {}, errors.New("missing required Stanza API key")
+			errMsg := "missing required Stanza API key (Hint: Set a STANZA_API_KEY environment variable!)"
+			return func() {}, errors.New(errMsg)
 		}
 	}
 

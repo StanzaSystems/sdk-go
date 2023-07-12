@@ -111,15 +111,17 @@ func New(decorator string, opts ...Opt) fiber.Handler {
 // Init is a fiberstanza helper function (passthrough to stanza.Init)
 func Init(ctx context.Context, client Client) (func(), error) {
 	exit, err := stanza.Init(ctx, stanza.ClientOptions(client))
+	if err != nil {
+		return nil, err
+	}
 	if outboundHandler == nil {
-		var err error
 		outboundHandler, err = stanza.NewHttpOutboundHandler()
 		if err != nil {
 			logging.Error(fmt.Errorf("failed to create HTTP outbound handler: %v", err))
 			return nil, err
 		}
 	}
-	return exit, err
+	return exit, nil
 }
 
 // HttpGet is a fiberstanza helper function (passthrough to stanza.NewHttpOutboundHandler)
