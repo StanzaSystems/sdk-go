@@ -54,6 +54,7 @@ func initGrpcMeter(ctx context.Context, res *resource.Resource, config *hubv1.Me
 		otlpmetricgrpc.WithEndpoint(config.GetCollectorUrl()),
 		otlpmetricgrpc.WithHeaders(map[string]string{
 			"Authorization": "Bearer " + token,
+			"User-Agent":    "StanzaGoSDK/v0.0.1-beta",
 		}),
 	}
 	if os.Getenv("STANZA_OTEL_NO_TLS") != "" { // disable TLS for local OTEL development

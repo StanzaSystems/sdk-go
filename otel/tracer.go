@@ -24,7 +24,6 @@ func initDebugTracer(resource *resource.Resource, config *hubv1.TraceConfig) (*t
 
 	// ParentBased will enable sampling if the Parent sampled, otherwise use the
 	// default sample rate given by Hub (which is 1/10th of 1% of requests).
-	// TODO: Handle trace sample rate overrides
 	sampleRate := float64(config.GetSampleRateDefault())
 
 	tp := trace.NewTracerProvider(
@@ -62,6 +61,7 @@ func initGrpcTracer(ctx context.Context, resource *resource.Resource, config *hu
 		otlptracegrpc.WithEndpoint(config.GetCollectorUrl()),
 		otlptracegrpc.WithHeaders(map[string]string{
 			"Authorization": "Bearer " + token,
+			"User-Agent": "StanzaGoSDK/v0.0.1-beta",
 		}),
 	}
 	if os.Getenv("STANZA_OTEL_NO_TLS") != "" { // disable TLS for local OTEL development
