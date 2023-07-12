@@ -10,6 +10,7 @@
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
+*.gob
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
@@ -22,6 +23,3 @@ bin/
 
 # Any user generated certs, don't check those in.
 certs/
-
-# loadtest binary output
-*.gob
