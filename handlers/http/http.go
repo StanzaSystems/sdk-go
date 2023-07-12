@@ -89,15 +89,16 @@ func checkQuota(apikey string, dc *hubv1.DecoratorConfig, qsc hubv1.QuotaService
 		if err != nil {
 			logging.Error(err)
 			// TODO: Implement Error Handling as specified in SDK spec:
-			// If quota is required and the Stanza hub is unresponsive or does not return a valid response,
-			// then the SDK should do the following:
+			// If quota is required and the Stanza hub is unresponsive or does not return a valid
+			// response, then the SDK should do the following:
 			// - time out after 300 milliseconds (and record as a failure in metrics exported to Stanza)
 			//   This should be logged as a WARNING.
-			// - if more than 10% of quota requests time out in a one-second period, then the SDK should fail open and
-			//   stop waiting for quota from Stanza.
+			// - if more than 10% of quota requests time out in a one-second period, then the SDK should
+			//   fail open and stop waiting for quota from Stanza.
 			//   This should be logged as an ERROR.
-			// - back off for one second, and then attempt to fetch quota for 1% of requests. If over 90% of those
-			//   requests are successful, ramp up to 5%, 10%, 25%, 50% and 100% over successive seconds.
+			// - back off for one second, and then attempt to fetch quota for 1% of requests. If over 90%
+			//   of those requests are successful, ramp up to 5%, 10%, 25%, 50% and 100% over successive
+			//   seconds.
 			//   Re-enablement should be logged at INFO.
 			return true, "" // just fail open (for now)
 		}

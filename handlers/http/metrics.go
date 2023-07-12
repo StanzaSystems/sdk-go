@@ -8,7 +8,7 @@ import (
 
 const (
 	instrumentationName    = "github.com/StanzaSystems/sdk-go/handlers/http"
-	instrumentationVersion = "0.0.1" // TODO: stanza sdk-go version/build number to go here
+	instrumentationVersion = "0.0.1-beta"
 
 	// Stanza SDK Metrics:
 	// https://github.com/StanzaSystems/sdk-spec#telemetry-metrics
