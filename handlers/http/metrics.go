@@ -52,7 +52,6 @@ type Meter struct {
 	BlockedCount   metric.Int64Counter
 	FailedCount    metric.Int64Counter
 	SucceededCount metric.Int64Counter
-	// Latency             metric.Float64Histogram
 
 	ClientDuration     metric.Float64Histogram
 	ClientRequestSize  metric.Int64Histogram
@@ -103,14 +102,6 @@ func GetMeter() (*Meter, error) {
 	if err != nil {
 		return nil, err
 	}
-	// TODO: Figure out how/if Latency is different from Client/Server Duration
-	// m.Latency, err = meter.Float64Histogram(
-	// 	stanzaRequestLatency,
-	// 	metric.WithUnit("ms"),
-	// 	metric.WithDescription("measures the execution time of HTTP requests"))
-	// if err != nil {
-	// 	return nil, err
-	// }
 
 	m.ClientDuration, err = meter.Float64Histogram(
 		httpClientDuration,
