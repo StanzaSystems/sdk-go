@@ -124,6 +124,7 @@ func newState(ctx context.Context, co ClientOptions) func() {
 func connectHub(ctx context.Context) {
 	const MIN_POLLING_TIME = 5 * time.Second
 
+	connectAttempt := 0
 	otelShutdown := func() {}
 	sentinelShutdown := func() {}
 	for {
@@ -135,6 +136,7 @@ func connectHub(ctx context.Context) {
 		case <-time.After(MIN_POLLING_TIME):
 			if gs.hubConn != nil {
 				if gs.hubConn.GetState() == connectivity.Ready {
+					connectAttempt = 0
 					otelShutdown = OtelStartup(ctx)
 					sentinelShutdown = SentinelStartup(ctx)
 					GetServiceConfig(ctx)
@@ -154,6 +156,12 @@ func connectHub(ctx context.Context) {
 						}
 					}
 				} else {
+					connectAttempt += 1
+					logging.Debug(
+						"attempting to connect",
+						"uri", gs.clientOpt.StanzaHub,
+						"attempt", connectAttempt,
+					)
 					gs.hubConn.Connect()
 				}
 			} else {
@@ -172,9 +180,6 @@ func connectHub(ctx context.Context) {
 						"msg", "failed to connect to stanza hub",
 						"url", gs.clientOpt.StanzaHub)
 				} else {
-					logging.Debug(
-						"connected to stanza hub",
-						"url", gs.clientOpt.StanzaHub)
 					gs.hubConn = hubConn
 					gs.hubAuthClient = hubv1.NewAuthServiceClient(hubConn)
 					gs.hubConfigClient = hubv1.NewConfigServiceClient(hubConn)
