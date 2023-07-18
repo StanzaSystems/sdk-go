@@ -1,2 +1,2 @@
 # Amazon Trust Services
-https://www.amazontrust.com/repository/
+Copy the four Amazon Root Certificates (`AmazonRootCA1.pem` through `AmazonRootCA4.pem`) from https://www.amazontrust.com/repository/ into a an accessible location and set a `STANZA_AMAZON_ROOT_CA` environment variable to that location (e.g. `STANZA_AMAZON_ROOT_CA=/ca_certs`).

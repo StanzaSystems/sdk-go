@@ -23,7 +23,7 @@ func AWSRootCAs(path string) *x509.CertPool {
 			return nil
 		}
 		if !certPool.AppendCertsFromPEM(cert) {
-			logging.Error(fmt.Errorf("failed to add load PEM file: %s", pem))
+			logging.Error(fmt.Errorf("failed to read file: %s", pem))
 			return nil
 		}
 	}
