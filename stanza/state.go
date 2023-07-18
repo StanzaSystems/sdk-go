@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/StanzaSystems/sdk-go/ca"
 	httphandler "github.com/StanzaSystems/sdk-go/handlers/http"
 	"github.com/StanzaSystems/sdk-go/logging"
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
@@ -165,7 +166,11 @@ func connectHub(ctx context.Context) {
 					gs.hubConn.Connect()
 				}
 			} else {
-				creds := credentials.NewTLS(&tls.Config{})
+				tlsConfig := &tls.Config{}
+				if caPath := os.Getenv("STANZA_AWS_ROOT_CA"); caPath != "" {
+					tlsConfig.RootCAs = ca.AWSRootCAs(caPath)
+				}
+				creds := credentials.NewTLS(tlsConfig)
 				if os.Getenv("STANZA_HUB_NO_TLS") != "" { // disable TLS for local Hub development
 					creds = insecure.NewCredentials()
 				}
