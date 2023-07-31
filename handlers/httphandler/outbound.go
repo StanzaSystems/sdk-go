@@ -1,4 +1,4 @@
-package http
+package httphandler
 
 import (
 	"context"
@@ -7,131 +7,86 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/StanzaSystems/sdk-go/handlers"
 	"github.com/StanzaSystems/sdk-go/hub"
 	"github.com/StanzaSystems/sdk-go/keys"
 	"github.com/StanzaSystems/sdk-go/otel"
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
+	"google.golang.org/protobuf/proto"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/trace"
 )
 
 type OutboundHandler struct {
-	apikey          string
-	clientId        string
-	customerId      string
-	environment     string
-	otelEnabled     bool
-	sentinelEnabled bool
-
-	decoratorConfig map[string]*hubv1.DecoratorConfig
-	qsc             hubv1.QuotaServiceClient
-	propagators     propagation.TextMapPropagator
-	tracer          trace.Tracer
-	meter           *Meter
-	attr            []attribute.KeyValue
+	*handlers.OutboundHandler
 }
 
+// NewOutboundHandler returns a new OutboundHandler
 func NewOutboundHandler(apikey, clientId, environment, service string, otelEnabled, sentinelEnabled bool) (*OutboundHandler, error) {
-	handler := &OutboundHandler{
-		apikey:          apikey,
-		clientId:        clientId,
-		environment:     environment,
-		otelEnabled:     otelEnabled,
-		sentinelEnabled: sentinelEnabled,
-		decoratorConfig: make(map[string]*hubv1.DecoratorConfig),
-		qsc:             nil,
-		propagators:     otel.GetTextMapPropagator(),
-		tracer: otel.GetTracerProvider().Tracer(
-			instrumentationName,
-			trace.WithInstrumentationVersion(instrumentationVersion),
-		),
-		attr: []attribute.KeyValue{
-			clientIdKey.String(clientId),
-			environmentKey.String(environment),
-			serviceKey.String(service),
-		},
-	}
+	h := &OutboundHandler{handlers.NewOutboundHandler(apikey, clientId, environment, service, otelEnabled, sentinelEnabled, instrumentationName, instrumentationVersion)}
 	if m, err := GetMeter(); err != nil {
-		return nil, err
+		return h, err
 	} else {
-		handler.meter = m
-		return handler, nil
+		h.SetMeter(m)
+		return h, nil
 	}
 }
 
-func (h *OutboundHandler) Meter() *Meter {
-	return h.meter
-}
-
-func (h *OutboundHandler) SetCustomerId(id string) {
-	if h.customerId == "" {
-		h.customerId = id
-		h.attr = append(h.attr, customerIdKey.String(id))
-	}
-}
-
-func (h *OutboundHandler) SetDecoratorConfig(d string, dc *hubv1.DecoratorConfig) {
-	if h.decoratorConfig[d] == nil {
-		h.decoratorConfig[d] = dc
-	}
-}
-
-func (h *OutboundHandler) SetQuotaServiceClient(quotaServiceClient hubv1.QuotaServiceClient) {
-	if h.qsc == nil {
-		h.qsc = quotaServiceClient
-	}
-}
-
+// Get wraps a HTTP GET request
 func (h *OutboundHandler) Get(ctx context.Context, url string, tlr *hubv1.GetTokenLeaseRequest) (*http.Response, error) {
 	return h.Request(ctx, http.MethodGet, url, http.NoBody, tlr)
 }
 
+// Post wraps a HTTP POST request
 func (h *OutboundHandler) Post(ctx context.Context, url string, body io.Reader, tlr *hubv1.GetTokenLeaseRequest) (*http.Response, error) {
 	return h.Request(ctx, http.MethodPost, url, body, tlr)
 }
 
+// Request wraps a HTTP request of the given HTTP method
 func (h *OutboundHandler) Request(ctx context.Context, httpMethod, url string, body io.Reader, tlr *hubv1.GetTokenLeaseRequest) (*http.Response, error) {
 	// Inspect Baggage and Headers for Feature and PriorityBoost, propagate through context if found
 	ctx, tlr.Selector.FeatureName = otel.GetFeature(ctx, tlr.Selector.GetFeatureName())
 	ctx, tlr.PriorityBoost = otel.GetPriorityBoost(ctx, tlr.GetPriorityBoost())
 
 	// Add Decorator and Feature to OTEL attributes
-	attr := append(h.attr,
-		decoratorKey.String(tlr.Selector.GetDecoratorName()),
-		featureKey.String(tlr.Selector.GetFeatureName()),
+	attr := append(h.Attributes(),
+		h.DecoratorKey(tlr.Selector.GetDecoratorName()),
+		h.FeatureKey(tlr.Selector.GetFeatureName()),
 	)
 
 	// TODO: Add a Span around this Request, like otelhttp does:
 	// https://pkg.go.dev/go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp#Get
-	tlr.ClientId = &h.clientId
-	tlr.Selector.Environment = h.environment
+	tlr.ClientId = proto.String(h.ClientID())
+	tlr.Selector.Environment = h.Environment()
 	if req, err := http.NewRequestWithContext(ctx, httpMethod, url, body); err != nil {
-		h.meter.FailedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+		h.Meter().FailedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		return nil, err
 	} else {
 		start := time.Now()
 		resp, err := h.request(ctx, req, tlr, attr)
 		if err != nil {
-			h.meter.FailedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+			h.Meter().FailedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		} else {
-			h.meter.SucceededCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+			h.Meter().SucceededCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		}
 		recAttr := []metric.RecordOption{metric.WithAttributes(append(attr,
 			httpRequestMethodKey.String(httpMethod),
 			httpResponseCodeKey.Int(resp.StatusCode))...)}
-		h.meter.ClientRequestSize.Record(ctx, resp.ContentLength, recAttr...)
-		h.meter.ClientResponseSize.Record(ctx, req.ContentLength, recAttr...)
-		h.meter.ClientDuration.Record(ctx, float64(time.Since(start).Microseconds())/1000, recAttr...)
+		h.Meter().ClientRequestSize.Record(ctx, resp.ContentLength, recAttr...)
+		h.Meter().ClientResponseSize.Record(ctx, req.ContentLength, recAttr...)
+		h.Meter().ClientDuration.Record(ctx, float64(time.Since(start).Microseconds())/1000, recAttr...)
 		return resp, err
 	}
 }
 
 func (h *OutboundHandler) request(ctx context.Context, req *http.Request, tlr *hubv1.GetTokenLeaseRequest, attr []attribute.KeyValue) (*http.Response, error) {
-	if ok, token := hub.CheckQuota(h.apikey, h.decoratorConfig[tlr.Selector.DecoratorName], h.qsc, tlr); ok {
+	if ok, token := hub.CheckQuota(
+		h.APIKey(),
+		h.DecoratorConfig(tlr.Selector.DecoratorName),
+		h.QuotaServiceClient(),
+		tlr); ok {
 		if token != "" {
 			req.Header.Add("X-Stanza-Token", token)
 		}
@@ -144,14 +99,14 @@ func (h *OutboundHandler) request(ctx context.Context, req *http.Request, tlr *h
 				req.Header.Set(k, v[0])
 			}
 		}
-		h.meter.AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+		h.Meter().AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		httpClient := &http.Client{
 			Transport: otelhttp.NewTransport(
 				http.DefaultTransport,
 			)}
 		return httpClient.Do(req)
 	} else {
-		h.meter.BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+		h.Meter().BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		return &http.Response{
 			Status:     fmt.Sprintf("%d Too Many Request", http.StatusTooManyRequests),
 			StatusCode: http.StatusTooManyRequests,

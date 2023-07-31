@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	httphandler "github.com/StanzaSystems/sdk-go/handlers/http"
+	"github.com/StanzaSystems/sdk-go/handlers/httphandler"
 	"github.com/StanzaSystems/sdk-go/keys"
 	"github.com/StanzaSystems/sdk-go/logging"
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
