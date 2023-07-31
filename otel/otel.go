@@ -7,10 +7,13 @@ import (
 	"github.com/StanzaSystems/sdk-go/logging"
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.20.0"
+	ot "go.opentelemetry.io/otel/trace"
 )
 
 var (
@@ -64,4 +67,14 @@ func InitTraceProvider(ctx context.Context, tc *hubv1.TraceConfig, token string)
 		}
 	}
 	return nil
+}
+
+// GetTextMapPropagator is a passthrough helper function
+func GetTextMapPropagator() propagation.TextMapPropagator {
+	return otel.GetTextMapPropagator()
+}
+
+// GetTracePropagator is a passthrough helper function
+func GetTracerProvider() ot.TracerProvider {
+	return otel.GetTracerProvider()
 }

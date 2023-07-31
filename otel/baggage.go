@@ -1,4 +1,4 @@
-package http
+package otel
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"go.opentelemetry.io/otel/baggage"
 )
 
-func getFeature(ctx context.Context, feat string) (context.Context, *string) {
+func GetFeature(ctx context.Context, feat string) (context.Context, *string) {
 	if feat == "" { // If Feature is already supplied, use it
 		featFromBaggage := baggage.FromContext(ctx).Member(keys.StzFeat).Value()
 		if featFromBaggage != "" { // Otherwise inspect OTEL baggage
@@ -38,7 +38,7 @@ func getFeature(ctx context.Context, feat string) (context.Context, *string) {
 	return ctx, &feat
 }
 
-func getPriorityBoost(ctx context.Context, boost int32) (context.Context, *int32) {
+func GetPriorityBoost(ctx context.Context, boost int32) (context.Context, *int32) {
 	// Handle additional PriorityBoost (from OTEL baggage or known headers)
 	boostFromBaggage := baggage.FromContext(ctx).Member(keys.StzBoost).Value()
 	if boostFromBaggage != "" {
