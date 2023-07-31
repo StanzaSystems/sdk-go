@@ -4,12 +4,13 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/StanzaSystems/sdk-go/hub"
 	"github.com/StanzaSystems/sdk-go/logging"
+	"github.com/StanzaSystems/sdk-go/otel"
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
 
 	"github.com/alibaba/sentinel-golang/api"
 	"github.com/alibaba/sentinel-golang/core/base"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
@@ -105,8 +106,8 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, de
 	tlr := proto.Clone(h.tlr[decorator]).(*hubv1.GetTokenLeaseRequest)
 
 	// Inspect Baggage and Headers for Feature and PriorityBoost, propagate through context if found
-	ctx, tlr.Selector.FeatureName = getFeature(ctx, tlr.Selector.GetFeatureName())
-	ctx, tlr.PriorityBoost = getPriorityBoost(ctx, tlr.GetPriorityBoost())
+	ctx, tlr.Selector.FeatureName = otel.GetFeature(ctx, tlr.Selector.GetFeatureName())
+	ctx, tlr.PriorityBoost = otel.GetPriorityBoost(ctx, tlr.GetPriorityBoost())
 
 	// Add Decorator and Feature to OTEL attributes
 	attr := append(h.attr,
@@ -143,14 +144,14 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, de
 		e.Exit() // cleanly exit the Sentinel Entry
 	}
 
-	if ok := validateTokens(h.apikey, h.environment, decorator, h.decoratorConfig[decorator], h.qsc, r.Header.Values("x-stanza-token")); !ok {
+	if ok := hub.ValidateTokens(h.apikey, h.environment, decorator, h.decoratorConfig[decorator], h.qsc, r.Header.Values("x-stanza-token")); !ok {
 		attrWithReason := append(attr, reasonKey.String("invalid token"))
 		span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
 		h.meter.BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
 		return ctx, http.StatusTooManyRequests
 	}
 
-	if ok, _ := checkQuota(h.apikey, h.decoratorConfig[decorator], h.qsc, tlr); !ok {
+	if ok, _ := hub.CheckQuota(h.apikey, h.decoratorConfig[decorator], h.qsc, tlr); !ok {
 		attrWithReason := append(attr, reasonKey.String("quota"))
 		span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
 		h.meter.BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)

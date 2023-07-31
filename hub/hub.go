@@ -1,4 +1,4 @@
-package http
+package hub
 
 import (
 	"context"
@@ -36,7 +36,7 @@ var (
 	consumedLeasesInit sync.Once
 )
 
-func checkQuota(apikey string, dc *hubv1.DecoratorConfig, qsc hubv1.QuotaServiceClient, tlr *hubv1.GetTokenLeaseRequest) (bool, string) {
+func CheckQuota(apikey string, dc *hubv1.DecoratorConfig, qsc hubv1.QuotaServiceClient, tlr *hubv1.GetTokenLeaseRequest) (bool, string) {
 	// Start a background batch token consumer (the first time checkQuota is called)
 	consumedLeasesInit.Do(func() { go batchTokenConsumer(apikey, qsc) })
 
@@ -249,7 +249,7 @@ func cachedLeaseManager(apikey string, qsc hubv1.QuotaServiceClient) {
 	}
 }
 
-func validateTokens(apikey, environment, decorator string, dc *hubv1.DecoratorConfig, qsc hubv1.QuotaServiceClient, tokens []string) bool {
+func ValidateTokens(apikey, environment, decorator string, dc *hubv1.DecoratorConfig, qsc hubv1.QuotaServiceClient, tokens []string) bool {
 	if !dc.GetValidateIngressTokens() {
 		return true // if we weren't asked to validate ingress tokens, don't
 	}
