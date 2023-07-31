@@ -1,6 +1,7 @@
-package http
+package httphandler
 
 import (
+	"github.com/StanzaSystems/sdk-go/handlers"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -33,37 +34,21 @@ const (
 )
 
 var (
-	clientIdKey    = attribute.Key("client_id")
-	customerIdKey  = attribute.Key("customer_id")
-	decoratorKey   = attribute.Key("decorator")
-	environmentKey = attribute.Key("environment")
-	featureKey     = attribute.Key("feature")
-	serviceKey     = attribute.Key("service")
-	reasonKey      = attribute.Key("reason")
-
 	httpRequestMethodKey = attribute.Key("http.request.method")
 	httpResponseCodeKey  = attribute.Key("http.response.status_code")
 
-	httpMeter *Meter = nil
+	httpMeter *handlers.Meter = nil
 )
 
-type Meter struct {
-	AllowedCount   metric.Int64Counter
-	BlockedCount   metric.Int64Counter
-	FailedCount    metric.Int64Counter
-	SucceededCount metric.Int64Counter
-
-	ClientDuration     metric.Float64Histogram
-	ClientRequestSize  metric.Int64Histogram
-	ClientResponseSize metric.Int64Histogram
-
-	ServerDuration       metric.Float64Histogram
-	ServerRequestSize    metric.Int64Histogram
-	ServerResponseSize   metric.Int64Histogram
-	ServerActiveRequests metric.Int64UpDownCounter
+func GetInstrumentationName() string {
+	return instrumentationName
 }
 
-func GetMeter() (*Meter, error) {
+func GetInstrumentationVersion() string {
+	return instrumentationVersion
+}
+
+func GetMeter() (*handlers.Meter, error) {
 	if httpMeter != nil {
 		return httpMeter, nil
 	}
@@ -73,7 +58,7 @@ func GetMeter() (*Meter, error) {
 	)
 
 	var err error
-	var m Meter
+	var m handlers.Meter
 	m.AllowedCount, err = meter.Int64Counter(
 		stanzaRequestAllowed,
 		metric.WithUnit("1"),

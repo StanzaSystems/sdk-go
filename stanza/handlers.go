@@ -1,7 +1,7 @@
 package stanza
 
 import (
-	httphandler "github.com/StanzaSystems/sdk-go/handlers/http"
+	"github.com/StanzaSystems/sdk-go/handlers/httphandler"
 )
 
 func NewHttpOutboundHandler() (*httphandler.OutboundHandler, error) {
@@ -12,7 +12,7 @@ func NewHttpOutboundHandler() (*httphandler.OutboundHandler, error) {
 		gs.clientOpt.Name,
 		OtelEnabled(),
 		SentinelEnabled())
-	gs.outboundHandler = h
+	gs.httpOutboundHandler = h
 	return h, err
 }
 
@@ -23,7 +23,9 @@ func NewHttpInboundHandler() (*httphandler.InboundHandler, error) {
 		gs.clientOpt.Environment,
 		gs.clientOpt.Name,
 		OtelEnabled(),
-		SentinelEnabled())
-	gs.inboundHandler = h
+		SentinelEnabled(),
+		httphandler.GetInstrumentationName(),
+		httphandler.GetInstrumentationVersion())
+	gs.httpInboundHandler = h
 	return h, err
 }

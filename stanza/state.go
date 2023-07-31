@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/StanzaSystems/sdk-go/ca"
-	httphandler "github.com/StanzaSystems/sdk-go/handlers/http"
+	"github.com/StanzaSystems/sdk-go/handlers/httphandler"
 	"github.com/StanzaSystems/sdk-go/logging"
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
 
@@ -33,8 +33,10 @@ type state struct {
 	hubAuthClient   hubv1.AuthServiceClient
 	hubConfigClient hubv1.ConfigServiceClient
 	hubQuotaClient  hubv1.QuotaServiceClient
-	inboundHandler  *httphandler.InboundHandler
-	outboundHandler *httphandler.OutboundHandler
+
+	// HTTP
+	httpInboundHandler  *httphandler.InboundHandler
+	httpOutboundHandler *httphandler.OutboundHandler
 
 	// stored from GetBearerToken request
 	bearerToken     string
@@ -142,18 +144,18 @@ func connectHub(ctx context.Context) {
 					sentinelShutdown = SentinelStartup(ctx)
 					GetServiceConfig(ctx)
 					GetDecoratorConfigs(ctx)
-					if gs.outboundHandler != nil {
-						gs.outboundHandler.SetCustomerId(gs.svcConfig.GetCustomerId())
-						gs.outboundHandler.SetQuotaServiceClient(gs.hubQuotaClient)
+					if gs.httpOutboundHandler != nil {
+						gs.httpOutboundHandler.SetCustomerId(gs.svcConfig.GetCustomerId())
+						gs.httpOutboundHandler.SetQuotaServiceClient(gs.hubQuotaClient)
 						for d := range gs.decoratorConfig {
-							gs.outboundHandler.SetDecoratorConfig(d, gs.decoratorConfig[d])
+							gs.httpOutboundHandler.SetDecoratorConfig(d, gs.decoratorConfig[d])
 						}
 					}
-					if gs.inboundHandler != nil {
-						gs.inboundHandler.SetCustomerId(gs.svcConfig.GetCustomerId())
-						gs.inboundHandler.SetQuotaServiceClient(gs.hubQuotaClient)
+					if gs.httpInboundHandler != nil {
+						gs.httpInboundHandler.SetCustomerId(gs.svcConfig.GetCustomerId())
+						gs.httpInboundHandler.SetQuotaServiceClient(gs.hubQuotaClient)
 						for d := range gs.decoratorConfig {
-							gs.inboundHandler.SetDecoratorConfig(d, gs.decoratorConfig[d])
+							gs.httpInboundHandler.SetDecoratorConfig(d, gs.decoratorConfig[d])
 						}
 					}
 				} else {
