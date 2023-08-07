@@ -20,11 +20,12 @@ type Handler struct {
 	qsc             hubv1.QuotaServiceClient
 	propagators     propagation.TextMapPropagator
 	tracer          trace.Tracer
-	meter           *Meter
+	stanzaMeter     *StanzaMeter
 	attr            []attribute.KeyValue
 }
 
-func NewHandler(apikey, clientId, environment, service string, otelEnabled, sentinelEnabled bool, instrumentationName string, instrumentationVersion string) *Handler {
+func NewHandler(apikey, clientId, environment, service string, otelEnabled, sentinelEnabled bool) (*Handler, error) {
+	m, err := GetStanzaMeter()
 	return &Handler{
 		apikey:          apikey,
 		clientId:        clientId,
@@ -34,6 +35,7 @@ func NewHandler(apikey, clientId, environment, service string, otelEnabled, sent
 		decoratorConfig: make(map[string]*hubv1.DecoratorConfig),
 		qsc:             nil,
 		propagators:     otel.GetTextMapPropagator(),
+		stanzaMeter:     m,
 		tracer: otel.GetTracerProvider().Tracer(
 			instrumentationName,
 			trace.WithInstrumentationVersion(instrumentationVersion),
@@ -43,7 +45,7 @@ func NewHandler(apikey, clientId, environment, service string, otelEnabled, sent
 			environmentKey.String(environment),
 			serviceKey.String(service),
 		},
-	}
+	}, err
 }
 
 func (h *Handler) APIKey() string {
@@ -74,8 +76,8 @@ func (h *Handler) FeatureKey(feat string) attribute.KeyValue {
 	return featureKey.String(feat)
 }
 
-func (h *Handler) Meter() *Meter {
-	return h.meter
+func (h *Handler) StanzaMeter() *StanzaMeter {
+	return h.stanzaMeter
 }
 
 func (h *Handler) Propagator() propagation.TextMapPropagator {
@@ -84,10 +86,6 @@ func (h *Handler) Propagator() propagation.TextMapPropagator {
 
 func (h *Handler) ReasonKey(reason string) attribute.KeyValue {
 	return reasonKey.String(reason)
-}
-
-func (h *Handler) SetMeter(meter *Meter) {
-	h.meter = meter
 }
 
 func (h *Handler) SetCustomerId(id string) {

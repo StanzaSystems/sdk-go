@@ -1,4 +1,4 @@
-package httphandler
+package httpclient
 
 import (
 	"context"
@@ -12,26 +12,33 @@ import (
 	"github.com/StanzaSystems/sdk-go/keys"
 	"github.com/StanzaSystems/sdk-go/otel"
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
-	"google.golang.org/protobuf/proto"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	"google.golang.org/protobuf/proto"
 )
 
 type OutboundHandler struct {
 	*handlers.OutboundHandler
+	httpMeter *HttpMeter
 }
 
 // NewOutboundHandler returns a new OutboundHandler
 func NewOutboundHandler(apikey, clientId, environment, service string, otelEnabled, sentinelEnabled bool) (*OutboundHandler, error) {
-	h := &OutboundHandler{handlers.NewOutboundHandler(apikey, clientId, environment, service, otelEnabled, sentinelEnabled, instrumentationName, instrumentationVersion)}
-	if m, err := GetMeter(); err != nil {
-		return h, err
-	} else {
-		h.SetMeter(m)
-		return h, nil
+	h, err := handlers.NewOutboundHandler(apikey, clientId, environment, service, otelEnabled, sentinelEnabled)
+	if err != nil {
+		return nil, err
 	}
+	m, err := NewHttpMeter()
+	if err != nil {
+		return nil, err
+	}
+	return &OutboundHandler{h, m}, nil
+}
+
+func (h *OutboundHandler) HttpMeter() *HttpMeter {
+	return h.httpMeter
 }
 
 // Get wraps a HTTP GET request
@@ -61,22 +68,22 @@ func (h *OutboundHandler) Request(ctx context.Context, httpMethod, url string, b
 	tlr.ClientId = proto.String(h.ClientID())
 	tlr.Selector.Environment = h.Environment()
 	if req, err := http.NewRequestWithContext(ctx, httpMethod, url, body); err != nil {
-		h.Meter().FailedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+		h.StanzaMeter().FailedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		return nil, err
 	} else {
 		start := time.Now()
 		resp, err := h.request(ctx, req, tlr, attr)
 		if err != nil {
-			h.Meter().FailedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+			h.StanzaMeter().FailedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		} else {
-			h.Meter().SucceededCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+			h.StanzaMeter().SucceededCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		}
 		recAttr := []metric.RecordOption{metric.WithAttributes(append(attr,
 			httpRequestMethodKey.String(httpMethod),
 			httpResponseCodeKey.Int(resp.StatusCode))...)}
-		h.Meter().ClientRequestSize.Record(ctx, resp.ContentLength, recAttr...)
-		h.Meter().ClientResponseSize.Record(ctx, req.ContentLength, recAttr...)
-		h.Meter().ClientDuration.Record(ctx, float64(time.Since(start).Microseconds())/1000, recAttr...)
+		h.httpMeter.ClientRequestSize.Record(ctx, resp.ContentLength, recAttr...)
+		h.httpMeter.ClientResponseSize.Record(ctx, req.ContentLength, recAttr...)
+		h.httpMeter.ClientDuration.Record(ctx, float64(time.Since(start).Microseconds())/1000, recAttr...)
 		return resp, err
 	}
 }
@@ -99,14 +106,14 @@ func (h *OutboundHandler) request(ctx context.Context, req *http.Request, tlr *h
 				req.Header.Set(k, v[0])
 			}
 		}
-		h.Meter().AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+		h.StanzaMeter().AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		httpClient := &http.Client{
 			Transport: otelhttp.NewTransport(
 				http.DefaultTransport,
 			)}
 		return httpClient.Do(req)
 	} else {
-		h.Meter().BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+		h.StanzaMeter().BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		return &http.Response{
 			Status:     fmt.Sprintf("%d Too Many Request", http.StatusTooManyRequests),
 			StatusCode: http.StatusTooManyRequests,

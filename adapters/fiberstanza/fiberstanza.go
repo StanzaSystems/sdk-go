@@ -7,7 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/StanzaSystems/sdk-go/handlers/httphandler"
+	"github.com/StanzaSystems/sdk-go/handlers/http/httpclient"
+	"github.com/StanzaSystems/sdk-go/handlers/http/httpserver"
 	"github.com/StanzaSystems/sdk-go/keys"
 	"github.com/StanzaSystems/sdk-go/logging"
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
@@ -50,9 +51,9 @@ type decorateRequest struct {
 }
 
 var (
-	inboundHandler  *httphandler.InboundHandler  = nil
-	outboundHandler *httphandler.OutboundHandler = nil
-	seenDecorators  map[string]bool              = make(map[string]bool)
+	inboundHandler  *httpserver.InboundHandler  = nil
+	outboundHandler *httpclient.OutboundHandler = nil
+	seenDecorators  map[string]bool             = make(map[string]bool)
 )
 
 // New creates a new fiberstanza middleware fiber.Handler
@@ -80,12 +81,12 @@ func New(decorator string, opts ...Opt) fiber.Handler {
 		recAttr := []metric.RecordOption{metric.WithAttributes(append(h.Attributes(),
 			attribute.Key("http.request.method").String(string(c.Request().Header.Method())),
 			attribute.Key("http.response.status_code").Int(c.Response().StatusCode()))...)}
-		h.Meter().ServerActiveRequests.Add(savedCtx, 1, addAttr...)
+		h.HttpMeter().ServerActiveRequests.Add(savedCtx, 1, addAttr...)
 		defer func() {
-			h.Meter().ServerDuration.Record(savedCtx, float64(time.Since(start).Microseconds())/1000, recAttr...)
-			h.Meter().ServerRequestSize.Record(savedCtx, int64(len(c.Request().Body())), recAttr...)
-			h.Meter().ServerResponseSize.Record(savedCtx, int64(len(c.Response().Body())), recAttr...)
-			h.Meter().ServerActiveRequests.Add(savedCtx, -1, addAttr...)
+			h.HttpMeter().ServerDuration.Record(savedCtx, float64(time.Since(start).Microseconds())/1000, recAttr...)
+			h.HttpMeter().ServerRequestSize.Record(savedCtx, int64(len(c.Request().Body())), recAttr...)
+			h.HttpMeter().ServerResponseSize.Record(savedCtx, int64(len(c.Response().Body())), recAttr...)
+			h.HttpMeter().ServerActiveRequests.Add(savedCtx, -1, addAttr...)
 			c.SetUserContext(savedCtx)
 			cancel()
 		}()
@@ -93,10 +94,10 @@ func New(decorator string, opts ...Opt) fiber.Handler {
 		var req http.Request
 		if err := fasthttpadaptor.ConvertRequest(c.Context(), &req, true); err != nil {
 			logging.Error(fmt.Errorf("failed to convert request from fasthttp: %v", err))
-			h.Meter().FailedCount.Add(c.UserContext(), 1, addAttr...)
+			h.StanzaMeter().FailedCount.Add(c.UserContext(), 1, addAttr...)
 			return c.Next() // log error and fail open
 		} else {
-			h.Meter().SucceededCount.Add(c.UserContext(), 1, addAttr...)
+			h.StanzaMeter().SucceededCount.Add(c.UserContext(), 1, addAttr...)
 		}
 		ctx, status := h.VerifyServingCapacity(&req, c.Route().Path, decorator)
 		if status != http.StatusOK {

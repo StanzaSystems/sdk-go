@@ -1,4 +1,4 @@
-package httphandler
+package httpserver
 
 import (
 	"context"
@@ -21,17 +21,24 @@ import (
 
 type InboundHandler struct {
 	*handlers.InboundHandler
+	httpMeter *HttpMeter
 }
 
 // NewInboundHandler returns a new InboundHandler
-func NewInboundHandler(apikey, clientId, environment, service string, otelEnabled, sentinelEnabled bool, instrumentationName string, instrumentationVersion string) (*InboundHandler, error) {
-	h := &InboundHandler{handlers.NewInboundHandler(apikey, clientId, environment, service, otelEnabled, sentinelEnabled, instrumentationName, instrumentationVersion)}
-	if m, err := GetMeter(); err != nil {
-		return h, err
-	} else {
-		h.SetMeter(m)
-		return h, nil
+func NewInboundHandler(apikey, clientId, environment, service string, otelEnabled, sentinelEnabled bool) (*InboundHandler, error) {
+	h, err := handlers.NewInboundHandler(apikey, clientId, environment, service, otelEnabled, sentinelEnabled)
+	if err != nil {
+		return nil, err
 	}
+	m, err := NewHttpMeter()
+	if err != nil {
+		return nil, err
+	}
+	return &InboundHandler{h, m}, nil
+}
+
+func (h *InboundHandler) HttpMeter() *HttpMeter {
+	return h.httpMeter
 }
 
 func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, decorator string) (context.Context, int) {
@@ -71,7 +78,7 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, de
 			)
 			attrWithReason := append(attr, h.ReasonKey(b.BlockType().String()))
 			span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
-			h.Meter().BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
+			h.StanzaMeter().BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
 			return ctx, http.StatusTooManyRequests
 		}
 		e.Exit() // cleanly exit the Sentinel Entry
@@ -86,7 +93,7 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, de
 		r.Header.Values("x-stanza-token")); !ok {
 		attrWithReason := append(attr, h.ReasonKey("invalid token"))
 		span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
-		h.Meter().BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
+		h.StanzaMeter().BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
 		return ctx, http.StatusTooManyRequests
 	}
 
@@ -97,11 +104,11 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, de
 		tlr); !ok {
 		attrWithReason := append(attr, h.ReasonKey("quota"))
 		span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
-		h.Meter().BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
+		h.StanzaMeter().BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
 		return ctx, http.StatusTooManyRequests
 	}
 
 	span.AddEvent("Stanza allowed", trace.WithAttributes(attr...))
-	h.Meter().AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+	h.StanzaMeter().AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 	return ctx, http.StatusOK // return success
 }
