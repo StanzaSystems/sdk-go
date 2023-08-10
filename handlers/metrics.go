@@ -41,14 +41,6 @@ type Meter struct {
 	BlockedCount        metric.Int64Counter
 }
 
-func GetInstrumentationName() string {
-	return instrumentationName
-}
-
-func GetInstrumentationVersion() string {
-	return instrumentationVersion
-}
-
 func GetStanzaMeter() (*Meter, error) {
 	if stanzaMeter != nil {
 		return stanzaMeter, nil
