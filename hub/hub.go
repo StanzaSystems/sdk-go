@@ -25,11 +25,12 @@ var (
 	waitingLeases     = make(map[string][]*hubv1.TokenLease)
 	waitingLeasesLock = make(map[string]*sync.RWMutex)
 
-	cachedLeases     = make(map[string][]*hubv1.TokenLease)
-	cachedLeasesLock = make(map[string]*sync.RWMutex)
-	cachedLeasesUsed = make(map[string]int)
-	cachedLeasesReq  = make(map[string]*hubv1.GetTokenLeaseRequest)
-	cachedLeasesInit sync.Once
+	cachedLeasesMapLock = &sync.RWMutex{}
+	cachedLeases        = make(map[string][]*hubv1.TokenLease)
+	cachedLeasesLock    = make(map[string]*sync.RWMutex)
+	cachedLeasesUsed    = make(map[string]int)
+	cachedLeasesReq     = make(map[string]*hubv1.GetTokenLeaseRequest)
+	cachedLeasesInit    sync.Once
 
 	consumedLeases     = []string{}
 	consumedLeasesLock = &sync.RWMutex{}
@@ -42,17 +43,21 @@ func CheckQuota(apikey string, dc *hubv1.DecoratorConfig, qsc hubv1.QuotaService
 
 	dec := tlr.Selector.GetDecoratorName()
 	if dc.GetCheckQuota() && qsc != nil {
-		if _, ok := cachedLeases[dec]; !ok {
-			cachedLeases[dec] = []*hubv1.TokenLease{}
-			cachedLeasesLock[dec] = &sync.RWMutex{}
-			cachedLeasesUsed[dec] = 0
-			cachedLeasesReq[dec] = &hubv1.GetTokenLeaseRequest{
-				Selector: &hubv1.DecoratorFeatureSelector{
-					Environment:   tlr.Selector.GetEnvironment(),
-					DecoratorName: tlr.Selector.GetDecoratorName(),
-				},
-				ClientId: tlr.ClientId,
+		if _, ok := cachedLeases[dec]; !ok { // existence check without a lock
+			cachedLeasesMapLock.Lock()
+			if _, ok := cachedLeases[dec]; !ok { // check again with lock (before write)
+				cachedLeases[dec] = []*hubv1.TokenLease{}
+				cachedLeasesLock[dec] = &sync.RWMutex{}
+				cachedLeasesUsed[dec] = 0
+				cachedLeasesReq[dec] = &hubv1.GetTokenLeaseRequest{
+					Selector: &hubv1.DecoratorFeatureSelector{
+						Environment:   tlr.Selector.GetEnvironment(),
+						DecoratorName: tlr.Selector.GetDecoratorName(),
+					},
+					ClientId: tlr.ClientId,
+				}
 			}
+			cachedLeasesMapLock.Unlock()
 		}
 		if _, ok := waitingLeases[dec]; !ok {
 			waitingLeases[dec] = []*hubv1.TokenLease{}
