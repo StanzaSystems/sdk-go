@@ -17,9 +17,13 @@
 
 # VSCode
 .vscode/
+__debug*
 
 # Build artifacts
 bin/
 
 # Any user generated certs, don't check those in.
 certs/
+
+# Loadtest artifacts
+loadtest/
