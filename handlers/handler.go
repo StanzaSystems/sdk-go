@@ -24,7 +24,8 @@ type Handler struct {
 	attr            []attribute.KeyValue
 }
 
-func NewHandler(apikey, clientId, environment, service string, otelEnabled, sentinelEnabled bool, instrumentationName string, instrumentationVersion string) *Handler {
+func NewHandler(apikey, clientId, environment, service string, otelEnabled, sentinelEnabled bool) (*Handler, error) {
+	m, err := GetStanzaMeter()
 	return &Handler{
 		apikey:          apikey,
 		clientId:        clientId,
@@ -34,6 +35,7 @@ func NewHandler(apikey, clientId, environment, service string, otelEnabled, sent
 		decoratorConfig: make(map[string]*hubv1.DecoratorConfig),
 		qsc:             nil,
 		propagators:     otel.GetTextMapPropagator(),
+		meter:           m,
 		tracer: otel.GetTracerProvider().Tracer(
 			instrumentationName,
 			trace.WithInstrumentationVersion(instrumentationVersion),
@@ -43,7 +45,7 @@ func NewHandler(apikey, clientId, environment, service string, otelEnabled, sent
 			environmentKey.String(environment),
 			serviceKey.String(service),
 		},
-	}
+	}, err
 }
 
 func (h *Handler) APIKey() string {
@@ -86,8 +88,16 @@ func (h *Handler) ReasonKey(reason string) attribute.KeyValue {
 	return reasonKey.String(reason)
 }
 
-func (h *Handler) SetMeter(meter *Meter) {
-	h.meter = meter
+func (h *Handler) ReasonFailOpen() attribute.KeyValue {
+	return reasonKey.String("fail_open")
+}
+
+func (h *Handler) ReasonInvalidToken() attribute.KeyValue {
+	return reasonKey.String("invalid_token")
+}
+
+func (h *Handler) ReasonQuota() attribute.KeyValue {
+	return reasonKey.String("quota")
 }
 
 func (h *Handler) SetCustomerId(id string) {

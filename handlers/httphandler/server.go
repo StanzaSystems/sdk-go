@@ -24,14 +24,12 @@ type InboundHandler struct {
 }
 
 // NewInboundHandler returns a new InboundHandler
-func NewInboundHandler(apikey, clientId, environment, service string, otelEnabled, sentinelEnabled bool, instrumentationName string, instrumentationVersion string) (*InboundHandler, error) {
-	h := &InboundHandler{handlers.NewInboundHandler(apikey, clientId, environment, service, otelEnabled, sentinelEnabled, instrumentationName, instrumentationVersion)}
-	if m, err := GetMeter(); err != nil {
-		return h, err
-	} else {
-		h.SetMeter(m)
-		return h, nil
+func NewInboundHandler(apikey, clientId, environment, service string, otelEnabled, sentinelEnabled bool) (*InboundHandler, error) {
+	h, err := handlers.NewInboundHandler(apikey, clientId, environment, service, otelEnabled, sentinelEnabled)
+	if err != nil {
+		return nil, err
 	}
+	return &InboundHandler{h}, nil
 }
 
 func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, decorator string) (context.Context, int) {
@@ -84,7 +82,7 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, de
 		h.DecoratorConfig(decorator),
 		h.QuotaServiceClient(),
 		r.Header.Values("x-stanza-token")); !ok {
-		attrWithReason := append(attr, h.ReasonKey("invalid token"))
+		attrWithReason := append(attr, h.ReasonInvalidToken())
 		span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
 		h.Meter().BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
 		return ctx, http.StatusTooManyRequests
@@ -95,7 +93,7 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, de
 		h.DecoratorConfig(decorator),
 		h.QuotaServiceClient(),
 		tlr); !ok {
-		attrWithReason := append(attr, h.ReasonKey("quota"))
+		attrWithReason := append(attr, h.ReasonQuota())
 		span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
 		h.Meter().BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
 		return ctx, http.StatusTooManyRequests

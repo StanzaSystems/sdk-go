@@ -16,7 +16,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 )
@@ -73,30 +72,13 @@ func New(decorator string, opts ...Opt) fiber.Handler {
 	h := inboundHandler
 
 	return func(c *fiber.Ctx) error {
-		start := time.Now()
-		savedCtx, cancel := context.WithCancel(c.UserContext())
-
-		addAttr := []metric.AddOption{metric.WithAttributes(h.Attributes()...)}
-		recAttr := []metric.RecordOption{metric.WithAttributes(append(h.Attributes(),
-			attribute.Key("http.request.method").String(string(c.Request().Header.Method())),
-			attribute.Key("http.response.status_code").Int(c.Response().StatusCode()))...)}
-		h.Meter().ServerActiveRequests.Add(savedCtx, 1, addAttr...)
-		defer func() {
-			h.Meter().ServerDuration.Record(savedCtx, float64(time.Since(start).Microseconds())/1000, recAttr...)
-			h.Meter().ServerRequestSize.Record(savedCtx, int64(len(c.Request().Body())), recAttr...)
-			h.Meter().ServerResponseSize.Record(savedCtx, int64(len(c.Response().Body())), recAttr...)
-			h.Meter().ServerActiveRequests.Add(savedCtx, -1, addAttr...)
-			c.SetUserContext(savedCtx)
-			cancel()
-		}()
-
 		var req http.Request
 		if err := fasthttpadaptor.ConvertRequest(c.Context(), &req, true); err != nil {
 			logging.Error(fmt.Errorf("failed to convert request from fasthttp: %v", err))
-			h.Meter().FailedCount.Add(c.UserContext(), 1, addAttr...)
+			h.Meter().AllowedSuccessCount.Add(c.UserContext(), 1,
+				[]metric.AddOption{metric.WithAttributes(append(h.Attributes(),
+					h.ReasonFailOpen())...)}...)
 			return c.Next() // log error and fail open
-		} else {
-			h.Meter().SucceededCount.Add(c.UserContext(), 1, addAttr...)
 		}
 		ctx, status := h.VerifyServingCapacity(&req, c.Route().Path, decorator)
 		if status != http.StatusOK {
@@ -104,6 +86,16 @@ func New(decorator string, opts ...Opt) fiber.Handler {
 			return c.SendStatus(status)
 		}
 		c.SetUserContext(ctx)
+
+		start := time.Now()
+		savedCtx, cancel := context.WithCancel(c.UserContext())
+		defer func() {
+			h.Meter().AllowedDuration.Record(savedCtx,
+				float64(time.Since(start).Microseconds())/1000,
+				[]metric.RecordOption{metric.WithAttributes(h.Attributes()...)}...)
+			c.SetUserContext(savedCtx)
+			cancel()
+		}()
 		return c.Next()
 	}
 }

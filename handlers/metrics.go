@@ -1,8 +1,23 @@
 package handlers
 
 import (
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+)
+
+const (
+	instrumentationName    = "github.com/StanzaSystems/sdk-go"
+	instrumentationVersion = "0.0.1-beta"
+
+	// Stanza SDK Metrics:
+	// https://github.com/StanzaSystems/sdk-spec#telemetry-metrics
+	stanzaAllowed         = "stanza.decorator.allowed"          // counter
+	stanzaAllowedSuccess  = "stanza.decorator.allowed.success"  // counter
+	stanzaAllowedFailure  = "stanza.decorator.allowed.failure"  // counter
+	stanzaAllowedUnknown  = "stanza.decorator.allowed.unknown"  // counter
+	stanzaAllowedDuration = "stanza.decorator.allowed.duration" // histogram (milliseconds)
+	stanzaBlocked         = "stanza.decorator.blocked"          // counter
 )
 
 var (
@@ -13,20 +28,72 @@ var (
 	featureKey     = attribute.Key("feature")
 	serviceKey     = attribute.Key("service")
 	reasonKey      = attribute.Key("reason")
+
+	stanzaMeter *Meter
 )
 
 type Meter struct {
-	AllowedCount   metric.Int64Counter
-	BlockedCount   metric.Int64Counter
-	FailedCount    metric.Int64Counter
-	SucceededCount metric.Int64Counter
+	AllowedCount        metric.Int64Counter
+	AllowedSuccessCount metric.Int64Counter
+	AllowedFailureCount metric.Int64Counter
+	AllowedUnknownCount metric.Int64Counter
+	AllowedDuration     metric.Float64Histogram
+	BlockedCount        metric.Int64Counter
+}
 
-	ClientDuration     metric.Float64Histogram
-	ClientRequestSize  metric.Int64Histogram
-	ClientResponseSize metric.Int64Histogram
+func GetStanzaMeter() (*Meter, error) {
+	if stanzaMeter != nil {
+		return stanzaMeter, nil
+	}
+	meter := otel.Meter(
+		instrumentationName,
+		metric.WithInstrumentationVersion(instrumentationVersion))
 
-	ServerDuration       metric.Float64Histogram
-	ServerRequestSize    metric.Int64Histogram
-	ServerResponseSize   metric.Int64Histogram
-	ServerActiveRequests metric.Int64UpDownCounter
+	var err error
+	var m Meter
+	m.AllowedCount, err = meter.Int64Counter(
+		stanzaAllowed,
+		metric.WithUnit("1"),
+		metric.WithDescription("measures the number of executions that were allowed"))
+	if err != nil {
+		return nil, err
+	}
+	m.BlockedCount, err = meter.Int64Counter(
+		stanzaBlocked,
+		metric.WithUnit("1"),
+		metric.WithDescription("measures the number of executions that were backpressured"))
+	if err != nil {
+		return nil, err
+	}
+	m.AllowedSuccessCount, err = meter.Int64Counter(
+		stanzaAllowedSuccess,
+		metric.WithUnit("1"),
+		metric.WithDescription("measures the number of executions that succeeded"))
+	if err != nil {
+		return nil, err
+	}
+	m.AllowedFailureCount, err = meter.Int64Counter(
+		stanzaAllowedFailure,
+		metric.WithUnit("1"),
+		metric.WithDescription("measures the number of executions that failed"))
+	if err != nil {
+		return nil, err
+	}
+	m.AllowedUnknownCount, err = meter.Int64Counter(
+		stanzaAllowedUnknown,
+		metric.WithUnit("1"),
+		metric.WithDescription("measures the number of executions where the success (or failure) was unknown"))
+	if err != nil {
+		return nil, err
+	}
+	m.AllowedDuration, err = meter.Float64Histogram(
+		stanzaAllowedDuration,
+		metric.WithUnit("ms"),
+		metric.WithDescription("measures the total executions time of decorated requests"))
+	if err != nil {
+		return nil, err
+	}
+
+	stanzaMeter = &m
+	return stanzaMeter, nil
 }

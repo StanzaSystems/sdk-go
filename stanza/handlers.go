@@ -4,6 +4,7 @@ import (
 	"github.com/StanzaSystems/sdk-go/handlers/httphandler"
 )
 
+// HTTP Client
 func NewHttpOutboundHandler() (*httphandler.OutboundHandler, error) {
 	h, err := httphandler.NewOutboundHandler(
 		gs.clientOpt.APIKey,
@@ -16,6 +17,7 @@ func NewHttpOutboundHandler() (*httphandler.OutboundHandler, error) {
 	return h, err
 }
 
+// HTTP Server
 func NewHttpInboundHandler() (*httphandler.InboundHandler, error) {
 	h, err := httphandler.NewInboundHandler(
 		gs.clientOpt.APIKey,
@@ -24,8 +26,7 @@ func NewHttpInboundHandler() (*httphandler.InboundHandler, error) {
 		gs.clientOpt.Name,
 		OtelEnabled(),
 		SentinelEnabled(),
-		httphandler.GetInstrumentationName(),
-		httphandler.GetInstrumentationVersion())
+	)
 	gs.httpInboundHandler = h
 	return h, err
 }

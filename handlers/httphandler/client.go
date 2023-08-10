@@ -12,11 +12,11 @@ import (
 	"github.com/StanzaSystems/sdk-go/keys"
 	"github.com/StanzaSystems/sdk-go/otel"
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
-	"google.golang.org/protobuf/proto"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	"google.golang.org/protobuf/proto"
 )
 
 type OutboundHandler struct {
@@ -25,13 +25,11 @@ type OutboundHandler struct {
 
 // NewOutboundHandler returns a new OutboundHandler
 func NewOutboundHandler(apikey, clientId, environment, service string, otelEnabled, sentinelEnabled bool) (*OutboundHandler, error) {
-	h := &OutboundHandler{handlers.NewOutboundHandler(apikey, clientId, environment, service, otelEnabled, sentinelEnabled, instrumentationName, instrumentationVersion)}
-	if m, err := GetMeter(); err != nil {
-		return h, err
-	} else {
-		h.SetMeter(m)
-		return h, nil
+	h, err := handlers.NewOutboundHandler(apikey, clientId, environment, service, otelEnabled, sentinelEnabled)
+	if err != nil {
+		return nil, err
 	}
+	return &OutboundHandler{h}, nil
 }
 
 // Get wraps a HTTP GET request
@@ -61,22 +59,18 @@ func (h *OutboundHandler) Request(ctx context.Context, httpMethod, url string, b
 	tlr.ClientId = proto.String(h.ClientID())
 	tlr.Selector.Environment = h.Environment()
 	if req, err := http.NewRequestWithContext(ctx, httpMethod, url, body); err != nil {
-		h.Meter().FailedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+		h.Meter().AllowedFailureCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		return nil, err
 	} else {
 		start := time.Now()
 		resp, err := h.request(ctx, req, tlr, attr)
 		if err != nil {
-			h.Meter().FailedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+			h.Meter().AllowedFailureCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		} else {
-			h.Meter().SucceededCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+			h.Meter().AllowedSuccessCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		}
-		recAttr := []metric.RecordOption{metric.WithAttributes(append(attr,
-			httpRequestMethodKey.String(httpMethod),
-			httpResponseCodeKey.Int(resp.StatusCode))...)}
-		h.Meter().ClientRequestSize.Record(ctx, resp.ContentLength, recAttr...)
-		h.Meter().ClientResponseSize.Record(ctx, req.ContentLength, recAttr...)
-		h.Meter().ClientDuration.Record(ctx, float64(time.Since(start).Microseconds())/1000, recAttr...)
+		recAttr := []metric.RecordOption{metric.WithAttributes(attr...)}
+		h.Meter().AllowedDuration.Record(ctx, float64(time.Since(start).Microseconds())/1000, recAttr...)
 		return resp, err
 	}
 }
