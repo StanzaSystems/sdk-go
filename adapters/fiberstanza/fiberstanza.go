@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
-	"github.com/StanzaSystems/sdk-go/handlers/http/httpclient"
-	"github.com/StanzaSystems/sdk-go/handlers/http/httpserver"
+	"github.com/StanzaSystems/sdk-go/handlers/httphandler"
 	"github.com/StanzaSystems/sdk-go/keys"
 	"github.com/StanzaSystems/sdk-go/logging"
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
@@ -17,7 +15,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 )
@@ -51,9 +48,9 @@ type decorateRequest struct {
 }
 
 var (
-	inboundHandler  *httpserver.InboundHandler  = nil
-	outboundHandler *httpclient.OutboundHandler = nil
-	seenDecorators  map[string]bool             = make(map[string]bool)
+	inboundHandler  *httphandler.InboundHandler  = nil
+	outboundHandler *httphandler.OutboundHandler = nil
+	seenDecorators  map[string]bool              = make(map[string]bool)
 )
 
 // New creates a new fiberstanza middleware fiber.Handler
@@ -74,30 +71,13 @@ func New(decorator string, opts ...Opt) fiber.Handler {
 	h := inboundHandler
 
 	return func(c *fiber.Ctx) error {
-		start := time.Now()
-		savedCtx, cancel := context.WithCancel(c.UserContext())
-
-		addAttr := []metric.AddOption{metric.WithAttributes(h.Attributes()...)}
-		recAttr := []metric.RecordOption{metric.WithAttributes(append(h.Attributes(),
-			attribute.Key("http.request.method").String(string(c.Request().Header.Method())),
-			attribute.Key("http.response.status_code").Int(c.Response().StatusCode()))...)}
-		h.HttpMeter().ServerActiveRequests.Add(savedCtx, 1, addAttr...)
-		defer func() {
-			h.HttpMeter().ServerDuration.Record(savedCtx, float64(time.Since(start).Microseconds())/1000, recAttr...)
-			h.HttpMeter().ServerRequestSize.Record(savedCtx, int64(len(c.Request().Body())), recAttr...)
-			h.HttpMeter().ServerResponseSize.Record(savedCtx, int64(len(c.Response().Body())), recAttr...)
-			h.HttpMeter().ServerActiveRequests.Add(savedCtx, -1, addAttr...)
-			c.SetUserContext(savedCtx)
-			cancel()
-		}()
-
 		var req http.Request
+		addAttr := []metric.AddOption{metric.WithAttributes(h.Attributes()...)}
 		if err := fasthttpadaptor.ConvertRequest(c.Context(), &req, true); err != nil {
 			logging.Error(fmt.Errorf("failed to convert request from fasthttp: %v", err))
-			h.StanzaMeter().FailedCount.Add(c.UserContext(), 1, addAttr...)
+			// TODO:ADD "reason = fail_open"
+			h.StanzaMeter().AllowedSuccessCount.Add(c.UserContext(), 1, addAttr...)
 			return c.Next() // log error and fail open
-		} else {
-			h.StanzaMeter().SucceededCount.Add(c.UserContext(), 1, addAttr...)
 		}
 		ctx, status := h.VerifyServingCapacity(&req, c.Route().Path, decorator)
 		if status != http.StatusOK {

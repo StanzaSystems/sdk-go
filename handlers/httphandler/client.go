@@ -1,4 +1,4 @@
-package httpclient
+package httphandler
 
 import (
 	"context"
@@ -21,7 +21,6 @@ import (
 
 type OutboundHandler struct {
 	*handlers.OutboundHandler
-	httpMeter *HttpMeter
 }
 
 // NewOutboundHandler returns a new OutboundHandler
@@ -30,15 +29,7 @@ func NewOutboundHandler(apikey, clientId, environment, service string, otelEnabl
 	if err != nil {
 		return nil, err
 	}
-	m, err := NewHttpMeter()
-	if err != nil {
-		return nil, err
-	}
-	return &OutboundHandler{h, m}, nil
-}
-
-func (h *OutboundHandler) HttpMeter() *HttpMeter {
-	return h.httpMeter
+	return &OutboundHandler{h}, nil
 }
 
 // Get wraps a HTTP GET request
@@ -68,22 +59,18 @@ func (h *OutboundHandler) Request(ctx context.Context, httpMethod, url string, b
 	tlr.ClientId = proto.String(h.ClientID())
 	tlr.Selector.Environment = h.Environment()
 	if req, err := http.NewRequestWithContext(ctx, httpMethod, url, body); err != nil {
-		h.StanzaMeter().FailedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+		h.StanzaMeter().AllowedFailureCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		return nil, err
 	} else {
 		start := time.Now()
 		resp, err := h.request(ctx, req, tlr, attr)
 		if err != nil {
-			h.StanzaMeter().FailedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+			h.StanzaMeter().AllowedFailureCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		} else {
-			h.StanzaMeter().SucceededCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+			h.StanzaMeter().AllowedSuccessCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		}
-		recAttr := []metric.RecordOption{metric.WithAttributes(append(attr,
-			httpRequestMethodKey.String(httpMethod),
-			httpResponseCodeKey.Int(resp.StatusCode))...)}
-		h.httpMeter.ClientRequestSize.Record(ctx, resp.ContentLength, recAttr...)
-		h.httpMeter.ClientResponseSize.Record(ctx, req.ContentLength, recAttr...)
-		h.httpMeter.ClientDuration.Record(ctx, float64(time.Since(start).Microseconds())/1000, recAttr...)
+		recAttr := []metric.RecordOption{metric.WithAttributes(attr...)}
+		h.StanzaMeter().AllowedDuration.Record(ctx, float64(time.Since(start).Microseconds())/1000, recAttr...)
 		return resp, err
 	}
 }

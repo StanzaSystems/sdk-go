@@ -1,4 +1,4 @@
-package httpserver
+package httphandler
 
 import (
 	"context"
@@ -21,7 +21,6 @@ import (
 
 type InboundHandler struct {
 	*handlers.InboundHandler
-	httpMeter *HttpMeter
 }
 
 // NewInboundHandler returns a new InboundHandler
@@ -30,15 +29,7 @@ func NewInboundHandler(apikey, clientId, environment, service string, otelEnable
 	if err != nil {
 		return nil, err
 	}
-	m, err := NewHttpMeter()
-	if err != nil {
-		return nil, err
-	}
-	return &InboundHandler{h, m}, nil
-}
-
-func (h *InboundHandler) HttpMeter() *HttpMeter {
-	return h.httpMeter
+	return &InboundHandler{h}, nil
 }
 
 func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, decorator string) (context.Context, int) {

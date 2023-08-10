@@ -12,11 +12,11 @@ const (
 
 	// Stanza SDK Metrics:
 	// https://github.com/StanzaSystems/sdk-spec#telemetry-metrics
-	stanzaRequestAllowed   = "stanza.request.allowed"   // counter
-	stanzaRequestBlocked   = "stanza.request.blocked"   // counter
-	stanzaRequestFailed    = "stanza.request.failed"    // counter
-	stanzaRequestSucceeded = "stanza.request.succeeded" // counter
-	stanzaRequestDuration  = "stanza.request.duration"  // histogram (milliseconds)
+	stanzaAllowed         = "stanza.decorator.allowed"          // counter
+	stanzaAllowedSuccess  = "stanza.decorator.allowed.success"  // counter
+	stanzaAllowedFailure  = "stanza.decorator.allowed.failure"  // counter
+	stanzaAllowedDuration = "stanza.decorator.allowed.duration" // histogram (milliseconds)
+	stanzaBlocked         = "stanza.decorator.blocked"          // counter
 )
 
 var (
@@ -32,11 +32,11 @@ var (
 )
 
 type StanzaMeter struct {
-	AllowedCount   metric.Int64Counter
-	BlockedCount   metric.Int64Counter
-	FailedCount    metric.Int64Counter
-	SucceededCount metric.Int64Counter
-	Duration       metric.Float64Histogram
+	AllowedCount        metric.Int64Counter
+	AllowedFailureCount metric.Int64Counter
+	AllowedSuccessCount metric.Int64Counter
+	AllowedDuration     metric.Float64Histogram
+	BlockedCount        metric.Int64Counter
 }
 
 func GetInstrumentationName() string {
@@ -58,35 +58,35 @@ func GetStanzaMeter() (*StanzaMeter, error) {
 	var err error
 	var m StanzaMeter
 	m.AllowedCount, err = meter.Int64Counter(
-		stanzaRequestAllowed,
+		stanzaAllowed,
 		metric.WithUnit("1"),
 		metric.WithDescription("measures the number of requests that were allowed"))
 	if err != nil {
 		return nil, err
 	}
 	m.BlockedCount, err = meter.Int64Counter(
-		stanzaRequestBlocked,
+		stanzaBlocked,
 		metric.WithUnit("1"),
 		metric.WithDescription("measures the number of requests that were backpressured"))
 	if err != nil {
 		return nil, err
 	}
-	m.SucceededCount, err = meter.Int64Counter(
-		stanzaRequestSucceeded,
+	m.AllowedSuccessCount, err = meter.Int64Counter(
+		stanzaAllowedSuccess,
 		metric.WithUnit("1"),
 		metric.WithDescription("measures the number of requests that succeeded"))
 	if err != nil {
 		return nil, err
 	}
-	m.FailedCount, err = meter.Int64Counter(
-		stanzaRequestFailed,
+	m.AllowedFailureCount, err = meter.Int64Counter(
+		stanzaAllowedFailure,
 		metric.WithUnit("1"),
 		metric.WithDescription("measures the number of requests that failed"))
 	if err != nil {
 		return nil, err
 	}
-	m.Duration, err = meter.Float64Histogram(
-		stanzaRequestDuration,
+	m.AllowedDuration, err = meter.Float64Histogram(
+		stanzaAllowedDuration,
 		metric.WithUnit("ms"),
 		metric.WithDescription("measures the total execution time of decorated requests"))
 	if err != nil {

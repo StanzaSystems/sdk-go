@@ -1,13 +1,12 @@
 package stanza
 
 import (
-	"github.com/StanzaSystems/sdk-go/handlers/http/httpclient"
-	"github.com/StanzaSystems/sdk-go/handlers/http/httpserver"
+	"github.com/StanzaSystems/sdk-go/handlers/httphandler"
 )
 
 // HTTP Client
-func NewHttpOutboundHandler() (*httpclient.OutboundHandler, error) {
-	h, err := httpclient.NewOutboundHandler(
+func NewHttpOutboundHandler() (*httphandler.OutboundHandler, error) {
+	h, err := httphandler.NewOutboundHandler(
 		gs.clientOpt.APIKey,
 		gs.clientId.String(),
 		gs.clientOpt.Environment,
@@ -19,8 +18,8 @@ func NewHttpOutboundHandler() (*httpclient.OutboundHandler, error) {
 }
 
 // HTTP Server
-func NewHttpInboundHandler() (*httpserver.InboundHandler, error) {
-	h, err := httpserver.NewInboundHandler(
+func NewHttpInboundHandler() (*httphandler.InboundHandler, error) {
+	h, err := httphandler.NewInboundHandler(
 		gs.clientOpt.APIKey,
 		gs.clientId.String(),
 		gs.clientOpt.Environment,

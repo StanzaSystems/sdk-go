@@ -11,8 +11,7 @@ import (
 	"time"
 
 	"github.com/StanzaSystems/sdk-go/ca"
-	"github.com/StanzaSystems/sdk-go/handlers/http/httpclient"
-	"github.com/StanzaSystems/sdk-go/handlers/http/httpserver"
+	"github.com/StanzaSystems/sdk-go/handlers/httphandler"
 	"github.com/StanzaSystems/sdk-go/logging"
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
 
@@ -36,8 +35,8 @@ type state struct {
 	hubQuotaClient  hubv1.QuotaServiceClient
 
 	// HTTP
-	httpInboundHandler  *httpserver.InboundHandler
-	httpOutboundHandler *httpclient.OutboundHandler
+	httpInboundHandler  *httphandler.InboundHandler
+	httpOutboundHandler *httphandler.OutboundHandler
 
 	// stored from GetBearerToken request
 	bearerToken     string
