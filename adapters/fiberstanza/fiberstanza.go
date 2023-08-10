@@ -16,7 +16,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 )
@@ -78,7 +77,7 @@ func New(decorator string, opts ...Opt) fiber.Handler {
 			logging.Error(fmt.Errorf("failed to convert request from fasthttp: %v", err))
 			h.Meter().AllowedSuccessCount.Add(c.UserContext(), 1,
 				[]metric.AddOption{metric.WithAttributes(append(h.Attributes(),
-					attribute.Key("reason").String("fail_open"))...)}...)
+					h.ReasonKey("fail_open"))...)}...)
 			return c.Next() // log error and fail open
 		}
 		ctx, status := h.VerifyServingCapacity(&req, c.Route().Path, decorator)
