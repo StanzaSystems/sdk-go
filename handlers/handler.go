@@ -88,6 +88,18 @@ func (h *Handler) ReasonKey(reason string) attribute.KeyValue {
 	return reasonKey.String(reason)
 }
 
+func (h *Handler) ReasonFailOpen() attribute.KeyValue {
+	return reasonKey.String("fail_open")
+}
+
+func (h *Handler) ReasonInvalidToken() attribute.KeyValue {
+	return reasonKey.String("invalid_token")
+}
+
+func (h *Handler) ReasonQuota() attribute.KeyValue {
+	return reasonKey.String("quota")
+}
+
 func (h *Handler) SetCustomerId(id string) {
 	if h.customerId == "" {
 		h.customerId = id

@@ -82,7 +82,7 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, de
 		h.DecoratorConfig(decorator),
 		h.QuotaServiceClient(),
 		r.Header.Values("x-stanza-token")); !ok {
-		attrWithReason := append(attr, h.ReasonKey("invalid token"))
+		attrWithReason := append(attr, h.ReasonInvalidToken())
 		span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
 		h.Meter().BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
 		return ctx, http.StatusTooManyRequests
@@ -93,7 +93,7 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, de
 		h.DecoratorConfig(decorator),
 		h.QuotaServiceClient(),
 		tlr); !ok {
-		attrWithReason := append(attr, h.ReasonKey("quota"))
+		attrWithReason := append(attr, h.ReasonQuota())
 		span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
 		h.Meter().BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
 		return ctx, http.StatusTooManyRequests

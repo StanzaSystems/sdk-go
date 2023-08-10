@@ -77,7 +77,7 @@ func New(decorator string, opts ...Opt) fiber.Handler {
 			logging.Error(fmt.Errorf("failed to convert request from fasthttp: %v", err))
 			h.Meter().AllowedSuccessCount.Add(c.UserContext(), 1,
 				[]metric.AddOption{metric.WithAttributes(append(h.Attributes(),
-					h.ReasonKey("fail_open"))...)}...)
+					h.ReasonFailOpen())...)}...)
 			return c.Next() // log error and fail open
 		}
 		ctx, status := h.VerifyServingCapacity(&req, c.Route().Path, decorator)
