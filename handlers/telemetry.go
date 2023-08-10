@@ -15,6 +15,7 @@ const (
 	stanzaAllowed         = "stanza.decorator.allowed"          // counter
 	stanzaAllowedSuccess  = "stanza.decorator.allowed.success"  // counter
 	stanzaAllowedFailure  = "stanza.decorator.allowed.failure"  // counter
+	stanzaAllowedUnknown  = "stanza.decorator.allowed.unknown"  // counter
 	stanzaAllowedDuration = "stanza.decorator.allowed.duration" // histogram (milliseconds)
 	stanzaBlocked         = "stanza.decorator.blocked"          // counter
 )
@@ -33,8 +34,9 @@ var (
 
 type StanzaMeter struct {
 	AllowedCount        metric.Int64Counter
-	AllowedFailureCount metric.Int64Counter
 	AllowedSuccessCount metric.Int64Counter
+	AllowedFailureCount metric.Int64Counter
+	AllowedUnknownCount metric.Int64Counter
 	AllowedDuration     metric.Float64Histogram
 	BlockedCount        metric.Int64Counter
 }
@@ -60,35 +62,42 @@ func GetStanzaMeter() (*StanzaMeter, error) {
 	m.AllowedCount, err = meter.Int64Counter(
 		stanzaAllowed,
 		metric.WithUnit("1"),
-		metric.WithDescription("measures the number of requests that were allowed"))
+		metric.WithDescription("measures the number of executions that were allowed"))
 	if err != nil {
 		return nil, err
 	}
 	m.BlockedCount, err = meter.Int64Counter(
 		stanzaBlocked,
 		metric.WithUnit("1"),
-		metric.WithDescription("measures the number of requests that were backpressured"))
+		metric.WithDescription("measures the number of executions that were backpressured"))
 	if err != nil {
 		return nil, err
 	}
 	m.AllowedSuccessCount, err = meter.Int64Counter(
 		stanzaAllowedSuccess,
 		metric.WithUnit("1"),
-		metric.WithDescription("measures the number of requests that succeeded"))
+		metric.WithDescription("measures the number of executions that succeeded"))
 	if err != nil {
 		return nil, err
 	}
 	m.AllowedFailureCount, err = meter.Int64Counter(
 		stanzaAllowedFailure,
 		metric.WithUnit("1"),
-		metric.WithDescription("measures the number of requests that failed"))
+		metric.WithDescription("measures the number of executions that failed"))
+	if err != nil {
+		return nil, err
+	}
+	m.AllowedUnknownCount, err = meter.Int64Counter(
+		stanzaAllowedUnknown,
+		metric.WithUnit("1"),
+		metric.WithDescription("measures the number of executions where the success (or failure) was unknown"))
 	if err != nil {
 		return nil, err
 	}
 	m.AllowedDuration, err = meter.Float64Histogram(
 		stanzaAllowedDuration,
 		metric.WithUnit("ms"),
-		metric.WithDescription("measures the total execution time of decorated requests"))
+		metric.WithDescription("measures the total executions time of decorated requests"))
 	if err != nil {
 		return nil, err
 	}

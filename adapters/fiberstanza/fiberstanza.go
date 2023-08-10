@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/StanzaSystems/sdk-go/handlers/httphandler"
 	"github.com/StanzaSystems/sdk-go/keys"
@@ -15,6 +16,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 )
@@ -72,11 +74,11 @@ func New(decorator string, opts ...Opt) fiber.Handler {
 
 	return func(c *fiber.Ctx) error {
 		var req http.Request
-		addAttr := []metric.AddOption{metric.WithAttributes(h.Attributes()...)}
 		if err := fasthttpadaptor.ConvertRequest(c.Context(), &req, true); err != nil {
 			logging.Error(fmt.Errorf("failed to convert request from fasthttp: %v", err))
-			// TODO:ADD "reason = fail_open"
-			h.StanzaMeter().AllowedSuccessCount.Add(c.UserContext(), 1, addAttr...)
+			h.StanzaMeter().AllowedSuccessCount.Add(c.UserContext(), 1,
+				[]metric.AddOption{metric.WithAttributes(append(h.Attributes(),
+					attribute.Key("reason").String("fail_open"))...)}...)
 			return c.Next() // log error and fail open
 		}
 		ctx, status := h.VerifyServingCapacity(&req, c.Route().Path, decorator)
@@ -85,6 +87,16 @@ func New(decorator string, opts ...Opt) fiber.Handler {
 			return c.SendStatus(status)
 		}
 		c.SetUserContext(ctx)
+
+		start := time.Now()
+		savedCtx, cancel := context.WithCancel(c.UserContext())
+		defer func() {
+			h.StanzaMeter().AllowedDuration.Record(savedCtx,
+				float64(time.Since(start).Microseconds())/1000,
+				[]metric.RecordOption{metric.WithAttributes(h.Attributes()...)}...)
+			c.SetUserContext(savedCtx)
+			cancel()
+		}()
 		return c.Next()
 	}
 }
