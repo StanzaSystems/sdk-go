@@ -59,18 +59,18 @@ func (h *OutboundHandler) Request(ctx context.Context, httpMethod, url string, b
 	tlr.ClientId = proto.String(h.ClientID())
 	tlr.Selector.Environment = h.Environment()
 	if req, err := http.NewRequestWithContext(ctx, httpMethod, url, body); err != nil {
-		h.StanzaMeter().AllowedFailureCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+		h.Meter().AllowedFailureCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		return nil, err
 	} else {
 		start := time.Now()
 		resp, err := h.request(ctx, req, tlr, attr)
 		if err != nil {
-			h.StanzaMeter().AllowedFailureCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+			h.Meter().AllowedFailureCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		} else {
-			h.StanzaMeter().AllowedSuccessCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+			h.Meter().AllowedSuccessCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		}
 		recAttr := []metric.RecordOption{metric.WithAttributes(attr...)}
-		h.StanzaMeter().AllowedDuration.Record(ctx, float64(time.Since(start).Microseconds())/1000, recAttr...)
+		h.Meter().AllowedDuration.Record(ctx, float64(time.Since(start).Microseconds())/1000, recAttr...)
 		return resp, err
 	}
 }
@@ -93,14 +93,14 @@ func (h *OutboundHandler) request(ctx context.Context, req *http.Request, tlr *h
 				req.Header.Set(k, v[0])
 			}
 		}
-		h.StanzaMeter().AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+		h.Meter().AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		httpClient := &http.Client{
 			Transport: otelhttp.NewTransport(
 				http.DefaultTransport,
 			)}
 		return httpClient.Do(req)
 	} else {
-		h.StanzaMeter().BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+		h.Meter().BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		return &http.Response{
 			Status:     fmt.Sprintf("%d Too Many Request", http.StatusTooManyRequests),
 			StatusCode: http.StatusTooManyRequests,

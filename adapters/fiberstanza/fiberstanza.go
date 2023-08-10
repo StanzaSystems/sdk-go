@@ -76,7 +76,7 @@ func New(decorator string, opts ...Opt) fiber.Handler {
 		var req http.Request
 		if err := fasthttpadaptor.ConvertRequest(c.Context(), &req, true); err != nil {
 			logging.Error(fmt.Errorf("failed to convert request from fasthttp: %v", err))
-			h.StanzaMeter().AllowedSuccessCount.Add(c.UserContext(), 1,
+			h.Meter().AllowedSuccessCount.Add(c.UserContext(), 1,
 				[]metric.AddOption{metric.WithAttributes(append(h.Attributes(),
 					attribute.Key("reason").String("fail_open"))...)}...)
 			return c.Next() // log error and fail open
@@ -91,7 +91,7 @@ func New(decorator string, opts ...Opt) fiber.Handler {
 		start := time.Now()
 		savedCtx, cancel := context.WithCancel(c.UserContext())
 		defer func() {
-			h.StanzaMeter().AllowedDuration.Record(savedCtx,
+			h.Meter().AllowedDuration.Record(savedCtx,
 				float64(time.Since(start).Microseconds())/1000,
 				[]metric.RecordOption{metric.WithAttributes(h.Attributes()...)}...)
 			c.SetUserContext(savedCtx)

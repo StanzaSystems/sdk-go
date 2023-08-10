@@ -20,7 +20,7 @@ type Handler struct {
 	qsc             hubv1.QuotaServiceClient
 	propagators     propagation.TextMapPropagator
 	tracer          trace.Tracer
-	stanzaMeter     *StanzaMeter
+	meter           *Meter
 	attr            []attribute.KeyValue
 }
 
@@ -35,7 +35,7 @@ func NewHandler(apikey, clientId, environment, service string, otelEnabled, sent
 		decoratorConfig: make(map[string]*hubv1.DecoratorConfig),
 		qsc:             nil,
 		propagators:     otel.GetTextMapPropagator(),
-		stanzaMeter:     m,
+		meter:           m,
 		tracer: otel.GetTracerProvider().Tracer(
 			instrumentationName,
 			trace.WithInstrumentationVersion(instrumentationVersion),
@@ -76,8 +76,8 @@ func (h *Handler) FeatureKey(feat string) attribute.KeyValue {
 	return featureKey.String(feat)
 }
 
-func (h *Handler) StanzaMeter() *StanzaMeter {
-	return h.stanzaMeter
+func (h *Handler) Meter() *Meter {
+	return h.meter
 }
 
 func (h *Handler) Propagator() propagation.TextMapPropagator {

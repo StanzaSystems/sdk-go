@@ -29,10 +29,10 @@ var (
 	serviceKey     = attribute.Key("service")
 	reasonKey      = attribute.Key("reason")
 
-	stanzaMeter *StanzaMeter
+	stanzaMeter *Meter
 )
 
-type StanzaMeter struct {
+type Meter struct {
 	AllowedCount        metric.Int64Counter
 	AllowedSuccessCount metric.Int64Counter
 	AllowedFailureCount metric.Int64Counter
@@ -49,7 +49,7 @@ func GetInstrumentationVersion() string {
 	return instrumentationVersion
 }
 
-func GetStanzaMeter() (*StanzaMeter, error) {
+func GetStanzaMeter() (*Meter, error) {
 	if stanzaMeter != nil {
 		return stanzaMeter, nil
 	}
@@ -58,7 +58,7 @@ func GetStanzaMeter() (*StanzaMeter, error) {
 		metric.WithInstrumentationVersion(instrumentationVersion))
 
 	var err error
-	var m StanzaMeter
+	var m Meter
 	m.AllowedCount, err = meter.Int64Counter(
 		stanzaAllowed,
 		metric.WithUnit("1"),
