@@ -45,7 +45,7 @@ func CheckQuota(apikey string, dc *hubv1.DecoratorConfig, qsc hubv1.QuotaService
 	if dc.GetCheckQuota() && qsc != nil {
 		if _, ok := cachedLeases[dec]; !ok { // existence check without a lock
 			cachedLeasesMapLock.Lock()
-			if _, ok := cachedLeases[dec]; !ok { // check again after with lock (before we write)
+			if _, ok := cachedLeases[dec]; !ok { // check again with lock (before write)
 				cachedLeases[dec] = []*hubv1.TokenLease{}
 				cachedLeasesLock[dec] = &sync.RWMutex{}
 				cachedLeasesUsed[dec] = 0
