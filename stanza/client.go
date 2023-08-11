@@ -72,8 +72,8 @@ func GetNewBearerToken(ctx context.Context) bool {
 	return false
 }
 
-func GetServiceConfig(ctx context.Context) {
-	if time.Now().After(gs.svcConfigTime.Add(jitter(SERVICE_CONFIG_REFRESH_INTERVAL, SERVICE_CONFIG_REFRESH_JITTER))) {
+func GetServiceConfig(ctx context.Context, skipPoll bool) {
+	if skipPoll || time.Now().After(gs.svcConfigTime.Add(jitter(SERVICE_CONFIG_REFRESH_INTERVAL, SERVICE_CONFIG_REFRESH_JITTER))) {
 		md := metadata.New(map[string]string{"x-stanza-key": gs.clientOpt.APIKey})
 		res, err := gs.hubConfigClient.GetServiceConfig(
 			metadata.NewOutgoingContext(ctx, md),
@@ -154,10 +154,10 @@ func GetServiceConfig(ctx context.Context) {
 	}
 }
 
-func GetDecoratorConfigs(ctx context.Context) {
+func GetDecoratorConfigs(ctx context.Context, skipPoll bool) {
 	if len(gs.decoratorConfig) > 0 {
 		for decorator := range gs.decoratorConfig {
-			if time.Now().After(gs.decoratorConfigTime[decorator].Add(jitter(DECORATOR_CONFIG_REFRESH_INTERVAL, DECORATOR_CONFIG_REFRESH_JITTER))) {
+			if skipPoll || time.Now().After(gs.decoratorConfigTime[decorator].Add(jitter(DECORATOR_CONFIG_REFRESH_INTERVAL, DECORATOR_CONFIG_REFRESH_JITTER))) {
 				GetDecoratorConfig(ctx, decorator)
 			}
 		}

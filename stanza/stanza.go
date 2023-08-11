@@ -18,6 +18,8 @@ type ClientOptions struct {
 	Release     string // defines applications version
 	Environment string // defines applications environment
 	StanzaHub   string // host:port (ipv4, ipv6, or resolvable hostname)
+
+	Decorators []string // prefetch config for these decorators
 }
 
 // Init initializes the SDK with ClientOptions. The returned error is
