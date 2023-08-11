@@ -22,8 +22,9 @@ const (
 )
 
 var (
-	waitingLeases     = make(map[string][]*hubv1.TokenLease)
-	waitingLeasesLock = make(map[string]*sync.RWMutex)
+	waitingLeasesMapLock = &sync.RWMutex{}
+	waitingLeases        = make(map[string][]*hubv1.TokenLease)
+	waitingLeasesLock    = make(map[string]*sync.RWMutex)
 
 	cachedLeasesMapLock = &sync.RWMutex{}
 	cachedLeases        = make(map[string][]*hubv1.TokenLease)
@@ -43,25 +44,32 @@ func CheckQuota(apikey string, dc *hubv1.DecoratorConfig, qsc hubv1.QuotaService
 
 	dec := tlr.Selector.GetDecoratorName()
 	if dc.GetCheckQuota() && qsc != nil {
-		if _, ok := cachedLeases[dec]; !ok { // existence check without a lock
+		cachedLeasesMapLock.RLock()
+		_, cachedLeasesExists := cachedLeases[dec]
+		cachedLeasesMapLock.RUnlock()
+		if !cachedLeasesExists {
 			cachedLeasesMapLock.Lock()
-			if _, ok := cachedLeases[dec]; !ok { // check again with lock (before write)
-				cachedLeases[dec] = []*hubv1.TokenLease{}
-				cachedLeasesLock[dec] = &sync.RWMutex{}
-				cachedLeasesUsed[dec] = 0
-				cachedLeasesReq[dec] = &hubv1.GetTokenLeaseRequest{
-					Selector: &hubv1.DecoratorFeatureSelector{
-						Environment:   tlr.Selector.GetEnvironment(),
-						DecoratorName: tlr.Selector.GetDecoratorName(),
-					},
-					ClientId: tlr.ClientId,
-				}
+			cachedLeases[dec] = []*hubv1.TokenLease{}
+			cachedLeasesLock[dec] = &sync.RWMutex{}
+			cachedLeasesUsed[dec] = 0
+			cachedLeasesReq[dec] = &hubv1.GetTokenLeaseRequest{
+				Selector: &hubv1.DecoratorFeatureSelector{
+					Environment:   tlr.Selector.GetEnvironment(),
+					DecoratorName: tlr.Selector.GetDecoratorName(),
+				},
+				ClientId: tlr.ClientId,
 			}
 			cachedLeasesMapLock.Unlock()
 		}
-		if _, ok := waitingLeases[dec]; !ok {
+		waitingLeasesMapLock.RLock()
+		_, waitingLeasesExists := waitingLeases[dec]
+		waitingLeasesMapLock.RUnlock()
+		if !waitingLeasesExists {
+			waitingLeasesMapLock.Lock()
 			waitingLeases[dec] = []*hubv1.TokenLease{}
 			waitingLeasesLock[dec] = &sync.RWMutex{}
+			waitingLeasesMapLock.Unlock()
+
 		}
 
 		if len(tlr.GetSelector().GetTags()) == 0 { // fully skip using cached leases if Quota Tags are specified

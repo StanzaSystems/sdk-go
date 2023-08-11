@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/StanzaSystems/sdk-go/handlers/httphandler"
@@ -51,9 +52,10 @@ type decorateRequest struct {
 }
 
 var (
-	inboundHandler  *httphandler.InboundHandler  = nil
-	outboundHandler *httphandler.OutboundHandler = nil
-	seenDecorators  map[string]bool              = make(map[string]bool)
+	inboundHandler     *httphandler.InboundHandler  = nil
+	outboundHandler    *httphandler.OutboundHandler = nil
+	seenDecorators     map[string]bool              = make(map[string]bool)
+	seenDecoratorsLock                              = &sync.RWMutex{}
 )
 
 // New creates a new fiberstanza middleware fiber.Handler
@@ -153,9 +155,14 @@ func Decorate(c *fiber.Ctx, decorator string, url string, opts ...Opt) decorateR
 }
 
 func tokenLeaseRequest(decorator string, opts ...Opt) *hubv1.GetTokenLeaseRequest {
-	if _, ok := seenDecorators[decorator]; !ok {
+	seenDecoratorsLock.RLock()
+	_, ok := seenDecorators[decorator]
+	seenDecoratorsLock.RUnlock()
+	if !ok {
 		stanza.GetDecoratorConfig(context.Background(), decorator)
+		seenDecoratorsLock.Lock()
 		seenDecorators[decorator] = true
+		seenDecoratorsLock.Unlock()
 	}
 	dfs := &hubv1.DecoratorFeatureSelector{DecoratorName: decorator}
 	tlr := &hubv1.GetTokenLeaseRequest{Selector: dfs}

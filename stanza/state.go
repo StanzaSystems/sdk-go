@@ -137,7 +137,7 @@ func newState(ctx context.Context, co ClientOptions) func() {
 		stop()
 		if gs.hubConn != nil {
 			gs.hubConn.Close()
-			logging.Debug("disconnected from stanza hub", "url", gs.clientOpt.StanzaHub)
+			logging.Debug("disconnected from stanza hub", "uri", gs.clientOpt.StanzaHub)
 		}
 	}
 }
