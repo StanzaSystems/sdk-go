@@ -3,6 +3,7 @@ package stanza
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -176,7 +177,7 @@ func hubConnect(ctx context.Context) (func(), func()) {
 		defer ctxWaitCancel()
 		gs.hubConn.WaitForStateChange(ctxWait, connectivity.Connecting)
 		if gs.hubConn.GetState() == connectivity.Ready {
-			logging.Debug("connected to stanza hub", "url", gs.clientOpt.StanzaHub)
+			logging.Info("connected to stanza hub", "uri", gs.clientOpt.StanzaHub)
 			fetchConfigs(ctx, true)
 			return OtelStartup(ctx), SentinelStartup(ctx)
 		}
@@ -197,7 +198,14 @@ func hubPoller(ctx context.Context, pollInterval time.Duration) {
 		case <-time.After(pollInterval):
 			if gs.hubConn != nil {
 				if gs.hubConn.GetState() == connectivity.Ready {
-					connectAttempt = 0
+					if connectAttempt > 0 {
+						logging.Info(
+							"connected to stanza hub",
+							"uri", gs.clientOpt.StanzaHub,
+							"attempt", connectAttempt,
+						)
+						connectAttempt = 0
+					}
 					fetchConfigs(ctx, false)
 				} else {
 					// 120 attempts * 15 seconds == 1800 seconds == 30 minutes
@@ -209,8 +217,8 @@ func hubPoller(ctx context.Context, pollInterval time.Duration) {
 						gs.hubConn = nil
 					} else {
 						connectAttempt += 1
-						logging.Debug(
-							"attempting to connect",
+						logging.Error(
+							fmt.Errorf("unable to connect to stanza hub"),
 							"uri", gs.clientOpt.StanzaHub,
 							"attempt", connectAttempt,
 						)
