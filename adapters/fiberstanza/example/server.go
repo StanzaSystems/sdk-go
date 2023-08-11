@@ -71,6 +71,9 @@ func main() {
 			Name:        name,
 			Release:     release,
 			Environment: env,
+
+			// optionally prefetch Decorator configs
+			Decorators: []string{"StressTest"},
 		})
 	defer stanzaExit()
 	if stanzaInitErr != nil {
@@ -172,7 +175,6 @@ func main() {
 		}
 		return c.SendStatus(resp.StatusCode)
 	})
-	logger.Info("Stanza example server listening ", zap.Int("port", port))
 	go app.Listen(fmt.Sprintf(":%d", port))
 
 	// GRACEFUL SHUTDOWN

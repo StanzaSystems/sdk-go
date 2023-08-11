@@ -30,6 +30,8 @@ type Client struct {
 	Release     string // defines applications version
 	Environment string // defines applications environment
 	StanzaHub   string // host:port (ipv4, ipv6, or resolvable hostname)
+
+	Decorators []string // prefetch config for these decorators
 }
 
 // Optional arguments
