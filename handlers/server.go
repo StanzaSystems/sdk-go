@@ -2,6 +2,7 @@ package handlers
 
 import (
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 type InboundHandler struct {
@@ -10,19 +11,22 @@ type InboundHandler struct {
 }
 
 // NewInboundHandler returns a new InboundHandler
-func NewInboundHandler(apikey, clientId, environment, service string, otelEnabled, sentinelEnabled bool) (*InboundHandler, error) {
-	h, err := NewHandler(apikey, clientId, environment, service, otelEnabled, sentinelEnabled)
+func NewInboundHandler() (*InboundHandler, error) {
+	h, err := NewHandler()
 	return &InboundHandler{h, make(map[string]*hubv1.GetTokenLeaseRequest)}, err
 }
 
 func (h *InboundHandler) SetTokenLeaseRequest(d string, tlr *hubv1.GetTokenLeaseRequest) {
-	tlr.ClientId = &h.clientId
-	tlr.Selector.Environment = h.environment
+	tlr.ClientId = proto.String(h.ClientID())
+	tlr.Selector.Environment = h.Environment()
+
+	// TODO LOCK
 	if h.tlr[d] == nil {
 		h.tlr[d] = tlr
 	}
 }
 
 func (h *InboundHandler) TokenLeaseRequest(dec string) *hubv1.GetTokenLeaseRequest {
+	// TODO LOCK
 	return h.tlr[dec]
 }

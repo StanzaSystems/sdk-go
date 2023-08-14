@@ -24,8 +24,8 @@ type OutboundHandler struct {
 }
 
 // NewOutboundHandler returns a new OutboundHandler
-func NewOutboundHandler(apikey, clientId, environment, service string, otelEnabled, sentinelEnabled bool) (*OutboundHandler, error) {
-	h, err := handlers.NewOutboundHandler(apikey, clientId, environment, service, otelEnabled, sentinelEnabled)
+func NewOutboundHandler() (*OutboundHandler, error) {
+	h, err := handlers.NewOutboundHandler()
 	if err != nil {
 		return nil, err
 	}

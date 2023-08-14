@@ -24,8 +24,8 @@ type InboundHandler struct {
 }
 
 // NewInboundHandler returns a new InboundHandler
-func NewInboundHandler(apikey, clientId, environment, service string, otelEnabled, sentinelEnabled bool) (*InboundHandler, error) {
-	h, err := handlers.NewInboundHandler(apikey, clientId, environment, service, otelEnabled, sentinelEnabled)
+func NewInboundHandler() (*InboundHandler, error) {
+	h, err := handlers.NewInboundHandler()
 	if err != nil {
 		return nil, err
 	}

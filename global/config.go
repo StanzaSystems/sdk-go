@@ -1,4 +1,4 @@
-package stanza
+package global
 
 import (
 	"context"
@@ -42,9 +42,9 @@ func OtelStartup(ctx context.Context) func() {
 		GetNewBearerToken(ctx)
 		if !gs.otelInit {
 			otelDone, _ = otel.Init(ctx,
-				gs.clientOpt.Name,
-				gs.clientOpt.Release,
-				gs.clientOpt.Environment)
+				gs.svcName,
+				gs.svcRelease,
+				gs.svcEnvironment)
 
 			gs.otelInit = true
 			logging.Debug("initialized opentelemetry exporter")
@@ -55,7 +55,7 @@ func OtelStartup(ctx context.Context) func() {
 
 func GetNewBearerToken(ctx context.Context) bool {
 	if time.Now().After(gs.bearerTokenTime.Add(jitter(BEARER_TOKEN_REFRESH_INTERVAL, BEARER_TOKEN_REFRESH_JITTER))) {
-		md := metadata.New(map[string]string{"x-stanza-key": gs.clientOpt.APIKey})
+		md := metadata.New(map[string]string{"x-stanza-key": gs.svcKey})
 		res, err := gs.hubAuthClient.GetBearerToken(
 			metadata.NewOutgoingContext(ctx, md),
 			&hubv1.GetBearerTokenRequest{})
@@ -74,15 +74,15 @@ func GetNewBearerToken(ctx context.Context) bool {
 
 func GetServiceConfig(ctx context.Context, skipPoll bool) {
 	if skipPoll || time.Now().After(gs.svcConfigTime.Add(jitter(SERVICE_CONFIG_REFRESH_INTERVAL, SERVICE_CONFIG_REFRESH_JITTER))) {
-		md := metadata.New(map[string]string{"x-stanza-key": gs.clientOpt.APIKey})
+		md := metadata.New(map[string]string{"x-stanza-key": gs.svcKey})
 		res, err := gs.hubConfigClient.GetServiceConfig(
 			metadata.NewOutgoingContext(ctx, md),
 			&hubv1.GetServiceConfigRequest{
 				VersionSeen: gs.svcConfigVersion,
 				Service: &hubv1.ServiceSelector{
-					Environment: gs.clientOpt.Environment,
-					Name:        gs.clientOpt.Name,
-					Release:     &gs.clientOpt.Release,
+					Environment: gs.svcEnvironment,
+					Name:        gs.svcName,
+					Release:     &gs.svcRelease,
 				},
 			},
 		)
@@ -173,16 +173,16 @@ func GetDecoratorConfig(ctx context.Context, decorator string) {
 	if gs.hubConfigClient == nil {
 		return
 	}
-	md := metadata.New(map[string]string{"x-stanza-key": gs.clientOpt.APIKey})
+	md := metadata.New(map[string]string{"x-stanza-key": gs.svcKey})
 	res, err := gs.hubConfigClient.GetDecoratorConfig(
 		metadata.NewOutgoingContext(ctx, md),
 		&hubv1.GetDecoratorConfigRequest{
 			VersionSeen: proto.String(gs.decoratorConfigVersion[decorator]),
 			Selector: &hubv1.DecoratorServiceSelector{
-				Environment:    gs.clientOpt.Environment,
+				Environment:    gs.svcEnvironment,
 				DecoratorName:  decorator,
-				ServiceName:    gs.clientOpt.Name,
-				ServiceRelease: gs.clientOpt.Release,
+				ServiceName:    gs.svcName,
+				ServiceRelease: gs.svcRelease,
 			},
 		},
 	)
@@ -201,7 +201,7 @@ func GetDecoratorConfig(ctx context.Context, decorator string) {
 
 func SentinelStartup(ctx context.Context) func() {
 	if SentinelEnabled() && !gs.sentinelInit {
-		done, err := sentinel.Init(gs.clientOpt.Name, gs.sentinelRules)
+		done, err := sentinel.Init(gs.svcName, gs.sentinelRules)
 		if err != nil {
 			logging.Error(err)
 		} else {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 
+	"github.com/StanzaSystems/sdk-go/global"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 )
@@ -74,16 +75,19 @@ func Init(ctx context.Context, co ClientOptions) (func(), error) {
 			StanzaHeaders{}))
 
 	// Initialize new global state
-	hubDone := newState(ctx, co)
+	hubDone := global.NewState(ctx,
+		co.StanzaHub,
+		co.APIKey,
+		co.Name,
+		co.Environment,
+		co.Release,
+		co.Decorators,
+	)
 
 	// Return graceful shutdown function (to be deferred by the caller)
 	return hubDone, nil
 }
 
-func OtelEnabled() bool {
-	return os.Getenv("STANZA_NO_OTEL") == ""
-}
-
-func SentinelEnabled() bool {
-	return os.Getenv("STANZA_NO_SENTINEL") == ""
+func RegisterDecorator(ctx context.Context, decorator string) {
+	global.GetDecoratorConfig(ctx, decorator)
 }
