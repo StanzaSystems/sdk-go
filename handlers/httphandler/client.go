@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/StanzaSystems/sdk-go/global"
 	"github.com/StanzaSystems/sdk-go/handlers"
 	"github.com/StanzaSystems/sdk-go/hub"
 	"github.com/StanzaSystems/sdk-go/keys"
@@ -82,7 +83,7 @@ func (h *OutboundHandler) request(ctx context.Context, req *http.Request, tlr *h
 		}
 
 		if req.Header.Get("User-Agent") == "" {
-			req.Header.Set("User-Agent", "StanzaGoSDK/v0.0.1-beta") // TODO: Prefix with Service/Release
+			req.Header.Set("User-Agent", global.UserAgent())
 		}
 		if ctx.Value(keys.OutboundHeadersKey) != nil {
 			for k, v := range ctx.Value(keys.OutboundHeadersKey).(http.Header) {

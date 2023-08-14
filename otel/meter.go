@@ -28,7 +28,7 @@ func initDebugMeter(res *resource.Resource) (*metric.MeterProvider, error) {
 	return mp, nil
 }
 
-func initGrpcMeter(ctx context.Context, res *resource.Resource, config *hubv1.MetricConfig, token string) (*metric.MeterProvider, error) {
+func initGrpcMeter(ctx context.Context, res *resource.Resource, config *hubv1.MetricConfig, token, ua string) (*metric.MeterProvider, error) {
 	opts := []otlpmetricgrpc.Option{
 		// WithRetry sets the retry policy for transient retryable errors that are
 		//   returned by the target collector endpoint.
@@ -54,7 +54,7 @@ func initGrpcMeter(ctx context.Context, res *resource.Resource, config *hubv1.Me
 		otlpmetricgrpc.WithEndpoint(config.GetCollectorUrl()),
 		otlpmetricgrpc.WithHeaders(map[string]string{
 			"Authorization": "Bearer " + token,
-			"User-Agent":    "StanzaGoSDK/v0.0.1-beta",
+			"User-Agent":    ua,
 		}),
 	}
 	if os.Getenv("STANZA_OTEL_NO_TLS") != "" { // disable TLS for local OTEL development

@@ -93,20 +93,20 @@ func GetServiceConfig(ctx context.Context, skipPoll bool) {
 			errCount := 0
 			if gs.otelInit {
 				if gs.svcConfig.GetMetricConfig().String() != res.GetConfig().GetMetricConfig().String() {
-					if err := otel.InitMetricProvider(ctx, res.GetConfig().GetMetricConfig(), gs.bearerToken); err != nil {
+					if err := otel.InitMetricProvider(ctx, res.GetConfig().GetMetricConfig(), gs.bearerToken, UserAgent()); err != nil {
 						errCount += 1
 						logging.Error(err)
-						otel.InitMetricProvider(ctx, gs.svcConfig.GetMetricConfig(), gs.bearerToken)
+						otel.InitMetricProvider(ctx, gs.svcConfig.GetMetricConfig(), gs.bearerToken, UserAgent())
 					} else {
 						logging.Debug("accepted opentelemetry metric config",
 							"version", res.GetVersion())
 					}
 				}
 				if gs.svcConfig.GetTraceConfig().String() != res.GetConfig().GetTraceConfig().String() {
-					if err := otel.InitTraceProvider(ctx, res.GetConfig().GetTraceConfig(), gs.bearerToken); err != nil {
+					if err := otel.InitTraceProvider(ctx, res.GetConfig().GetTraceConfig(), gs.bearerToken, UserAgent()); err != nil {
 						errCount += 1
 						logging.Error(err)
-						otel.InitTraceProvider(ctx, gs.svcConfig.GetTraceConfig(), gs.bearerToken)
+						otel.InitTraceProvider(ctx, gs.svcConfig.GetTraceConfig(), gs.bearerToken, UserAgent())
 					} else {
 						logging.Debug("accepted opentelemetry trace config",
 							"version", res.GetVersion(),
