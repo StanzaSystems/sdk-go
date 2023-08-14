@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 const (
@@ -151,6 +152,10 @@ func GetClientID() string {
 
 func GetServiceKey() string {
 	return gs.svcKey
+}
+
+func XStanzaKey() metadata.MD {
+	return metadata.New(map[string]string{"x-stanza-key": gs.svcKey})
 }
 
 func GetServiceName() string {

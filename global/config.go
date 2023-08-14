@@ -55,9 +55,8 @@ func OtelStartup(ctx context.Context) func() {
 
 func GetNewBearerToken(ctx context.Context) bool {
 	if time.Now().After(gs.bearerTokenTime.Add(jitter(BEARER_TOKEN_REFRESH_INTERVAL, BEARER_TOKEN_REFRESH_JITTER))) {
-		md := metadata.New(map[string]string{"x-stanza-key": gs.svcKey})
 		res, err := gs.hubAuthClient.GetBearerToken(
-			metadata.NewOutgoingContext(ctx, md),
+			metadata.NewOutgoingContext(ctx, XStanzaKey()),
 			&hubv1.GetBearerTokenRequest{})
 		if err != nil {
 			logging.Error(err)
@@ -74,9 +73,8 @@ func GetNewBearerToken(ctx context.Context) bool {
 
 func GetServiceConfig(ctx context.Context, skipPoll bool) {
 	if skipPoll || time.Now().After(gs.svcConfigTime.Add(jitter(SERVICE_CONFIG_REFRESH_INTERVAL, SERVICE_CONFIG_REFRESH_JITTER))) {
-		md := metadata.New(map[string]string{"x-stanza-key": gs.svcKey})
 		res, err := gs.hubConfigClient.GetServiceConfig(
-			metadata.NewOutgoingContext(ctx, md),
+			metadata.NewOutgoingContext(ctx, XStanzaKey()),
 			&hubv1.GetServiceConfigRequest{
 				VersionSeen: gs.svcConfigVersion,
 				Service: &hubv1.ServiceSelector{
@@ -173,9 +171,8 @@ func GetDecoratorConfig(ctx context.Context, decorator string) {
 	if gs.hubConfigClient == nil {
 		return
 	}
-	md := metadata.New(map[string]string{"x-stanza-key": gs.svcKey})
 	res, err := gs.hubConfigClient.GetDecoratorConfig(
-		metadata.NewOutgoingContext(ctx, md),
+		metadata.NewOutgoingContext(ctx, XStanzaKey()),
 		&hubv1.GetDecoratorConfigRequest{
 			VersionSeen: proto.String(gs.decoratorConfigVersion[decorator]),
 			Selector: &hubv1.DecoratorServiceSelector{
