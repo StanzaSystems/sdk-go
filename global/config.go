@@ -48,6 +48,21 @@ func OtelStartup(ctx context.Context) func() {
 
 			gs.otelInit = true
 			logging.Debug("initialized opentelemetry exporter")
+
+			if gs.svcConfig != nil {
+				if err := otel.InitMetricProvider(ctx, gs.svcConfig.GetMetricConfig(), gs.bearerToken, UserAgent()); err != nil {
+					logging.Error(err)
+				} else {
+					logging.Debug("accepted opentelemetry metric config",
+						"version", gs.svcConfigVersion)
+				}
+				if err := otel.InitTraceProvider(ctx, gs.svcConfig.GetTraceConfig(), gs.bearerToken, UserAgent()); err != nil {
+					logging.Error(err)
+				} else {
+					logging.Debug("accepted opentelemetry trace config",
+						"version", gs.svcConfigVersion)
+				}
+			}
 		}
 	}
 	return otelDone

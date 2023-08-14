@@ -77,26 +77,9 @@ func (h *OutboundHandler) Request(ctx context.Context, httpMethod, url string, b
 }
 
 func (h *OutboundHandler) request(ctx context.Context, req *http.Request, tlr *hubv1.GetTokenLeaseRequest, attr []attribute.KeyValue) (*http.Response, error) {
-	if ok, token := hub.CheckQuota(tlr); ok {
-		if token != "" {
-			req.Header.Add("X-Stanza-Token", token)
-		}
+	status, token := hub.CheckQuota(tlr)
 
-		if req.Header.Get("User-Agent") == "" {
-			req.Header.Set("User-Agent", global.UserAgent())
-		}
-		if ctx.Value(keys.OutboundHeadersKey) != nil {
-			for k, v := range ctx.Value(keys.OutboundHeadersKey).(http.Header) {
-				req.Header.Set(k, v[0])
-			}
-		}
-		h.Meter().AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
-		httpClient := &http.Client{
-			Transport: otelhttp.NewTransport(
-				http.DefaultTransport,
-			)}
-		return httpClient.Do(req)
-	} else {
+	if status == hub.CheckQuotaBlocked {
 		h.Meter().BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 		return &http.Response{
 			Status:     fmt.Sprintf("%d Too Many Request", http.StatusTooManyRequests),
@@ -108,4 +91,26 @@ func (h *OutboundHandler) request(ctx context.Context, req *http.Request, tlr *h
 			},
 		}, nil
 	}
+
+	if status == hub.CheckQuotaFailOpen {
+		attr = append(attr, h.ReasonFailOpen())
+	}
+
+	if token != "" {
+		req.Header.Add("X-Stanza-Token", token)
+	}
+	if req.Header.Get("User-Agent") == "" {
+		req.Header.Set("User-Agent", global.UserAgent())
+	}
+	if ctx.Value(keys.OutboundHeadersKey) != nil {
+		for k, v := range ctx.Value(keys.OutboundHeadersKey).(http.Header) {
+			req.Header.Set(k, v[0])
+		}
+	}
+	h.Meter().AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+	httpClient := &http.Client{
+		Transport: otelhttp.NewTransport(
+			http.DefaultTransport,
+		)}
+	return httpClient.Do(req)
 }

@@ -73,6 +73,10 @@ func (h *Handler) ReasonQuota() attribute.KeyValue {
 	return reasonKey.String("quota")
 }
 
+func (h *Handler) ReasonToken() attribute.KeyValue {
+	return reasonKey.String("token")
+}
+
 // Global Helper Functions //
 func (h *Handler) APIKey() string {
 	return global.GetServiceKey()

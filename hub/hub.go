@@ -21,6 +21,18 @@ const (
 	MAX_QUOTA_WAIT               = 1 * time.Second
 	CACHED_LEASE_CHECK_INTERVAL  = 200 * time.Millisecond // TODO: what should this be set to?
 	BATCH_TOKEN_CONSUME_INTERVAL = 200 * time.Millisecond // TODO: what should this be set to?
+
+	// CheckQuota Response Codes
+	CheckQuotaAllowed = iota
+	CheckQuotaBlocked
+	CheckQuotaSkipped  // special case of Allowed
+	CheckQuotaFailOpen // special case of Allowed
+
+	// ValidateTokens Response Codes
+	ValidateTokensValid = iota
+	ValidateTokensInvalid
+	ValidateTokensSkipped  // special case of Valid
+	ValidateTokensFailOpen // special case of Valid
 )
 
 var (
@@ -42,13 +54,13 @@ var (
 	failOpenCount = int64(0)
 )
 
-func CheckQuota(tlr *hubv1.GetTokenLeaseRequest) (bool, string) {
+func CheckQuota(tlr *hubv1.GetTokenLeaseRequest) (int, string) {
 	if tlr == nil || tlr.Selector == nil {
 		logging.Debug(
 			"invalid token lease request, failing open",
 			"count", atomic.AddInt64(&failOpenCount, 1),
 		)
-		return true, "" // fail open condition
+		return CheckQuotaFailOpen, ""
 	}
 	qsc := global.QuotaServiceClient()
 	if qsc == nil {
@@ -56,7 +68,7 @@ func CheckQuota(tlr *hubv1.GetTokenLeaseRequest) (bool, string) {
 			"invalid quota service client, failing open",
 			"count", atomic.AddInt64(&failOpenCount, 1),
 		)
-		return true, "" // fail open condition
+		return CheckQuotaFailOpen, ""
 	}
 	dec := tlr.GetSelector().GetDecoratorName()
 	dc := global.DecoratorConfig(dec)
@@ -65,11 +77,11 @@ func CheckQuota(tlr *hubv1.GetTokenLeaseRequest) (bool, string) {
 			"invalid decorator config, failing open",
 			"count", atomic.AddInt64(&failOpenCount, 1),
 		)
-		return true, "" // fail open condition
+		return CheckQuotaFailOpen, ""
 	}
 
 	if !dc.GetCheckQuota() {
-		return true, "" // quota checks disabled
+		return CheckQuotaFailOpen, ""
 	}
 
 	// start a background batch token consumer
@@ -119,7 +131,7 @@ func CheckQuota(tlr *hubv1.GetTokenLeaseRequest) (bool, string) {
 							cachedLeases[dec] = newCache
 							cachedLeasesUsed[dec] += 1
 							cachedLeasesLock[dec].Unlock()
-							return true, tl.Token
+							return CheckQuotaAllowed, tl.Token
 						}
 					}
 				}
@@ -148,11 +160,11 @@ func CheckQuota(tlr *hubv1.GetTokenLeaseRequest) (bool, string) {
 		//   of those requests are successful, ramp up to 5%, 10%, 25%, 50% and 100% over successive
 		//   seconds.
 		//   Re-enablement should be logged at INFO.
-		return true, "" // just fail open (for now)
+		return CheckQuotaFailOpen, "" // just fail open (for now)
 	}
 	leases := resp.GetLeases()
 	if len(leases) == 0 {
-		return false, "" // not an error, there were no leases available
+		return CheckQuotaBlocked, "" // not an error, there were no leases available
 	}
 	if len(leases[1:]) > 0 {
 		// Start a background cached lease manager (the first time we get extra leases from Stanza Hub)
@@ -173,7 +185,7 @@ func CheckQuota(tlr *hubv1.GetTokenLeaseRequest) (bool, string) {
 
 	// Consume first token from leases (not cached, so this doesn't require the cached leases lock)
 	go consumeLease(dec, leases[0])
-	return true, leases[0].Token
+	return CheckQuotaAllowed, leases[0].Token
 }
 
 func consumeLease(dec string, lease *hubv1.TokenLease) {
@@ -298,14 +310,14 @@ func cachedLeaseManager() {
 	}
 }
 
-func ValidateTokens(decorator string, tokens []string) bool {
+func ValidateTokens(decorator string, tokens []string) int {
 	qsc := global.QuotaServiceClient()
 	if qsc == nil {
 		logging.Debug(
 			"invalid quota service client, failing open",
 			"count", atomic.AddInt64(&failOpenCount, 1),
 		)
-		return true // fail open condition
+		return ValidateTokensFailOpen // fail open condition
 	}
 	dc := global.DecoratorConfig(decorator)
 	if dc == nil {
@@ -313,15 +325,15 @@ func ValidateTokens(decorator string, tokens []string) bool {
 			"invalid decorator config, failing open",
 			"count", atomic.AddInt64(&failOpenCount, 1),
 		)
-		return true // fail open condition
+		return ValidateTokensFailOpen // fail open condition
 	}
 
 	if !dc.GetValidateIngressTokens() {
-		return true // if we weren't asked to validate ingress tokens, don't
+		return ValidateTokensSkipped // if we weren't asked to validate ingress tokens, don't
 	}
 	if len(tokens) == 0 {
 		logging.Warn("validate ingress tokens was specified, but no tokens were found", "decorator", decorator)
-		return false // fail fast in the case where we are supposed to validate, but no tokens found
+		return ValidateTokensInvalid // fail fast in the case where we are supposed to validate, but no tokens found
 	}
 
 	ds := &hubv1.DecoratorSelector{Environment: global.GetServiceEnvironment(), Name: decorator}
@@ -334,19 +346,19 @@ func ValidateTokens(decorator string, tokens []string) bool {
 		select {
 		case <-ctx.Done():
 			logging.Error(ctx.Err())
-			return true // deadline reached, log error and fail open
+			return ValidateTokensFailOpen // deadline reached, log error and fail open
 		default:
 			resp, err := qsc.ValidateToken(metadata.NewOutgoingContext(ctx, global.XStanzaKey()), vtr)
 			if err != nil {
 				logging.Error(err)
-				return true // error from Stanza Hub, log error and fail open
+				return ValidateTokensFailOpen // error from Stanza Hub, log error and fail open
 			}
 			for _, t := range resp.GetTokensValid() {
 				if !t.Valid {
-					return false
+					return ValidateTokensInvalid
 				}
 			}
-			return true
+			return ValidateTokensValid
 		}
 	}
 }
