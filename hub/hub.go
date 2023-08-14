@@ -39,14 +39,14 @@ var (
 	consumedLeasesLock = &sync.RWMutex{}
 	consumedLeasesInit sync.Once
 
-	failOpenCount *int64
+	failOpenCount = int64(0)
 )
 
 func CheckQuota(tlr *hubv1.GetTokenLeaseRequest) (bool, string) {
 	if tlr == nil || tlr.Selector == nil {
 		logging.Debug(
 			"invalid token lease request, failing open",
-			"count", atomic.AddInt64(failOpenCount, 1),
+			"count", atomic.AddInt64(&failOpenCount, 1),
 		)
 		return true, "" // fail open condition
 	}
@@ -54,7 +54,7 @@ func CheckQuota(tlr *hubv1.GetTokenLeaseRequest) (bool, string) {
 	if qsc == nil {
 		logging.Debug(
 			"invalid quota service client, failing open",
-			"count", atomic.AddInt64(failOpenCount, 1),
+			"count", atomic.AddInt64(&failOpenCount, 1),
 		)
 		return true, "" // fail open condition
 	}
@@ -63,7 +63,7 @@ func CheckQuota(tlr *hubv1.GetTokenLeaseRequest) (bool, string) {
 	if dc == nil {
 		logging.Debug(
 			"invalid decorator config, failing open",
-			"count", atomic.AddInt64(failOpenCount, 1),
+			"count", atomic.AddInt64(&failOpenCount, 1),
 		)
 		return true, "" // fail open condition
 	}
@@ -301,7 +301,7 @@ func ValidateTokens(decorator string, tokens []string) bool {
 	if qsc == nil {
 		logging.Debug(
 			"invalid quota service client, failing open",
-			"count", atomic.AddInt64(failOpenCount, 1),
+			"count", atomic.AddInt64(&failOpenCount, 1),
 		)
 		return true // fail open condition
 	}
@@ -309,7 +309,7 @@ func ValidateTokens(decorator string, tokens []string) bool {
 	if dc == nil {
 		logging.Debug(
 			"invalid decorator config, failing open",
-			"count", atomic.AddInt64(failOpenCount, 1),
+			"count", atomic.AddInt64(&failOpenCount, 1),
 		)
 		return true // fail open condition
 	}
