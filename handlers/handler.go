@@ -4,6 +4,7 @@ import (
 	"github.com/StanzaSystems/sdk-go/global"
 	"github.com/StanzaSystems/sdk-go/otel"
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
+
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
@@ -20,8 +21,8 @@ func NewHandler() (*Handler, error) {
 	return &Handler{
 		meter: m,
 		tracer: otel.GetTracerProvider().Tracer(
-			instrumentationName,
-			trace.WithInstrumentationVersion(instrumentationVersion),
+			global.InstrumentationName(),
+			global.InstrumentationTraceVersion(),
 		),
 		attr: []attribute.KeyValue{
 			clientIdKey.String(global.GetClientID()),
@@ -45,11 +46,7 @@ func (h *Handler) Propagator() propagation.TextMapPropagator {
 
 // OTEL Attribute Helper Functions //
 func (h *Handler) Attributes() []attribute.KeyValue {
-	return h.attr
-}
-
-func (h *Handler) CustomerKey() attribute.KeyValue {
-	return customerIdKey.String(global.GetCustomerID())
+	return append(h.attr, customerIdKey.String(global.GetCustomerID()))
 }
 
 func (h *Handler) DecoratorKey(dec string) attribute.KeyValue {

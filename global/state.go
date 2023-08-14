@@ -2,6 +2,7 @@ package global
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -13,11 +14,16 @@ import (
 	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
 
 const (
+	instrumentationName    = "github.com/StanzaSystems/sdk-go"
+	instrumentationVersion = "0.0.1-beta"
+
 	MIN_POLLING_TIME = 15 * time.Second
 
 	filePerms = 0660
@@ -179,4 +185,20 @@ func DecoratorConfig(decorator string) *hubv1.DecoratorConfig {
 		return dc
 	}
 	return nil
+}
+
+func InstrumentationName() string {
+	return instrumentationName
+}
+
+func InstrumentationMetricVersion() metric.MeterOption {
+	return metric.WithInstrumentationVersion(instrumentationVersion)
+}
+
+func InstrumentationTraceVersion() trace.TracerOption {
+	return trace.WithInstrumentationVersion(instrumentationVersion)
+}
+
+func UserAgent() string {
+	return fmt.Sprintf("%s/%s StanzaGoSDK/v%s", gs.svcName, gs.svcRelease, instrumentationVersion)
 }

@@ -43,26 +43,26 @@ func Init(ctx context.Context, name, rel, env string) (func(), error) {
 	}, err
 }
 
-func InitMetricProvider(ctx context.Context, mc *hubv1.MetricConfig, token string) error {
+func InitMetricProvider(ctx context.Context, mc *hubv1.MetricConfig, token, ua string) error {
 	if os.Getenv("STANZA_DEBUG") != "" || os.Getenv("STANZA_OTEL_DEBUG") != "" {
 		if mp, err = initDebugMeter(res); err != nil {
 			panic(err)
 		}
 	} else {
-		if mp, err = initGrpcMeter(ctx, res, mc, token); err != nil {
+		if mp, err = initGrpcMeter(ctx, res, mc, token, ua); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func InitTraceProvider(ctx context.Context, tc *hubv1.TraceConfig, token string) error {
+func InitTraceProvider(ctx context.Context, tc *hubv1.TraceConfig, token, ua string) error {
 	if os.Getenv("STANZA_DEBUG") != "" || os.Getenv("STANZA_OTEL_DEBUG") != "" {
 		if tp, err = initDebugTracer(res, tc); err != nil {
 			panic(err)
 		}
 	} else {
-		if tp, err = initGrpcTracer(ctx, res, tc, token); err != nil {
+		if tp, err = initGrpcTracer(ctx, res, tc, token, ua); err != nil {
 			return err
 		}
 	}

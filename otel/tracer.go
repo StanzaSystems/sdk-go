@@ -35,7 +35,7 @@ func initDebugTracer(resource *resource.Resource, config *hubv1.TraceConfig) (*t
 	return tp, nil
 }
 
-func initGrpcTracer(ctx context.Context, resource *resource.Resource, config *hubv1.TraceConfig, token string) (*trace.TracerProvider, error) {
+func initGrpcTracer(ctx context.Context, resource *resource.Resource, config *hubv1.TraceConfig, token, ua string) (*trace.TracerProvider, error) {
 	opts := []otlptracegrpc.Option{
 		// WithRetry sets the retry policy for transient retryable errors that may be
 		//   returned by the target collector endpoint when exporting a batch of spans.
@@ -61,7 +61,7 @@ func initGrpcTracer(ctx context.Context, resource *resource.Resource, config *hu
 		otlptracegrpc.WithEndpoint(config.GetCollectorUrl()),
 		otlptracegrpc.WithHeaders(map[string]string{
 			"Authorization": "Bearer " + token,
-			"User-Agent": "StanzaGoSDK/v0.0.1-beta",
+			"User-Agent":    ua,
 		}),
 	}
 	if os.Getenv("STANZA_OTEL_NO_TLS") != "" { // disable TLS for local OTEL development

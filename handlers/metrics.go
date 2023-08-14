@@ -1,15 +1,13 @@
 package handlers
 
 import (
+	"github.com/StanzaSystems/sdk-go/global"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
 
 const (
-	instrumentationName    = "github.com/StanzaSystems/sdk-go"
-	instrumentationVersion = "0.0.1-beta"
-
 	// Stanza SDK Metrics:
 	// https://github.com/StanzaSystems/sdk-spec#telemetry-metrics
 	stanzaAllowed         = "stanza.decorator.allowed"          // counter
@@ -46,8 +44,9 @@ func GetStanzaMeter() (*Meter, error) {
 		return stanzaMeter, nil
 	}
 	meter := otel.Meter(
-		instrumentationName,
-		metric.WithInstrumentationVersion(instrumentationVersion))
+		global.InstrumentationName(),
+		global.InstrumentationMetricVersion(),
+	)
 
 	var err error
 	var m Meter
