@@ -75,23 +75,37 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, de
 		e.Exit() // cleanly exit the Sentinel Entry
 	}
 
-	if ok := hub.ValidateTokens(
-		decorator,
-		r.Header.Values("x-stanza-token")); !ok {
+	status := hub.ValidateTokens(decorator, r.Header.Values("x-stanza-token"))
+	if status == hub.ValidateTokensInvalid {
 		attrWithReason := append(attr, h.ReasonInvalidToken())
 		span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
 		h.Meter().BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
 		return ctx, http.StatusTooManyRequests
+	} else {
+		attrWithReason := attr
+		if status == hub.ValidateTokensFailOpen {
+			attrWithReason = append(attrWithReason, h.ReasonFailOpen())
+		}
+		span.AddEvent("Stanza allowed", trace.WithAttributes(attrWithReason...))
+		h.Meter().AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
 	}
 
-	if ok, _ := hub.CheckQuota(tlr); !ok {
+	status, _ = hub.CheckQuota(tlr)
+	if status == hub.CheckQuotaBlocked {
 		attrWithReason := append(attr, h.ReasonQuota())
 		span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
 		h.Meter().BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
 		return ctx, http.StatusTooManyRequests
+	} else {
+		attrWithReason := attr
+		if status == hub.CheckQuotaFailOpen {
+			attrWithReason = append(attrWithReason, h.ReasonFailOpen())
+		}
+		if status == hub.CheckQuotaAllowed {
+			attrWithReason = append(attrWithReason, h.ReasonQuota())
+		}
+		span.AddEvent("Stanza allowed", trace.WithAttributes(attrWithReason...))
+		h.Meter().AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
 	}
-
-	span.AddEvent("Stanza allowed", trace.WithAttributes(attr...))
-	h.Meter().AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
 	return ctx, http.StatusOK // return success
 }
