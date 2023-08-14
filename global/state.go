@@ -23,20 +23,18 @@ const (
 )
 
 type state struct {
-	clientId        uuid.UUID
-	svcKey          string
-	svcName         string
-	svcEnvironment  string
-	svcRelease      string
-	hubURI          string
+	clientId       uuid.UUID
+	svcKey         string
+	svcName        string
+	svcEnvironment string
+	svcRelease     string
+	hubURI         string
+
+	// stored after hubConnect success
 	hubConn         *grpc.ClientConn
 	hubAuthClient   hubv1.AuthServiceClient
 	hubConfigClient hubv1.ConfigServiceClient
 	hubQuotaClient  hubv1.QuotaServiceClient
-
-	// HTTP
-	// httpInboundHandler  *httphandler.InboundHandler
-	// httpOutboundHandler *httphandler.OutboundHandler
 
 	// stored from GetBearerToken request
 	bearerToken     string
