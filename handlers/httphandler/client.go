@@ -24,8 +24,8 @@ type OutboundHandler struct {
 }
 
 // NewOutboundHandler returns a new OutboundHandler
-func NewOutboundHandler(apikey, clientId, environment, service string, otelEnabled, sentinelEnabled bool) (*OutboundHandler, error) {
-	h, err := handlers.NewOutboundHandler(apikey, clientId, environment, service, otelEnabled, sentinelEnabled)
+func NewOutboundHandler() (*OutboundHandler, error) {
+	h, err := handlers.NewOutboundHandler()
 	if err != nil {
 		return nil, err
 	}
@@ -76,11 +76,7 @@ func (h *OutboundHandler) Request(ctx context.Context, httpMethod, url string, b
 }
 
 func (h *OutboundHandler) request(ctx context.Context, req *http.Request, tlr *hubv1.GetTokenLeaseRequest, attr []attribute.KeyValue) (*http.Response, error) {
-	if ok, token := hub.CheckQuota(
-		h.APIKey(),
-		h.DecoratorConfig(tlr.Selector.DecoratorName),
-		h.QuotaServiceClient(),
-		tlr); ok {
+	if ok, token := hub.CheckQuota(tlr); ok {
 		if token != "" {
 			req.Header.Add("X-Stanza-Token", token)
 		}

@@ -159,7 +159,7 @@ func tokenLeaseRequest(decorator string, opts ...Opt) *hubv1.GetTokenLeaseReques
 	_, ok := seenDecorators[decorator]
 	seenDecoratorsLock.RUnlock()
 	if !ok {
-		stanza.GetDecoratorConfig(context.Background(), decorator)
+		stanza.RegisterDecorator(context.Background(), decorator)
 		seenDecoratorsLock.Lock()
 		seenDecorators[decorator] = true
 		seenDecoratorsLock.Unlock()

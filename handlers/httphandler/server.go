@@ -24,8 +24,8 @@ type InboundHandler struct {
 }
 
 // NewInboundHandler returns a new InboundHandler
-func NewInboundHandler(apikey, clientId, environment, service string, otelEnabled, sentinelEnabled bool) (*InboundHandler, error) {
-	h, err := handlers.NewInboundHandler(apikey, clientId, environment, service, otelEnabled, sentinelEnabled)
+func NewInboundHandler() (*InboundHandler, error) {
+	h, err := handlers.NewInboundHandler()
 	if err != nil {
 		return nil, err
 	}
@@ -76,11 +76,7 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, de
 	}
 
 	if ok := hub.ValidateTokens(
-		h.APIKey(),
-		h.Environment(),
 		decorator,
-		h.DecoratorConfig(decorator),
-		h.QuotaServiceClient(),
 		r.Header.Values("x-stanza-token")); !ok {
 		attrWithReason := append(attr, h.ReasonInvalidToken())
 		span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
@@ -88,11 +84,7 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, de
 		return ctx, http.StatusTooManyRequests
 	}
 
-	if ok, _ := hub.CheckQuota(
-		h.APIKey(),
-		h.DecoratorConfig(decorator),
-		h.QuotaServiceClient(),
-		tlr); !ok {
+	if ok, _ := hub.CheckQuota(tlr); !ok {
 		attrWithReason := append(attr, h.ReasonQuota())
 		span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
 		h.Meter().BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
