@@ -130,11 +130,10 @@ func CheckQuota(tlr *hubv1.GetTokenLeaseRequest) (bool, string) {
 		}
 	}
 
-	md := metadata.New(map[string]string{"x-stanza-key": global.GetServiceKey()})
 	ctx, cancel := context.WithTimeout(context.Background(), MAX_QUOTA_WAIT)
 	defer cancel()
 
-	resp, err := qsc.GetTokenLease(metadata.NewOutgoingContext(ctx, md), tlr)
+	resp, err := qsc.GetTokenLease(metadata.NewOutgoingContext(ctx, global.XStanzaKey()), tlr)
 	if err != nil {
 		logging.Error(err)
 		// TODO: Implement Error Handling as specified in SDK spec:
@@ -190,7 +189,6 @@ func consumeLease(dec string, lease *hubv1.TokenLease) {
 
 func batchTokenConsumer() {
 	ctx, _ := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-	md := metadata.New(map[string]string{"x-stanza-key": global.GetServiceKey()})
 	for {
 		select {
 		case <-ctx.Done():
@@ -198,7 +196,8 @@ func batchTokenConsumer() {
 				// (attempt to) flush consumed token leases to hub when we exit
 				ctx, cancel := context.WithTimeout(context.Background(), MAX_QUOTA_WAIT)
 				defer cancel()
-				global.QuotaServiceClient().SetTokenLeaseConsumed(metadata.NewOutgoingContext(ctx, md),
+				global.QuotaServiceClient().SetTokenLeaseConsumed(
+					metadata.NewOutgoingContext(ctx, global.XStanzaKey()),
 					&hubv1.SetTokenLeaseConsumedRequest{Tokens: consumedLeases})
 			}
 			return
@@ -214,7 +213,9 @@ func batchTokenConsumer() {
 
 					ctx, cancel := context.WithTimeout(context.Background(), MAX_QUOTA_WAIT)
 					defer cancel()
-					_, err := global.QuotaServiceClient().SetTokenLeaseConsumed(metadata.NewOutgoingContext(ctx, md), consumeTokenReq)
+					_, err := global.QuotaServiceClient().SetTokenLeaseConsumed(
+						metadata.NewOutgoingContext(ctx, global.XStanzaKey()),
+						consumeTokenReq)
 					if err != nil {
 						// if our request failed, put leases back (so they will be attempted again later)
 						consumedLeasesLock.Lock()
@@ -231,7 +232,6 @@ func batchTokenConsumer() {
 
 func cachedLeaseManager() {
 	ctx, _ := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-	md := metadata.New(map[string]string{"x-stanza-key": global.GetServiceKey()})
 	for {
 		select {
 		case <-ctx.Done():
@@ -275,7 +275,9 @@ func cachedLeaseManager() {
 						go func() {
 							ctx, cancel := context.WithTimeout(context.Background(), CACHED_LEASE_CHECK_INTERVAL)
 							defer cancel()
-							resp, err := global.QuotaServiceClient().GetTokenLease(metadata.NewOutgoingContext(ctx, md), cachedLeasesReq[dec])
+							resp, err := global.QuotaServiceClient().GetTokenLease(
+								metadata.NewOutgoingContext(ctx, global.XStanzaKey()),
+								cachedLeasesReq[dec])
 							if err != nil {
 								logging.Error(err)
 							}
@@ -325,7 +327,6 @@ func ValidateTokens(decorator string, tokens []string) bool {
 	ds := &hubv1.DecoratorSelector{Environment: global.GetServiceEnvironment(), Name: decorator}
 	vtr := &hubv1.ValidateTokenRequest{Tokens: tokenInfos(tokens, ds)}
 
-	md := metadata.New(map[string]string{"x-stanza-key": global.GetServiceKey()})
 	ctx, cancel := context.WithTimeout(context.Background(), MAX_QUOTA_WAIT)
 	defer cancel()
 
@@ -335,7 +336,7 @@ func ValidateTokens(decorator string, tokens []string) bool {
 			logging.Error(ctx.Err())
 			return true // deadline reached, log error and fail open
 		default:
-			resp, err := qsc.ValidateToken(metadata.NewOutgoingContext(ctx, md), vtr)
+			resp, err := qsc.ValidateToken(metadata.NewOutgoingContext(ctx, global.XStanzaKey()), vtr)
 			if err != nil {
 				logging.Error(err)
 				return true // error from Stanza Hub, log error and fail open
