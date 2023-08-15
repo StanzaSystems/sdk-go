@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/StanzaSystems/sdk-go/ca"
+	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/logging"
-	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
@@ -54,7 +54,7 @@ func hubConnect(ctx context.Context) (func(), func()) {
 		if gs.hubConn.GetState() == connectivity.Ready {
 			logging.Info("connected to stanza hub", "uri", gs.hubURI)
 			GetServiceConfig(ctx, true)
-			GetDecoratorConfigs(ctx, true)
+			GetGuardConfigs(ctx, true)
 			return OtelStartup(ctx), SentinelStartup(ctx)
 		}
 	}
@@ -83,7 +83,7 @@ func hubPoller(ctx context.Context, pollInterval time.Duration) {
 						connectAttempt = 0
 					}
 					GetServiceConfig(ctx, false)
-					GetDecoratorConfigs(ctx, false)
+					GetGuardConfigs(ctx, false)
 				} else {
 					// 120 attempts * 15 seconds == 1800 seconds == 30 minutes
 					if connectAttempt > 120 {

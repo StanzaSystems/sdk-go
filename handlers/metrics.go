@@ -10,18 +10,18 @@ import (
 const (
 	// Stanza SDK Metrics:
 	// https://github.com/StanzaSystems/sdk-spec#telemetry-metrics
-	stanzaAllowed         = "stanza.decorator.allowed"          // counter
-	stanzaAllowedSuccess  = "stanza.decorator.allowed.success"  // counter
-	stanzaAllowedFailure  = "stanza.decorator.allowed.failure"  // counter
-	stanzaAllowedUnknown  = "stanza.decorator.allowed.unknown"  // counter
-	stanzaAllowedDuration = "stanza.decorator.allowed.duration" // histogram (milliseconds)
-	stanzaBlocked         = "stanza.decorator.blocked"          // counter
+	stanzaAllowed         = "stanza.guard.allowed"          // counter
+	stanzaAllowedSuccess  = "stanza.guard.allowed.success"  // counter
+	stanzaAllowedFailure  = "stanza.guard.allowed.failure"  // counter
+	stanzaAllowedUnknown  = "stanza.guard.allowed.unknown"  // counter
+	stanzaAllowedDuration = "stanza.guard.allowed.duration" // histogram (milliseconds)
+	stanzaBlocked         = "stanza.guard.blocked"          // counter
 )
 
 var (
 	clientIdKey    = attribute.Key("client_id")
 	customerIdKey  = attribute.Key("customer_id")
-	decoratorKey   = attribute.Key("decorator")
+	guardKey       = attribute.Key("guard")
 	environmentKey = attribute.Key("environment")
 	featureKey     = attribute.Key("feature")
 	serviceKey     = attribute.Key("service")
@@ -88,7 +88,7 @@ func GetStanzaMeter() (*Meter, error) {
 	m.AllowedDuration, err = meter.Float64Histogram(
 		stanzaAllowedDuration,
 		metric.WithUnit("ms"),
-		metric.WithDescription("measures the total executions time of decorated requests"))
+		metric.WithDescription("measures the total executions time of guarded requests"))
 	if err != nil {
 		return nil, err
 	}

@@ -4,8 +4,8 @@ import (
 	"context"
 	"os"
 
+	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/logging"
-	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"

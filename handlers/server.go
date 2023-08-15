@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
+	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -26,7 +26,7 @@ func (h *InboundHandler) SetTokenLeaseRequest(d string, tlr *hubv1.GetTokenLease
 	}
 }
 
-func (h *InboundHandler) TokenLeaseRequest(dec string) *hubv1.GetTokenLeaseRequest {
+func (h *InboundHandler) TokenLeaseRequest(guard string) *hubv1.GetTokenLeaseRequest {
 	// TODO LOCK
-	return h.tlr[dec]
+	return h.tlr[guard]
 }

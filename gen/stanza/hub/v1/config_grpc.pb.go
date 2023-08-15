@@ -19,16 +19,16 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	ConfigService_GetDecoratorConfig_FullMethodName = "/stanza.hub.v1.ConfigService/GetDecoratorConfig"
-	ConfigService_GetBrowserContext_FullMethodName  = "/stanza.hub.v1.ConfigService/GetBrowserContext"
-	ConfigService_GetServiceConfig_FullMethodName   = "/stanza.hub.v1.ConfigService/GetServiceConfig"
+	ConfigService_GetGuardConfig_FullMethodName    = "/stanza.hub.v1.ConfigService/GetGuardConfig"
+	ConfigService_GetBrowserContext_FullMethodName = "/stanza.hub.v1.ConfigService/GetBrowserContext"
+	ConfigService_GetServiceConfig_FullMethodName  = "/stanza.hub.v1.ConfigService/GetServiceConfig"
 )
 
 // ConfigServiceClient is the client API for ConfigService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ConfigServiceClient interface {
-	GetDecoratorConfig(ctx context.Context, in *GetDecoratorConfigRequest, opts ...grpc.CallOption) (*GetDecoratorConfigResponse, error)
+	GetGuardConfig(ctx context.Context, in *GetGuardConfigRequest, opts ...grpc.CallOption) (*GetGuardConfigResponse, error)
 	GetBrowserContext(ctx context.Context, in *GetBrowserContextRequest, opts ...grpc.CallOption) (*GetBrowserContextResponse, error)
 	GetServiceConfig(ctx context.Context, in *GetServiceConfigRequest, opts ...grpc.CallOption) (*GetServiceConfigResponse, error)
 }
@@ -41,9 +41,9 @@ func NewConfigServiceClient(cc grpc.ClientConnInterface) ConfigServiceClient {
 	return &configServiceClient{cc}
 }
 
-func (c *configServiceClient) GetDecoratorConfig(ctx context.Context, in *GetDecoratorConfigRequest, opts ...grpc.CallOption) (*GetDecoratorConfigResponse, error) {
-	out := new(GetDecoratorConfigResponse)
-	err := c.cc.Invoke(ctx, ConfigService_GetDecoratorConfig_FullMethodName, in, out, opts...)
+func (c *configServiceClient) GetGuardConfig(ctx context.Context, in *GetGuardConfigRequest, opts ...grpc.CallOption) (*GetGuardConfigResponse, error) {
+	out := new(GetGuardConfigResponse)
+	err := c.cc.Invoke(ctx, ConfigService_GetGuardConfig_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ func (c *configServiceClient) GetServiceConfig(ctx context.Context, in *GetServi
 // All implementations must embed UnimplementedConfigServiceServer
 // for forward compatibility
 type ConfigServiceServer interface {
-	GetDecoratorConfig(context.Context, *GetDecoratorConfigRequest) (*GetDecoratorConfigResponse, error)
+	GetGuardConfig(context.Context, *GetGuardConfigRequest) (*GetGuardConfigResponse, error)
 	GetBrowserContext(context.Context, *GetBrowserContextRequest) (*GetBrowserContextResponse, error)
 	GetServiceConfig(context.Context, *GetServiceConfigRequest) (*GetServiceConfigResponse, error)
 	mustEmbedUnimplementedConfigServiceServer()
@@ -82,8 +82,8 @@ type ConfigServiceServer interface {
 type UnimplementedConfigServiceServer struct {
 }
 
-func (UnimplementedConfigServiceServer) GetDecoratorConfig(context.Context, *GetDecoratorConfigRequest) (*GetDecoratorConfigResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetDecoratorConfig not implemented")
+func (UnimplementedConfigServiceServer) GetGuardConfig(context.Context, *GetGuardConfigRequest) (*GetGuardConfigResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetGuardConfig not implemented")
 }
 func (UnimplementedConfigServiceServer) GetBrowserContext(context.Context, *GetBrowserContextRequest) (*GetBrowserContextResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetBrowserContext not implemented")
@@ -104,20 +104,20 @@ func RegisterConfigServiceServer(s grpc.ServiceRegistrar, srv ConfigServiceServe
 	s.RegisterService(&ConfigService_ServiceDesc, srv)
 }
 
-func _ConfigService_GetDecoratorConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetDecoratorConfigRequest)
+func _ConfigService_GetGuardConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetGuardConfigRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ConfigServiceServer).GetDecoratorConfig(ctx, in)
+		return srv.(ConfigServiceServer).GetGuardConfig(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: ConfigService_GetDecoratorConfig_FullMethodName,
+		FullMethod: ConfigService_GetGuardConfig_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ConfigServiceServer).GetDecoratorConfig(ctx, req.(*GetDecoratorConfigRequest))
+		return srv.(ConfigServiceServer).GetGuardConfig(ctx, req.(*GetGuardConfigRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -166,8 +166,8 @@ var ConfigService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*ConfigServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "GetDecoratorConfig",
-			Handler:    _ConfigService_GetDecoratorConfig_Handler,
+			MethodName: "GetGuardConfig",
+			Handler:    _ConfigService_GetGuardConfig_Handler,
 		},
 		{
 			MethodName: "GetBrowserContext",

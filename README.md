@@ -2,7 +2,7 @@
 
 Stanza is a developer-first tool for increasing reliability based on prioritized traffic management, quota allocation, and rate-limiting. On the back-end, it helps prevent downtime related to overload and excessive use of third-party APIs. On the front-end, it helps segment and weight your traffic, react automatically to overload or other conditions, and inspect the state of your critical user journeys.
 
-"Stanza Go SDK" provides higher-order functions (["decorators"](https://docs.dev.getstanza.dev/glossary#decorator)) for adding this fault tolerance to your Golang application.
+"Stanza Go SDK" provides higher-order functions (["guards"](https://docs.dev.getstanza.dev/glossary#guard)) for adding this fault tolerance to your Golang application.
 
 ## Installation
 
@@ -24,7 +24,7 @@ For more information, see the [Initialize Stanza section of our Go SDK documenta
 
 The SDK supports adding flow control, traffic shaping, concurrency limiting, circuit breaking, and adaptive system protection (via [Sentinel](https://github.com/alibaba/sentinel-golang)) as well as weighted, prioritized, global rate limiting (via our own custom implementation). All of which is externally managed by the [Stanza Dashboard](https://docs.dev.getstanza.dev/dashboard).
 
-The [adapters/fiberstanza/example](./adapters/fiberstanza/example) directory is a good place to start! (It's an example application which shows how to wrap inbound and outbound HTTP traffic with [Stanza Decorators](https://docs.dev.getstanza.dev/configuration/decorators).)
+The [adapters/fiberstanza/example](./adapters/fiberstanza/example) directory is a good place to start! (It's an example application which shows how to wrap inbound and outbound HTTP traffic with [Stanza Guards](https://docs.dev.getstanza.dev/configuration/guards).)
 
 Or browse the [Official Stanza Documentation](https://docs.dev.getstanza.dev/) for more info on how to get started.
 
