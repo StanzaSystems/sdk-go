@@ -2,16 +2,16 @@
 // README at: https://github.com/devcontainers/templates/tree/main/src/go
 {
 	"name": "SDK-Go",
-	"image": "mcr.microsoft.com/devcontainers/go:1.20",
-
+	"image": "mcr.microsoft.com/devcontainers/go:1.21",
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	"features": {},
-
 	// Configure tool-specific properties.
 	"customizations": {
 		"vscode": {
 			"settings": {
-				"gopls": { "ui.semanticTokens": true },
+				"gopls": {
+					"ui.semanticTokens": true
+				},
 				"cSpell.language": "en,en-GB,en-US,lorem",
 				"cSpell.ignorePaths": [
 					"package-lock.json",
@@ -33,7 +33,6 @@
 			]
 		}
 	},
-
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// "forwardPorts": [3000],
 	"portsAttributes": {
@@ -42,7 +41,6 @@
 			"onAutoForward": "notify"
 		}
 	},
-	
 	// Use 'postCreateCommand' to run commands after the container is created.
 	"postCreateCommand": "./.devcontainer/postCreateCommand.sh"
 }
