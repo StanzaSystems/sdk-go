@@ -8,10 +8,10 @@ import (
 	"sync"
 	"time"
 
+	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/handlers/httphandler"
 	"github.com/StanzaSystems/sdk-go/keys"
 	"github.com/StanzaSystems/sdk-go/logging"
-	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/stanza"
 
 	"github.com/gofiber/fiber/v2"
@@ -32,7 +32,7 @@ type Client struct {
 	Environment string // defines applications environment
 	StanzaHub   string // host:port (ipv4, ipv6, or resolvable hostname)
 
-	Decorators []string // prefetch config for these decorators
+	Guard []string // prefetch config for these guards
 }
 
 // Optional arguments
@@ -43,7 +43,7 @@ type Opt struct {
 	DefaultWeight float32
 }
 
-type decorateRequest struct {
+type guardRequest struct {
 	c       *fiber.Ctx
 	tlr     *hubv1.GetTokenLeaseRequest
 	headers http.Header
@@ -52,14 +52,14 @@ type decorateRequest struct {
 }
 
 var (
-	inboundHandler     *httphandler.InboundHandler  = nil
-	outboundHandler    *httphandler.OutboundHandler = nil
-	seenDecorators     map[string]bool              = make(map[string]bool)
-	seenDecoratorsLock                              = &sync.RWMutex{}
+	inboundHandler  *httphandler.InboundHandler  = nil
+	outboundHandler *httphandler.OutboundHandler = nil
+	seenGuard       map[string]bool              = make(map[string]bool)
+	seenGuardLock                                = &sync.RWMutex{}
 )
 
 // New creates a new fiberstanza middleware fiber.Handler
-func New(decorator string, opts ...Opt) fiber.Handler {
+func New(guard string, opts ...Opt) fiber.Handler {
 	if inboundHandler == nil {
 		h, err := stanza.NewHttpInboundHandler()
 		if err != nil {
@@ -70,7 +70,7 @@ func New(decorator string, opts ...Opt) fiber.Handler {
 				return c.Next()
 			}
 		}
-		h.SetTokenLeaseRequest(decorator, tokenLeaseRequest(decorator, opts...))
+		h.SetTokenLeaseRequest(guard, tokenLeaseRequest(guard, opts...))
 		inboundHandler = h
 	}
 	h := inboundHandler
@@ -84,7 +84,7 @@ func New(decorator string, opts ...Opt) fiber.Handler {
 					h.ReasonFailOpen())...)}...)
 			return c.Next() // log error and fail open
 		}
-		ctx, status := h.VerifyServingCapacity(&req, c.Route().Path, decorator)
+		ctx, status := h.VerifyServingCapacity(&req, c.Route().Path, guard)
 		if status != http.StatusOK {
 			c.SendString("Stanza Inbound Rate Limited")
 			return c.SendStatus(status)
@@ -121,12 +121,12 @@ func Init(ctx context.Context, client Client) (func(), error) {
 }
 
 // HttpGet is a fiberstanza helper function (passthrough to stanza.NewHttpOutboundHandler)
-func HttpGet(req decorateRequest) (*http.Response, error) {
+func HttpGet(req guardRequest) (*http.Response, error) {
 	return outboundHandler.Get(WithHeaders(req.c, req.headers), req.url, req.tlr)
 }
 
 // HttpPost is a fiberstanza helper function (passthrough to stanza.NewHttpOutboundHandler)
-func HttpPost(req decorateRequest) (*http.Response, error) {
+func HttpPost(req guardRequest) (*http.Response, error) {
 	return outboundHandler.Post(WithHeaders(req.c, req.headers), req.url, req.body, req.tlr)
 }
 
@@ -140,10 +140,10 @@ func WithHeaders(c *fiber.Ctx, headers http.Header) context.Context {
 	return context.WithValue(ctx, keys.OutboundHeadersKey, headers)
 }
 
-// Decorate is a fiberstanza helper function
-func Decorate(c *fiber.Ctx, decorator string, url string, opts ...Opt) decorateRequest {
-	req := decorateRequest{c: c, headers: make(http.Header)}
-	tlr := tokenLeaseRequest(decorator, opts...)
+// Guard is a fiberstanza helper function
+func Guard(c *fiber.Ctx, guard string, url string, opts ...Opt) guardRequest {
+	req := guardRequest{c: c, headers: make(http.Header)}
+	tlr := tokenLeaseRequest(guard, opts...)
 	if len(opts) == 1 {
 		if opts[0].Headers != nil {
 			req.headers = opts[0].Headers
@@ -154,17 +154,17 @@ func Decorate(c *fiber.Ctx, decorator string, url string, opts ...Opt) decorateR
 	return req
 }
 
-func tokenLeaseRequest(decorator string, opts ...Opt) *hubv1.GetTokenLeaseRequest {
-	seenDecoratorsLock.RLock()
-	_, ok := seenDecorators[decorator]
-	seenDecoratorsLock.RUnlock()
+func tokenLeaseRequest(guard string, opts ...Opt) *hubv1.GetTokenLeaseRequest {
+	seenGuardLock.RLock()
+	_, ok := seenGuard[guard]
+	seenGuardLock.RUnlock()
 	if !ok {
-		stanza.RegisterDecorator(context.Background(), decorator)
-		seenDecoratorsLock.Lock()
-		seenDecorators[decorator] = true
-		seenDecoratorsLock.Unlock()
+		stanza.RegisterGuard(context.Background(), guard)
+		seenGuardLock.Lock()
+		seenGuard[guard] = true
+		seenGuardLock.Unlock()
 	}
-	dfs := &hubv1.DecoratorFeatureSelector{DecoratorName: decorator}
+	dfs := &hubv1.GuardFeatureSelector{GuardName: guard}
 	tlr := &hubv1.GetTokenLeaseRequest{Selector: dfs}
 	if len(opts) == 1 {
 		if opts[0].Feature != "" {

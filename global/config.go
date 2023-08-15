@@ -7,9 +7,9 @@ import (
 	"os"
 	"time"
 
+	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/logging"
 	"github.com/StanzaSystems/sdk-go/otel"
-	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/sentinel"
 
 	"google.golang.org/grpc/metadata"
@@ -24,9 +24,9 @@ const BEARER_TOKEN_REFRESH_JITTER = 600 // seconds
 const SERVICE_CONFIG_REFRESH_INTERVAL = 30 * time.Second
 const SERVICE_CONFIG_REFRESH_JITTER = 6 // seconds
 
-// Set to how often we poll Hub for a new Decorator Config
-const DECORATOR_CONFIG_REFRESH_INTERVAL = 30 * time.Second
-const DECORATOR_CONFIG_REFRESH_JITTER = 6 // seconds
+// Set to how often we poll Hub for a new Guard Config
+const GUARD_CONFIG_REFRESH_INTERVAL = 30 * time.Second
+const GUARD_CONFIG_REFRESH_JITTER = 6 // seconds
 
 // Must be created outside the *Startup functions (so we don't wipe these out every 5 seconds)
 var (
@@ -167,32 +167,34 @@ func GetServiceConfig(ctx context.Context, skipPoll bool) {
 	}
 }
 
-func GetDecoratorConfigs(ctx context.Context, skipPoll bool) {
-	if len(gs.decoratorConfig) > 0 {
-		for decorator := range gs.decoratorConfig {
-			if skipPoll || time.Now().After(gs.decoratorConfigTime[decorator].Add(jitter(DECORATOR_CONFIG_REFRESH_INTERVAL, DECORATOR_CONFIG_REFRESH_JITTER))) {
-				GetDecoratorConfig(ctx, decorator)
+func GetGuardConfigs(ctx context.Context, skipPoll bool) {
+	if len(gs.guardConfig) > 0 {
+		for guard := range gs.guardConfig {
+			if skipPoll || time.Now().After(
+				gs.guardConfigTime[guard].Add(
+					jitter(GUARD_CONFIG_REFRESH_INTERVAL, GUARD_CONFIG_REFRESH_JITTER))) {
+				GetGuardConfig(ctx, guard)
 			}
 		}
 	}
 }
 
-func GetDecoratorConfig(ctx context.Context, decorator string) {
-	if _, ok := gs.decoratorConfig[decorator]; !ok {
-		gs.decoratorConfig[decorator] = &hubv1.DecoratorConfig{}
-		gs.decoratorConfigTime[decorator] = time.Time{}
-		gs.decoratorConfigVersion[decorator] = ""
+func GetGuardConfig(ctx context.Context, guard string) {
+	if _, ok := gs.guardConfig[guard]; !ok {
+		gs.guardConfig[guard] = &hubv1.GuardConfig{}
+		gs.guardConfigTime[guard] = time.Time{}
+		gs.guardConfigVersion[guard] = ""
 	}
 	if gs.hubConfigClient == nil {
 		return
 	}
-	res, err := gs.hubConfigClient.GetDecoratorConfig(
+	res, err := gs.hubConfigClient.GetGuardConfig(
 		metadata.NewOutgoingContext(ctx, XStanzaKey()),
-		&hubv1.GetDecoratorConfigRequest{
-			VersionSeen: proto.String(gs.decoratorConfigVersion[decorator]),
-			Selector: &hubv1.DecoratorServiceSelector{
+		&hubv1.GetGuardConfigRequest{
+			VersionSeen: proto.String(gs.guardConfigVersion[guard]),
+			Selector: &hubv1.GuardServiceSelector{
 				Environment:    gs.svcEnvironment,
-				DecoratorName:  decorator,
+				GuardName:      guard,
 				ServiceName:    gs.svcName,
 				ServiceRelease: gs.svcRelease,
 			},
@@ -204,10 +206,10 @@ func GetDecoratorConfig(ctx context.Context, decorator string) {
 	if res.GetConfigDataSent() {
 		gsLock.Lock()
 		defer gsLock.Unlock()
-		gs.decoratorConfig[decorator] = res.GetConfig()
-		gs.decoratorConfigTime[decorator] = time.Now()
-		gs.decoratorConfigVersion[decorator] = res.GetVersion()
-		logging.Debug("accepted decorator config", "decorator", decorator, "version", res.GetVersion())
+		gs.guardConfig[guard] = res.GetConfig()
+		gs.guardConfigTime[guard] = time.Now()
+		gs.guardConfigVersion[guard] = res.GetVersion()
+		logging.Debug("accepted guard config", "guard", guard, "version", res.GetVersion())
 	}
 }
 

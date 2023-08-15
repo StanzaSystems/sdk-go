@@ -7,12 +7,12 @@ import (
 	"net/http"
 	"time"
 
+	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/global"
 	"github.com/StanzaSystems/sdk-go/handlers"
 	"github.com/StanzaSystems/sdk-go/hub"
 	"github.com/StanzaSystems/sdk-go/keys"
 	"github.com/StanzaSystems/sdk-go/otel"
-	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/attribute"
@@ -49,9 +49,9 @@ func (h *OutboundHandler) Request(ctx context.Context, httpMethod, url string, b
 	ctx, tlr.Selector.FeatureName = otel.GetFeature(ctx, tlr.Selector.GetFeatureName())
 	ctx, tlr.PriorityBoost = otel.GetPriorityBoost(ctx, tlr.GetPriorityBoost())
 
-	// Add Decorator and Feature to OTEL attributes
+	// Add Guard and Feature to OTEL attributes
 	attr := append(h.Attributes(),
-		h.DecoratorKey(tlr.Selector.GetDecoratorName()),
+		h.GuardKey(tlr.Selector.GetGuardName()),
 		h.FeatureKey(tlr.Selector.GetFeatureName()),
 	)
 

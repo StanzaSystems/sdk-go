@@ -19,14 +19,14 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	HealthService_QueryDecoratorHealth_FullMethodName = "/stanza.hub.v1.HealthService/QueryDecoratorHealth"
+	HealthService_QueryGuardHealth_FullMethodName = "/stanza.hub.v1.HealthService/QueryGuardHealth"
 )
 
 // HealthServiceClient is the client API for HealthService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type HealthServiceClient interface {
-	QueryDecoratorHealth(ctx context.Context, in *QueryDecoratorHealthRequest, opts ...grpc.CallOption) (*QueryDecoratorHealthResponse, error)
+	QueryGuardHealth(ctx context.Context, in *QueryGuardHealthRequest, opts ...grpc.CallOption) (*QueryGuardHealthResponse, error)
 }
 
 type healthServiceClient struct {
@@ -37,9 +37,9 @@ func NewHealthServiceClient(cc grpc.ClientConnInterface) HealthServiceClient {
 	return &healthServiceClient{cc}
 }
 
-func (c *healthServiceClient) QueryDecoratorHealth(ctx context.Context, in *QueryDecoratorHealthRequest, opts ...grpc.CallOption) (*QueryDecoratorHealthResponse, error) {
-	out := new(QueryDecoratorHealthResponse)
-	err := c.cc.Invoke(ctx, HealthService_QueryDecoratorHealth_FullMethodName, in, out, opts...)
+func (c *healthServiceClient) QueryGuardHealth(ctx context.Context, in *QueryGuardHealthRequest, opts ...grpc.CallOption) (*QueryGuardHealthResponse, error) {
+	out := new(QueryGuardHealthResponse)
+	err := c.cc.Invoke(ctx, HealthService_QueryGuardHealth_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +50,7 @@ func (c *healthServiceClient) QueryDecoratorHealth(ctx context.Context, in *Quer
 // All implementations must embed UnimplementedHealthServiceServer
 // for forward compatibility
 type HealthServiceServer interface {
-	QueryDecoratorHealth(context.Context, *QueryDecoratorHealthRequest) (*QueryDecoratorHealthResponse, error)
+	QueryGuardHealth(context.Context, *QueryGuardHealthRequest) (*QueryGuardHealthResponse, error)
 	mustEmbedUnimplementedHealthServiceServer()
 }
 
@@ -58,8 +58,8 @@ type HealthServiceServer interface {
 type UnimplementedHealthServiceServer struct {
 }
 
-func (UnimplementedHealthServiceServer) QueryDecoratorHealth(context.Context, *QueryDecoratorHealthRequest) (*QueryDecoratorHealthResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method QueryDecoratorHealth not implemented")
+func (UnimplementedHealthServiceServer) QueryGuardHealth(context.Context, *QueryGuardHealthRequest) (*QueryGuardHealthResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method QueryGuardHealth not implemented")
 }
 func (UnimplementedHealthServiceServer) mustEmbedUnimplementedHealthServiceServer() {}
 
@@ -74,20 +74,20 @@ func RegisterHealthServiceServer(s grpc.ServiceRegistrar, srv HealthServiceServe
 	s.RegisterService(&HealthService_ServiceDesc, srv)
 }
 
-func _HealthService_QueryDecoratorHealth_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(QueryDecoratorHealthRequest)
+func _HealthService_QueryGuardHealth_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryGuardHealthRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(HealthServiceServer).QueryDecoratorHealth(ctx, in)
+		return srv.(HealthServiceServer).QueryGuardHealth(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: HealthService_QueryDecoratorHealth_FullMethodName,
+		FullMethod: HealthService_QueryGuardHealth_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(HealthServiceServer).QueryDecoratorHealth(ctx, req.(*QueryDecoratorHealthRequest))
+		return srv.(HealthServiceServer).QueryGuardHealth(ctx, req.(*QueryGuardHealthRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -100,8 +100,8 @@ var HealthService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*HealthServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "QueryDecoratorHealth",
-			Handler:    _HealthService_QueryDecoratorHealth_Handler,
+			MethodName: "QueryGuardHealth",
+			Handler:    _HealthService_QueryGuardHealth_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

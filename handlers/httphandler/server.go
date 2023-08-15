@@ -4,11 +4,11 @@ import (
 	"context"
 	"net/http"
 
+	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/handlers"
 	"github.com/StanzaSystems/sdk-go/hub"
 	"github.com/StanzaSystems/sdk-go/logging"
 	"github.com/StanzaSystems/sdk-go/otel"
-	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
 
 	"github.com/alibaba/sentinel-golang/api"
 	"github.com/alibaba/sentinel-golang/core/base"
@@ -32,17 +32,17 @@ func NewInboundHandler() (*InboundHandler, error) {
 	return &InboundHandler{h}, nil
 }
 
-func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, decorator string) (context.Context, int) {
+func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, guard string) (context.Context, int) {
 	ctx := h.Propagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
-	tlr := proto.Clone(h.TokenLeaseRequest(decorator)).(*hubv1.GetTokenLeaseRequest)
+	tlr := proto.Clone(h.TokenLeaseRequest(guard)).(*hubv1.GetTokenLeaseRequest)
 
 	// Inspect Baggage and Headers for Feature and PriorityBoost, propagate through context if found
 	ctx, tlr.Selector.FeatureName = otel.GetFeature(ctx, tlr.Selector.GetFeatureName())
 	ctx, tlr.PriorityBoost = otel.GetPriorityBoost(ctx, tlr.GetPriorityBoost())
 
-	// Add Decorator and Feature to OTEL attributes
+	// Add Guard and Feature to OTEL attributes
 	attr := append(h.Attributes(),
-		h.DecoratorKey(tlr.Selector.GetDecoratorName()),
+		h.GuardKey(tlr.Selector.GetGuardName()),
 		h.FeatureKey(tlr.Selector.GetFeatureName()),
 	)
 
@@ -58,10 +58,10 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, de
 	defer span.End()
 
 	if h.SentinelEnabled() {
-		e, b := api.Entry(decorator, api.WithTrafficType(base.Inbound), api.WithResourceType(base.ResTypeWeb))
+		e, b := api.Entry(guard, api.WithTrafficType(base.Inbound), api.WithResourceType(base.ResTypeWeb))
 		if b != nil {
 			logging.Debug("Stanza blocked",
-				"decorator", decorator,
+				"guard", guard,
 				"sentinel.block_msg", b.BlockMsg(),
 				"sentinel.block_type", b.BlockType().String(),
 				"sentinel.block_value", b.TriggeredValue(),
@@ -75,7 +75,7 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, de
 		e.Exit() // cleanly exit the Sentinel Entry
 	}
 
-	status := hub.ValidateTokens(decorator, r.Header.Values("x-stanza-token"))
+	status := hub.ValidateTokens(guard, r.Header.Values("x-stanza-token"))
 	if status == hub.ValidateTokensInvalid {
 		attrWithReason := append(attr, h.ReasonInvalidToken())
 		span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))

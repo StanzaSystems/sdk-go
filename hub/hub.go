@@ -9,9 +9,9 @@ import (
 	"syscall"
 	"time"
 
+	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/global"
 	"github.com/StanzaSystems/sdk-go/logging"
-	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
 
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -70,17 +70,17 @@ func CheckQuota(tlr *hubv1.GetTokenLeaseRequest) (int, string) {
 		)
 		return CheckQuotaFailOpen, ""
 	}
-	dec := tlr.GetSelector().GetDecoratorName()
-	dc := global.DecoratorConfig(dec)
-	if dc == nil {
+	guard := tlr.GetSelector().GetGuardName()
+	gc := global.GuardConfig(guard)
+	if gc == nil {
 		logging.Debug(
-			"invalid decorator config, failing open",
+			"invalid guard config, failing open",
 			"count", atomic.AddInt64(&failOpenCount, 1),
 		)
 		return CheckQuotaFailOpen, ""
 	}
 
-	if !dc.GetCheckQuota() {
+	if !gc.GetCheckQuota() {
 		return CheckQuotaFailOpen, ""
 	}
 
@@ -88,49 +88,49 @@ func CheckQuota(tlr *hubv1.GetTokenLeaseRequest) (int, string) {
 	consumedLeasesInit.Do(func() { go batchTokenConsumer() })
 
 	cachedLeasesMapLock.RLock()
-	_, cachedLeasesExists := cachedLeases[dec]
+	_, cachedLeasesExists := cachedLeases[guard]
 	cachedLeasesMapLock.RUnlock()
 	if !cachedLeasesExists {
 		cachedLeasesMapLock.Lock()
-		cachedLeases[dec] = []*hubv1.TokenLease{}
-		cachedLeasesLock[dec] = &sync.RWMutex{}
-		cachedLeasesUsed[dec] = 0
-		cachedLeasesReq[dec] = &hubv1.GetTokenLeaseRequest{
-			Selector: &hubv1.DecoratorFeatureSelector{
-				Environment:   tlr.GetSelector().GetEnvironment(),
-				DecoratorName: tlr.GetSelector().GetDecoratorName(),
+		cachedLeases[guard] = []*hubv1.TokenLease{}
+		cachedLeasesLock[guard] = &sync.RWMutex{}
+		cachedLeasesUsed[guard] = 0
+		cachedLeasesReq[guard] = &hubv1.GetTokenLeaseRequest{
+			Selector: &hubv1.GuardFeatureSelector{
+				Environment: tlr.GetSelector().GetEnvironment(),
+				GuardName:   tlr.GetSelector().GetGuardName(),
 			},
 			ClientId: tlr.ClientId,
 		}
 		cachedLeasesMapLock.Unlock()
 	}
 	waitingLeasesMapLock.RLock()
-	_, waitingLeasesExists := waitingLeases[dec]
+	_, waitingLeasesExists := waitingLeases[guard]
 	waitingLeasesMapLock.RUnlock()
 	if !waitingLeasesExists {
 		waitingLeasesMapLock.Lock()
-		waitingLeases[dec] = []*hubv1.TokenLease{}
-		waitingLeasesLock[dec] = &sync.RWMutex{}
+		waitingLeases[guard] = []*hubv1.TokenLease{}
+		waitingLeasesLock[guard] = &sync.RWMutex{}
 		waitingLeasesMapLock.Unlock()
 
 	}
 
 	if len(tlr.GetSelector().GetTags()) == 0 { // fully skip using cached leases if Quota Tags are specified
-		cachedLeasesLock[dec].RLock()
-		cachedLeaseLen := len(cachedLeases[dec])
-		cachedLeasesLock[dec].RUnlock()
+		cachedLeasesLock[guard].RLock()
+		cachedLeaseLen := len(cachedLeases[guard])
+		cachedLeasesLock[guard].RUnlock()
 		if cachedLeaseLen > 0 {
-			cachedLeasesLock[dec].Lock()
-			for k, tl := range cachedLeases[dec] {
+			cachedLeasesLock[guard].Lock()
+			for k, tl := range cachedLeases[guard] {
 				if tl.GetFeature() == tlr.GetSelector().GetFeatureName() {
 					if tl.GetPriorityBoost() <= tlr.GetPriorityBoost() {
 						if time.Now().Before(tl.GetExpiresAt().AsTime()) {
 							// We have a cached lease for the given feature, at the right priority,
 							// which hasn't expired; remove from cache, unlock, and return cached token
-							newCache := append(cachedLeases[dec][:k], cachedLeases[dec][k+1:]...)
-							cachedLeases[dec] = newCache
-							cachedLeasesUsed[dec] += 1
-							cachedLeasesLock[dec].Unlock()
+							newCache := append(cachedLeases[guard][:k], cachedLeases[guard][k+1:]...)
+							cachedLeases[guard] = newCache
+							cachedLeasesUsed[guard] += 1
+							cachedLeasesLock[guard].Unlock()
 							return CheckQuotaAllowed, tl.Token
 						}
 					}
@@ -138,7 +138,7 @@ func CheckQuota(tlr *hubv1.GetTokenLeaseRequest) (int, string) {
 			}
 			// No cached lease available for Feature+PriorityBoost;
 			// unlock and proceed to make a GetTokenLease request below
-			cachedLeasesLock[dec].Unlock()
+			cachedLeasesLock[guard].Unlock()
 		}
 	}
 
@@ -170,7 +170,7 @@ func CheckQuota(tlr *hubv1.GetTokenLeaseRequest) (int, string) {
 		// Start a background cached lease manager (the first time we get extra leases from Stanza Hub)
 		cachedLeasesInit.Do(func() { go cachedLeaseManager() })
 
-		logging.Debug("obtained new batch of cacheable leases", "decorator", dec, "count", len(leases[1:]))
+		logging.Debug("obtained new batch of cacheable leases", "guard", guard, "count", len(leases[1:]))
 		for _, lease := range leases[1:] {
 			if lease.ExpiresAt == nil {
 				lease.ExpiresAt = timestamppb.New(time.Now().Add(time.Duration(lease.DurationMsec) * time.Millisecond))
@@ -178,22 +178,22 @@ func CheckQuota(tlr *hubv1.GetTokenLeaseRequest) (int, string) {
 		}
 		// use a separate "waiting leases" lock here as we don't need/want to block a request on contention for
 		// the higher volume / harder to get "cached leases" lock
-		waitingLeasesLock[dec].Lock()
-		waitingLeases[dec] = append(waitingLeases[dec], leases[1:]...)
-		waitingLeasesLock[dec].Unlock()
+		waitingLeasesLock[guard].Lock()
+		waitingLeases[guard] = append(waitingLeases[guard], leases[1:]...)
+		waitingLeasesLock[guard].Unlock()
 	}
 
 	// Consume first token from leases (not cached, so this doesn't require the cached leases lock)
-	go consumeLease(dec, leases[0])
+	go consumeLease(guard, leases[0])
 	return CheckQuotaAllowed, leases[0].Token
 }
 
-func consumeLease(dec string, lease *hubv1.TokenLease) {
+func consumeLease(guard string, lease *hubv1.TokenLease) {
 	consumedLeasesLock.Lock()
 	consumedLeases = append(consumedLeases, lease.GetToken())
 	consumedLeasesLock.Unlock()
 	logging.Debug("consumed quota lease",
-		"decorator", dec,
+		"guard", guard,
 		"feature", lease.GetFeature(),
 		"weight", lease.GetWeight(),
 		"priority_boost", lease.GetPriorityBoost())
@@ -249,18 +249,18 @@ func cachedLeaseManager() {
 		case <-ctx.Done():
 			return
 		case <-time.After(CACHED_LEASE_CHECK_INTERVAL):
-			for dec := range cachedLeases {
+			for guard := range cachedLeases {
 				newCache := []*hubv1.TokenLease{}
 				expiringLeaseCount := 0
-				cachedLeasesLock[dec].Lock()
-				cachedLeaseCount := len(cachedLeases[dec])
+				cachedLeasesLock[guard].Lock()
+				cachedLeaseCount := len(cachedLeases[guard])
 
 				// Check for and remove any expired leases
-				for k, tl := range cachedLeases[dec] {
+				for k, tl := range cachedLeases[guard] {
 					if time.Now().Before(tl.GetExpiresAt().AsTime()) {
-						newCache = append(newCache, cachedLeases[dec][k])
+						newCache = append(newCache, cachedLeases[guard][k])
 					} else {
-						cachedLeasesUsed[dec] += 1
+						cachedLeasesUsed[guard] += 1
 					}
 				}
 
@@ -272,45 +272,45 @@ func cachedLeaseManager() {
 				}
 
 				// Add any additional leases waiting to be cached now
-				waitingLeasesLock[dec].Lock()
-				if len(waitingLeases[dec]) > 0 {
-					newCache = append(newCache, waitingLeases[dec]...)
-					cachedLeaseCount += len(waitingLeases[dec])
-					cachedLeasesUsed[dec] = 0
-					waitingLeases[dec] = []*hubv1.TokenLease{}
+				waitingLeasesLock[guard].Lock()
+				if len(waitingLeases[guard]) > 0 {
+					newCache = append(newCache, waitingLeases[guard]...)
+					cachedLeaseCount += len(waitingLeases[guard])
+					cachedLeasesUsed[guard] = 0
+					waitingLeases[guard] = []*hubv1.TokenLease{}
 				}
-				waitingLeasesLock[dec].Unlock()
+				waitingLeasesLock[guard].Unlock()
 
 				// Make a GetTokenLease request if >80% of our tokens are already used (or expiring soon)
 				if global.QuotaServiceClient() != nil {
-					if float32((cachedLeaseCount-expiringLeaseCount)/(cachedLeaseCount+cachedLeasesUsed[dec])) < 0.2 {
+					if float32((cachedLeaseCount-expiringLeaseCount)/(cachedLeaseCount+cachedLeasesUsed[guard])) < 0.2 {
 						go func() {
 							ctx, cancel := context.WithTimeout(context.Background(), CACHED_LEASE_CHECK_INTERVAL)
 							defer cancel()
 							resp, err := global.QuotaServiceClient().GetTokenLease(
 								metadata.NewOutgoingContext(ctx, global.XStanzaKey()),
-								cachedLeasesReq[dec])
+								cachedLeasesReq[guard])
 							if err != nil {
 								logging.Error(err)
 							}
 							if len(resp.GetLeases()) > 0 {
-								waitingLeasesLock[dec].Lock()
-								waitingLeases[dec] = append(waitingLeases[dec], resp.GetLeases()...)
-								waitingLeasesLock[dec].Unlock()
+								waitingLeasesLock[guard].Lock()
+								waitingLeases[guard] = append(waitingLeases[guard], resp.GetLeases()...)
+								waitingLeasesLock[guard].Unlock()
 							}
 						}()
 					}
 				}
 
 				// Update the cached leases store
-				cachedLeases[dec] = newCache
-				cachedLeasesLock[dec].Unlock()
+				cachedLeases[guard] = newCache
+				cachedLeasesLock[guard].Unlock()
 			}
 		}
 	}
 }
 
-func ValidateTokens(decorator string, tokens []string) int {
+func ValidateTokens(guard string, tokens []string) int {
 	qsc := global.QuotaServiceClient()
 	if qsc == nil {
 		logging.Debug(
@@ -319,25 +319,25 @@ func ValidateTokens(decorator string, tokens []string) int {
 		)
 		return ValidateTokensFailOpen // fail open condition
 	}
-	dc := global.DecoratorConfig(decorator)
-	if dc == nil {
+	gc := global.GuardConfig(guard)
+	if gc == nil {
 		logging.Debug(
-			"invalid decorator config, failing open",
+			"invalid guard config, failing open",
 			"count", atomic.AddInt64(&failOpenCount, 1),
 		)
 		return ValidateTokensFailOpen // fail open condition
 	}
 
-	if !dc.GetValidateIngressTokens() {
+	if !gc.GetValidateIngressTokens() {
 		return ValidateTokensSkipped // if we weren't asked to validate ingress tokens, don't
 	}
 	if len(tokens) == 0 {
-		logging.Warn("validate ingress tokens was specified, but no tokens were found", "decorator", decorator)
+		logging.Warn("validate ingress tokens was specified, but no tokens were found", "guard", guard)
 		return ValidateTokensInvalid // fail fast in the case where we are supposed to validate, but no tokens found
 	}
 
-	ds := &hubv1.DecoratorSelector{Environment: global.GetServiceEnvironment(), Name: decorator}
-	vtr := &hubv1.ValidateTokenRequest{Tokens: tokenInfos(tokens, ds)}
+	gs := &hubv1.GuardSelector{Environment: global.GetServiceEnvironment(), Name: guard}
+	vtr := &hubv1.ValidateTokenRequest{Tokens: tokenInfos(tokens, gs)}
 
 	ctx, cancel := context.WithTimeout(context.Background(), MAX_QUOTA_WAIT)
 	defer cancel()
@@ -363,11 +363,11 @@ func ValidateTokens(decorator string, tokens []string) int {
 	}
 }
 
-func tokenInfos(tokens []string, ds *hubv1.DecoratorSelector) (ti []*hubv1.TokenInfo) {
+func tokenInfos(tokens []string, gs *hubv1.GuardSelector) (ti []*hubv1.TokenInfo) {
 	for _, t := range tokens {
 		ti = append(ti, &hubv1.TokenInfo{
-			Token:     t,
-			Decorator: ds,
+			Token: t,
+			Guard: gs,
 		})
 	}
 	return ti

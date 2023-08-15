@@ -20,7 +20,7 @@ type ClientOptions struct {
 	Environment string // defines applications environment
 	StanzaHub   string // host:port (ipv4, ipv6, or resolvable hostname)
 
-	Decorators []string // prefetch config for these decorators
+	Guard []string // prefetch config for these guards
 }
 
 // Init initializes the SDK with ClientOptions. The returned error is
@@ -81,13 +81,13 @@ func Init(ctx context.Context, co ClientOptions) (func(), error) {
 		co.Name,
 		co.Environment,
 		co.Release,
-		co.Decorators,
+		co.Guard,
 	)
 
 	// Return graceful shutdown function (to be deferred by the caller)
 	return hubDone, nil
 }
 
-func RegisterDecorator(ctx context.Context, decorator string) {
-	global.GetDecoratorConfig(ctx, decorator)
+func RegisterGuard(ctx context.Context, guard string) {
+	global.GetGuardConfig(ctx, guard)
 }

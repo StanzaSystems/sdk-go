@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/logging"
-	hubv1 "github.com/StanzaSystems/sdk-go/proto/stanza/hub/v1"
 
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/metric"
@@ -52,10 +52,10 @@ type state struct {
 	svcConfigTime    time.Time
 	svcConfigVersion string
 
-	// stored from GetDecoratorConfig polling
-	decoratorConfig        map[string]*hubv1.DecoratorConfig
-	decoratorConfigTime    map[string]time.Time
-	decoratorConfigVersion map[string]string
+	// stored from GetGuardConfig polling
+	guardConfig        map[string]*hubv1.GuardConfig
+	guardConfigTime    map[string]time.Time
+	guardConfigVersion map[string]string
 
 	// OTEL
 	otelInit                    bool
@@ -75,7 +75,7 @@ var (
 	initOnce sync.Once
 )
 
-func NewState(ctx context.Context, hubUri, svcKey, svcName, svcEnv, svcRel string, decorators []string) func() {
+func NewState(ctx context.Context, hubUri, svcKey, svcName, svcEnv, svcRel string, guards []string) func() {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	initOnce.Do(func() {
 		// prepare for global state mutation
@@ -95,9 +95,9 @@ func NewState(ctx context.Context, hubUri, svcKey, svcName, svcEnv, svcRel strin
 			svcConfig:                   &hubv1.ServiceConfig{},
 			svcConfigTime:               time.Time{},
 			svcConfigVersion:            "",
-			decoratorConfig:             map[string]*hubv1.DecoratorConfig{},
-			decoratorConfigTime:         map[string]time.Time{},
-			decoratorConfigVersion:      map[string]string{},
+			guardConfig:                 map[string]*hubv1.GuardConfig{},
+			guardConfigTime:             map[string]time.Time{},
+			guardConfigVersion:          map[string]string{},
 			otelInit:                    false,
 			otelMetricProviderConnected: false,
 			otelTraceProviderConnected:  false,
@@ -120,11 +120,11 @@ func NewState(ctx context.Context, hubUri, svcKey, svcName, svcEnv, svcRel strin
 			}
 		}
 
-		if len(decorators) > 0 {
-			for _, decorator := range decorators {
-				gs.decoratorConfig[decorator] = &hubv1.DecoratorConfig{}
-				gs.decoratorConfigTime[decorator] = time.Time{}
-				gs.decoratorConfigVersion[decorator] = ""
+		if len(guards) > 0 {
+			for _, guard := range guards {
+				gs.guardConfig[guard] = &hubv1.GuardConfig{}
+				gs.guardConfigTime[guard] = time.Time{}
+				gs.guardConfigVersion[guard] = ""
 			}
 		}
 
@@ -149,6 +149,8 @@ func NewState(ctx context.Context, hubUri, svcKey, svcName, svcEnv, svcRel strin
 }
 
 func GetCustomerID() string {
+	gsLock.RLock()
+	defer gsLock.RUnlock()
 	return gs.svcConfig.GetCustomerId()
 }
 
@@ -177,12 +179,16 @@ func GetServiceRelease() string {
 }
 
 func QuotaServiceClient() hubv1.QuotaServiceClient {
+	gsLock.RLock()
+	defer gsLock.RUnlock()
 	return gs.hubQuotaClient
 }
 
-func DecoratorConfig(decorator string) *hubv1.DecoratorConfig {
-	if dc, ok := gs.decoratorConfig[decorator]; ok {
-		return dc
+func GuardConfig(guard string) *hubv1.GuardConfig {
+	gsLock.RLock()
+	defer gsLock.RUnlock()
+	if gc, ok := gs.guardConfig[guard]; ok {
+		return gc
 	}
 	return nil
 }

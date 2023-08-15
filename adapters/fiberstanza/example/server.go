@@ -1,4 +1,4 @@
-// Example below shows how to add Stanza fault tolerance decorators
+// Example below shows how to add Stanza fault tolerance guards
 // to a simple Fiber service.
 
 package main
@@ -72,8 +72,8 @@ func main() {
 			Release:     release,
 			Environment: env,
 
-			// optionally prefetch Decorator configs
-			Decorators: []string{"StressTest"},
+			// optionally prefetch Guard configs
+			Guard: []string{"StressTest"},
 		})
 	defer stanzaExit()
 	if stanzaInitErr != nil {
@@ -87,8 +87,8 @@ func main() {
 	// middleware: logging
 	app.Use(fiberzap.New(fiberzap.Config{Logger: zap.L()}))
 
-	// middleware: stanza inbound decorator
-	// app.Use(fiberstanza.New("RootDecorator"))
+	// middleware: stanza inbound guard
+	// app.Use(fiberstanza.New("RootGuard"))
 
 	// healthcheck
 	app.Get("/healthz", func(c *fiber.Ctx) error {
@@ -98,10 +98,10 @@ func main() {
 	// Use ZenQuotes to get a random quote
 	app.Get("/quote", func(c *fiber.Ctx) error {
 
-		// Outbound request with ZenQuotes Decorator
+		// Outbound request with ZenQuotes Guard
 		resp, _ :=
 			fiberstanza.HttpGet(
-				fiberstanza.Decorate(c, "ZenQuotes", "https://zenquotes.io/api/random"))
+				fiberstanza.Guard(c, "ZenQuotes", "https://zenquotes.io/api/random"))
 		defer resp.Body.Close()
 
 		// Success! 🎉
@@ -149,10 +149,10 @@ func main() {
 		headers.Add("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0")
 		opt.Headers = headers
 
-		// Decorate outbound request with StressTest
+		// Guard outbound request with StressTest
 		resp, err :=
 			fiberstanza.HttpGet(
-				fiberstanza.Decorate(c, "StressTest", string(url), opt))
+				fiberstanza.Guard(c, "StressTest", string(url), opt))
 		if err != nil {
 			logger.Error("StressTest", zap.Error(err))
 			if resp != nil && resp.StatusCode >= 400 {

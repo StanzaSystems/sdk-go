@@ -32,7 +32,7 @@ type QuotaServiceClient interface {
 	GetToken(ctx context.Context, in *GetTokenRequest, opts ...grpc.CallOption) (*GetTokenResponse, error)
 	GetTokenLease(ctx context.Context, in *GetTokenLeaseRequest, opts ...grpc.CallOption) (*GetTokenLeaseResponse, error)
 	SetTokenLeaseConsumed(ctx context.Context, in *SetTokenLeaseConsumedRequest, opts ...grpc.CallOption) (*SetTokenLeaseConsumedResponse, error)
-	// Used by ingress decorators to validate Hub-generated tokens.
+	// Used by ingress Guards to validate Hub-generated tokens.
 	ValidateToken(ctx context.Context, in *ValidateTokenRequest, opts ...grpc.CallOption) (*ValidateTokenResponse, error)
 }
 
@@ -87,7 +87,7 @@ type QuotaServiceServer interface {
 	GetToken(context.Context, *GetTokenRequest) (*GetTokenResponse, error)
 	GetTokenLease(context.Context, *GetTokenLeaseRequest) (*GetTokenLeaseResponse, error)
 	SetTokenLeaseConsumed(context.Context, *SetTokenLeaseConsumedRequest) (*SetTokenLeaseConsumedResponse, error)
-	// Used by ingress decorators to validate Hub-generated tokens.
+	// Used by ingress Guards to validate Hub-generated tokens.
 	ValidateToken(context.Context, *ValidateTokenRequest) (*ValidateTokenResponse, error)
 	mustEmbedUnimplementedQuotaServiceServer()
 }
