@@ -34,6 +34,19 @@ func NewInboundHandler() (*InboundHandler, error) {
 
 func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, guard string) (context.Context, int) {
 	ctx := h.Propagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+
+	// Start HTTP server trace
+	if route == "" {
+		route = r.URL.Path
+	}
+	opts := []trace.SpanStartOption{
+		trace.WithAttributes(httpconv.ServerRequest("", r)...),
+		trace.WithSpanKind(trace.SpanKindServer),
+	}
+	ctx, span := h.Tracer().Start(ctx, route, opts...)
+	defer span.End()
+
+	// Clone TokenLeaseRequest (so we can add Feature and/or PriorityBoost)
 	tlr := proto.Clone(h.TokenLeaseRequest(guard)).(*hubv1.GetTokenLeaseRequest)
 
 	// Inspect Baggage and Headers for Feature and PriorityBoost, propagate through context if found
@@ -45,17 +58,6 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, gu
 		h.GuardKey(tlr.Selector.GetGuardName()),
 		h.FeatureKey(tlr.Selector.GetFeatureName()),
 	)
-
-	// generic HTTP server trace
-	if route == "" {
-		route = r.URL.Path
-	}
-	opts := []trace.SpanStartOption{
-		trace.WithAttributes(httpconv.ServerRequest("", r)...),
-		trace.WithSpanKind(trace.SpanKindServer),
-	}
-	ctx, span := h.Tracer().Start(ctx, route, opts...)
-	defer span.End()
 
 	if h.SentinelEnabled() {
 		e, b := api.Entry(guard, api.WithTrafficType(base.Inbound), api.WithResourceType(base.ResTypeWeb))

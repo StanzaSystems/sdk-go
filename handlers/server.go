@@ -1,32 +1,45 @@
 package handlers
 
 import (
+	"sync"
+
 	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
 	"google.golang.org/protobuf/proto"
 )
 
 type InboundHandler struct {
 	*Handler
-	tlr map[string]*hubv1.GetTokenLeaseRequest
+	lock *sync.RWMutex
+	tlr  map[string]*hubv1.GetTokenLeaseRequest
 }
 
 // NewInboundHandler returns a new InboundHandler
 func NewInboundHandler() (*InboundHandler, error) {
 	h, err := NewHandler()
-	return &InboundHandler{h, make(map[string]*hubv1.GetTokenLeaseRequest)}, err
+	return &InboundHandler{h, &sync.RWMutex{}, make(map[string]*hubv1.GetTokenLeaseRequest)}, err
 }
 
 func (h *InboundHandler) SetTokenLeaseRequest(d string, tlr *hubv1.GetTokenLeaseRequest) {
 	tlr.ClientId = proto.String(h.ClientID())
 	tlr.Selector.Environment = h.Environment()
-
-	// TODO LOCK
 	if h.tlr[d] == nil {
+		h.lock.Lock()
 		h.tlr[d] = tlr
+		h.lock.Unlock()
 	}
 }
 
 func (h *InboundHandler) TokenLeaseRequest(guard string) *hubv1.GetTokenLeaseRequest {
-	// TODO LOCK
-	return h.tlr[guard]
+	h.lock.RLock()
+	defer h.lock.RUnlock()
+	if tlr, ok := h.tlr[guard]; ok {
+		return tlr
+	}
+	return &hubv1.GetTokenLeaseRequest{
+		ClientId: proto.String(h.ClientID()),
+		Selector: &hubv1.GuardFeatureSelector{
+			Environment: h.Environment(),
+			GuardName:   guard,
+		},
+	}
 }
