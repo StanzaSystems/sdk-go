@@ -1,4 +1,4 @@
-// Example below shows how to add Stanza fault tolerance decorators
+// Example below shows how to add Stanza fault tolerance guards
 // to a simple net/http service.
 
 package main
