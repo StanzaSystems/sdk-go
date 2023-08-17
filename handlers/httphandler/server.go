@@ -77,9 +77,9 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, gu
 		e.Exit() // cleanly exit the Sentinel Entry
 	}
 
-	status := hub.ValidateTokens(guard, r.Header.Values("x-stanza-token"))
+	status := hub.ValidateTokens(ctx, guard, r.Header.Values("x-stanza-token"))
 	if status == hub.ValidateTokensInvalid {
-		attrWithReason := append(attr, h.ReasonInvalidToken())
+		attrWithReason := append(attr, h.ReasonQuotaInvalidToken())
 		span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
 		h.Meter().BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
 		return ctx, http.StatusTooManyRequests
@@ -92,7 +92,7 @@ func (h *InboundHandler) VerifyServingCapacity(r *http.Request, route string, gu
 		h.Meter().AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
 	}
 
-	status, _ = hub.CheckQuota(tlr)
+	status, _ = hub.CheckQuota(ctx, tlr)
 	if status == hub.CheckQuotaBlocked {
 		attrWithReason := append(attr, h.ReasonQuota())
 		span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))

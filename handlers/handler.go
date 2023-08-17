@@ -1,11 +1,17 @@
 package handlers
 
 import (
+	"context"
+
 	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/global"
+	"github.com/StanzaSystems/sdk-go/hub"
+	"github.com/StanzaSystems/sdk-go/keys"
 	"github.com/StanzaSystems/sdk-go/otel"
+	"google.golang.org/protobuf/proto"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -30,6 +36,73 @@ func NewHandler() (*Handler, error) {
 			serviceKey.String(global.GetServiceName()),
 		},
 	}, err
+}
+
+func (h *Handler) NewGuard(ctx context.Context, name string) *Guard {
+	g := h.NewGuardError(nil)
+	tlr := hub.NewTokenLeaseRequest(name)
+
+	// Inspect Baggage and Headers for Feature and PriorityBoost,
+	// propagate through context if found
+	ctx, tlr.Selector.FeatureName = otel.GetFeature(ctx, tlr.Selector.GetFeatureName())
+	ctx, tlr.PriorityBoost = otel.GetPriorityBoost(ctx, tlr.GetPriorityBoost())
+
+	// Override Baggage and Header values with user supplied data.
+	if ctx.Value(keys.StanzaFeatureNameKey) != nil {
+		tlr.Selector.FeatureName = proto.String(ctx.Value(keys.StanzaFeatureNameKey).(string))
+		ctx, tlr.Selector.FeatureName = otel.GetFeature(ctx, tlr.Selector.GetFeatureName())
+	}
+	if ctx.Value(keys.StanzaPriorityBoostKey) != nil {
+		tlr.PriorityBoost = proto.Int32(ctx.Value(keys.StanzaPriorityBoostKey).(int32))
+		ctx, tlr.PriorityBoost = otel.GetPriorityBoost(ctx, tlr.GetPriorityBoost())
+	}
+	if ctx.Value(keys.StanzaDefaultWeightKey) != nil {
+		tlr.DefaultWeight = proto.Float32(ctx.Value(keys.StanzaDefaultWeightKey).(float32))
+	}
+
+	// Check Quota
+	g.quotaStatus, g.quotaToken = hub.CheckQuota(ctx, tlr)
+
+	// Add Guard and Feature to OTEL attributes
+	attr := append(h.Attributes(),
+		h.GuardKey(tlr.Selector.GetGuardName()),
+		h.FeatureKey(tlr.Selector.GetFeatureName()),
+	)
+	switch g.quotaStatus {
+	case hub.CheckQuotaBlocked:
+		attr = append(attr, h.ReasonQuota())
+		h.Meter().BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+		g.quotaReason = h.ReasonQuota().Value.AsString()
+		return g
+	case hub.CheckQuotaAllowed:
+		attr = append(attr, h.ReasonQuota())
+		g.quotaReason = h.ReasonQuota().Value.AsString()
+	case hub.CheckQuotaSkipped:
+		attr = append(attr, h.ReasonQuotaCheckDisabled())
+		g.quotaReason = h.ReasonQuotaCheckDisabled().Value.AsString()
+	case hub.CheckQuotaFailOpen:
+		attr = append(attr, h.ReasonQuotaFailOpen())
+		g.quotaReason = h.ReasonQuotaFailOpen().Value.AsString()
+	default:
+		g.quotaReason = "quota_unknown"
+		g.quotaStatus = GuardUnknown
+	}
+	h.Meter().AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+	return g
+}
+
+func (h *Handler) NewGuardError(err error) *Guard {
+	return &Guard{
+		Success:      GuardSuccess,
+		Failure:      GuardFailure,
+		Unknown:      GuardUnknown,
+		finalStatus:  GuardUnknown,
+		err:          err,
+		quotaMessage: "",
+		quotaToken:   "",
+		quotaReason:  "quota_unknown",
+		quotaStatus:  GuardUnknown,
+	}
 }
 
 func (h *Handler) Meter() *Meter {
@@ -65,12 +138,20 @@ func (h *Handler) ReasonFailOpen() attribute.KeyValue {
 	return reasonKey.String("fail_open")
 }
 
-func (h *Handler) ReasonInvalidToken() attribute.KeyValue {
-	return reasonKey.String("invalid_token")
-}
-
 func (h *Handler) ReasonQuota() attribute.KeyValue {
 	return reasonKey.String("quota")
+}
+
+func (h *Handler) ReasonQuotaCheckDisabled() attribute.KeyValue {
+	return reasonKey.String("quota_check_disabled")
+}
+
+func (h *Handler) ReasonQuotaFailOpen() attribute.KeyValue {
+	return reasonKey.String("quota_fail_open")
+}
+
+func (h *Handler) ReasonQuotaInvalidToken() attribute.KeyValue {
+	return reasonKey.String("quota_invalid_token")
 }
 
 func (h *Handler) ReasonToken() attribute.KeyValue {
@@ -84,10 +165,6 @@ func (h *Handler) APIKey() string {
 
 func (h *Handler) ClientID() string {
 	return global.GetClientID()
-}
-
-func (h *Handler) GuardConfig(guard string) *hubv1.GuardConfig {
-	return global.GuardConfig(guard)
 }
 
 func (h *Handler) Environment() string {

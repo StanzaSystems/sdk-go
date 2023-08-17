@@ -5,19 +5,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
-	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/global"
 	"github.com/StanzaSystems/sdk-go/handlers"
-	"github.com/StanzaSystems/sdk-go/hub"
 	"github.com/StanzaSystems/sdk-go/keys"
-	"github.com/StanzaSystems/sdk-go/otel"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
-	"google.golang.org/protobuf/proto"
 )
 
 type OutboundHandler struct {
@@ -34,83 +27,59 @@ func NewOutboundHandler() (*OutboundHandler, error) {
 }
 
 // Get wraps a HTTP GET request
-func (h *OutboundHandler) Get(ctx context.Context, url string, tlr *hubv1.GetTokenLeaseRequest) (*http.Response, error) {
-	return h.Request(ctx, http.MethodGet, url, http.NoBody, tlr)
+func (h *OutboundHandler) Get(ctx context.Context, guard, url string) (*http.Response, error) {
+	return h.Request(ctx, guard, http.MethodGet, url, http.NoBody)
 }
 
 // Post wraps a HTTP POST request
-func (h *OutboundHandler) Post(ctx context.Context, url string, body io.Reader, tlr *hubv1.GetTokenLeaseRequest) (*http.Response, error) {
-	return h.Request(ctx, http.MethodPost, url, body, tlr)
+func (h *OutboundHandler) Post(ctx context.Context, guard, url string, body io.Reader) (*http.Response, error) {
+	return h.Request(ctx, guard, http.MethodPost, url, body)
 }
 
 // Request wraps a HTTP request of the given HTTP method
-func (h *OutboundHandler) Request(ctx context.Context, httpMethod, url string, body io.Reader, tlr *hubv1.GetTokenLeaseRequest) (*http.Response, error) {
-	// Inspect Baggage and Headers for Feature and PriorityBoost, propagate through context if found
-	ctx, tlr.Selector.FeatureName = otel.GetFeature(ctx, tlr.Selector.GetFeatureName())
-	ctx, tlr.PriorityBoost = otel.GetPriorityBoost(ctx, tlr.GetPriorityBoost())
-
-	// Add Guard and Feature to OTEL attributes
-	attr := append(h.Attributes(),
-		h.GuardKey(tlr.Selector.GetGuardName()),
-		h.FeatureKey(tlr.Selector.GetFeatureName()),
-	)
-
+func (h *OutboundHandler) Request(ctx context.Context, guardName, httpMethod, url string, body io.Reader) (*http.Response, error) {
 	// TODO: Add a Span around this Request, like otelhttp does:
 	// https://pkg.go.dev/go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp#Get
-	tlr.ClientId = proto.String(h.ClientID())
-	tlr.Selector.Environment = h.Environment()
 	if req, err := http.NewRequestWithContext(ctx, httpMethod, url, body); err != nil {
-		h.Meter().AllowedFailureCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
-		return nil, err
+		return nil, err // FAIL OPEN!
 	} else {
-		start := time.Now()
-		resp, err := h.request(ctx, req, tlr, attr)
-		if err != nil {
-			h.Meter().AllowedFailureCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
-		} else {
-			h.Meter().AllowedSuccessCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+		guard := h.NewGuard(ctx, guardName)
+
+		// Stanza Blocked
+		if guard.Blocked() {
+			return &http.Response{
+				Status:     fmt.Sprintf("%d Too Many Request", http.StatusTooManyRequests),
+				StatusCode: http.StatusTooManyRequests,
+				Request:    req,
+				Body:       http.NoBody,
+				Header:     http.Header{
+					// TODO: Add retry-after header
+				},
+			}, nil
 		}
-		recAttr := []metric.RecordOption{metric.WithAttributes(attr...)}
-		h.Meter().AllowedDuration.Record(ctx, float64(time.Since(start).Microseconds())/1000, recAttr...)
+
+		// Stanza Allowed
+		if guard.Token() != "" {
+			req.Header.Add("X-Stanza-Token", guard.Token())
+		}
+		if req.Header.Get("User-Agent") == "" {
+			req.Header.Set("User-Agent", global.UserAgent())
+		}
+		if ctx.Value(keys.OutboundHeadersKey) != nil {
+			for k, v := range ctx.Value(keys.OutboundHeadersKey).(http.Header) {
+				req.Header.Set(k, v[0])
+			}
+		}
+		httpClient := &http.Client{
+			Transport: otelhttp.NewTransport(
+				http.DefaultTransport,
+			)}
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			guard.End(guard.Failure)
+		} else {
+			guard.End(guard.Success)
+		}
 		return resp, err
 	}
-}
-
-func (h *OutboundHandler) request(ctx context.Context, req *http.Request, tlr *hubv1.GetTokenLeaseRequest, attr []attribute.KeyValue) (*http.Response, error) {
-	status, token := hub.CheckQuota(tlr)
-
-	if status == hub.CheckQuotaBlocked {
-		h.Meter().BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
-		return &http.Response{
-			Status:     fmt.Sprintf("%d Too Many Request", http.StatusTooManyRequests),
-			StatusCode: http.StatusTooManyRequests,
-			Request:    req,
-			Body:       http.NoBody,
-			Header:     http.Header{
-				// TODO: Add retry-after header
-			},
-		}, nil
-	}
-
-	if status == hub.CheckQuotaFailOpen {
-		attr = append(attr, h.ReasonFailOpen())
-	}
-
-	if token != "" {
-		req.Header.Add("X-Stanza-Token", token)
-	}
-	if req.Header.Get("User-Agent") == "" {
-		req.Header.Set("User-Agent", global.UserAgent())
-	}
-	if ctx.Value(keys.OutboundHeadersKey) != nil {
-		for k, v := range ctx.Value(keys.OutboundHeadersKey).(http.Header) {
-			req.Header.Set(k, v[0])
-		}
-	}
-	h.Meter().AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
-	httpClient := &http.Client{
-		Transport: otelhttp.NewTransport(
-			http.DefaultTransport,
-		)}
-	return httpClient.Do(req)
 }

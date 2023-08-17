@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
+	"github.com/StanzaSystems/sdk-go/hub"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -35,11 +36,5 @@ func (h *InboundHandler) TokenLeaseRequest(guard string) *hubv1.GetTokenLeaseReq
 	if tlr, ok := h.tlr[guard]; ok {
 		return tlr
 	}
-	return &hubv1.GetTokenLeaseRequest{
-		ClientId: proto.String(h.ClientID()),
-		Selector: &hubv1.GuardFeatureSelector{
-			Environment: h.Environment(),
-			GuardName:   guard,
-		},
-	}
+	return hub.NewTokenLeaseRequest(guard)
 }

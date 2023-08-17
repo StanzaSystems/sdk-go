@@ -14,6 +14,7 @@ import (
 	"github.com/StanzaSystems/sdk-go/logging"
 
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -54,7 +55,17 @@ var (
 	failOpenCount = int64(0)
 )
 
-func CheckQuota(tlr *hubv1.GetTokenLeaseRequest) (int, string) {
+func NewTokenLeaseRequest(guard string) *hubv1.GetTokenLeaseRequest {
+	return &hubv1.GetTokenLeaseRequest{
+		ClientId: proto.String(global.GetClientID()),
+		Selector: &hubv1.GuardFeatureSelector{
+			GuardName:   guard,
+			Environment: global.GetServiceEnvironment(),
+		},
+	}
+}
+
+func CheckQuota(ctx context.Context, tlr *hubv1.GetTokenLeaseRequest) (int, string) {
 	if tlr == nil || tlr.Selector == nil {
 		logging.Debug(
 			"invalid token lease request, failing open",
@@ -71,7 +82,7 @@ func CheckQuota(tlr *hubv1.GetTokenLeaseRequest) (int, string) {
 		return CheckQuotaFailOpen, ""
 	}
 	guard := tlr.GetSelector().GetGuardName()
-	gc := global.GuardConfig(guard)
+	gc := global.GetGuardConfig(ctx, guard)
 	if gc == nil {
 		logging.Debug(
 			"invalid guard config, failing open",
@@ -79,9 +90,8 @@ func CheckQuota(tlr *hubv1.GetTokenLeaseRequest) (int, string) {
 		)
 		return CheckQuotaFailOpen, ""
 	}
-
 	if !gc.GetCheckQuota() {
-		return CheckQuotaFailOpen, ""
+		return CheckQuotaSkipped, ""
 	}
 
 	// start a background batch token consumer
@@ -310,7 +320,7 @@ func cachedLeaseManager() {
 	}
 }
 
-func ValidateTokens(guard string, tokens []string) int {
+func ValidateTokens(ctx context.Context, guard string, tokens []string) int {
 	qsc := global.QuotaServiceClient()
 	if qsc == nil {
 		logging.Debug(
@@ -319,7 +329,7 @@ func ValidateTokens(guard string, tokens []string) int {
 		)
 		return ValidateTokensFailOpen // fail open condition
 	}
-	gc := global.GuardConfig(guard)
+	gc := global.GetGuardConfig(ctx, guard)
 	if gc == nil {
 		logging.Debug(
 			"invalid guard config, failing open",

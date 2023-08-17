@@ -179,14 +179,23 @@ func GetGuardConfigs(ctx context.Context, skipPoll bool) {
 	}
 }
 
-func GetGuardConfig(ctx context.Context, guard string) {
-	if _, ok := gs.guardConfig[guard]; !ok {
-		gs.guardConfig[guard] = &hubv1.GuardConfig{}
+func GetGuardConfig(ctx context.Context, guard string) *hubv1.GuardConfig {
+	gs.guardConfigLock.RLock()
+	gc, ok := gs.guardConfig[guard]
+	gs.guardConfigLock.RUnlock()
+	if ok && gc != nil {
+		return gc
+	}
+	if !ok {
+		gs.guardConfigLock.Lock()
+		gs.guardConfig[guard] = nil
 		gs.guardConfigTime[guard] = time.Time{}
 		gs.guardConfigVersion[guard] = ""
+		gs.guardConfigLock.Unlock()
 	}
+
 	if gs.hubConfigClient == nil {
-		return
+		return nil
 	}
 	res, err := gs.hubConfigClient.GetGuardConfig(
 		metadata.NewOutgoingContext(ctx, XStanzaKey()),
@@ -204,13 +213,15 @@ func GetGuardConfig(ctx context.Context, guard string) {
 		logging.Error(err)
 	}
 	if res.GetConfigDataSent() {
-		gsLock.Lock()
-		defer gsLock.Unlock()
+		gs.guardConfigLock.Lock()
 		gs.guardConfig[guard] = res.GetConfig()
 		gs.guardConfigTime[guard] = time.Now()
 		gs.guardConfigVersion[guard] = res.GetVersion()
+		gs.guardConfigLock.Unlock()
 		logging.Debug("accepted guard config", "guard", guard, "version", res.GetVersion())
+		return res.GetConfig()
 	}
+	return nil
 }
 
 func SentinelStartup(ctx context.Context) func() {

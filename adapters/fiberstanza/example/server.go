@@ -143,12 +143,6 @@ func main() {
 			}
 		}
 
-		// Add Headers to be sent with the outbound HTTP request
-		headers := make(http.Header)
-		headers.Add("Referer", "https://gophers.slack.com/messages")
-		headers.Add("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0")
-		opt.Headers = headers
-
 		// Guard outbound request with StressTest
 		resp, err :=
 			fiberstanza.HttpGet(

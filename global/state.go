@@ -56,6 +56,7 @@ type state struct {
 	guardConfig        map[string]*hubv1.GuardConfig
 	guardConfigTime    map[string]time.Time
 	guardConfigVersion map[string]string
+	guardConfigLock    *sync.RWMutex
 
 	// OTEL
 	otelInit                    bool
@@ -67,6 +68,7 @@ type state struct {
 	sentinelInitTime   time.Time
 	sentinelDatasource string
 	sentinelRules      map[string]string
+	sentinelRulesLock  *sync.RWMutex
 }
 
 var (
@@ -77,11 +79,10 @@ var (
 
 func NewState(ctx context.Context, hubUri, svcKey, svcName, svcEnv, svcRel string, guards []string) func() {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-	initOnce.Do(func() {
-		// prepare for global state mutation
-		gsLock.Lock()
 
-		// initialize new global state
+	// initialize new global state
+	initOnce.Do(func() {
+		gsLock.Lock()
 		gs = state{
 			hubURI:                      hubUri,
 			svcKey:                      svcKey,
@@ -95,17 +96,21 @@ func NewState(ctx context.Context, hubUri, svcKey, svcName, svcEnv, svcRel strin
 			svcConfig:                   &hubv1.ServiceConfig{},
 			svcConfigTime:               time.Time{},
 			svcConfigVersion:            "",
-			guardConfig:                 map[string]*hubv1.GuardConfig{},
-			guardConfigTime:             map[string]time.Time{},
-			guardConfigVersion:          map[string]string{},
+			guardConfig:                 make(map[string]*hubv1.GuardConfig),
+			guardConfigTime:             make(map[string]time.Time),
+			guardConfigVersion:          make(map[string]string),
+			guardConfigLock:             &sync.RWMutex{},
 			otelInit:                    false,
 			otelMetricProviderConnected: false,
 			otelTraceProviderConnected:  false,
 			sentinelInit:                false,
 			sentinelInitTime:            time.Time{},
+			sentinelRulesLock:           &sync.RWMutex{},
 		}
+		gsLock.Unlock()
 
 		// pre-create empty sentinel rules files
+		gs.sentinelRulesLock.Lock()
 		gs.sentinelDatasource, _ = os.MkdirTemp("", "sentinel")
 		gs.sentinelRules = map[string]string{
 			"circuitbreaker": filepath.Join(gs.sentinelDatasource, "circuitbreaker_rules.json"),
@@ -119,17 +124,17 @@ func NewState(ctx context.Context, hubUri, svcKey, svcName, svcEnv, svcRel strin
 				logging.Error(err)
 			}
 		}
+		gs.sentinelRulesLock.Unlock()
 
 		if len(guards) > 0 {
 			for _, guard := range guards {
-				gs.guardConfig[guard] = &hubv1.GuardConfig{}
+				gs.guardConfigLock.Lock()
+				gs.guardConfig[guard] = nil
 				gs.guardConfigTime[guard] = time.Time{}
 				gs.guardConfigVersion[guard] = ""
+				gs.guardConfigLock.Unlock()
 			}
 		}
-
-		// end global state mutation
-		gsLock.Unlock()
 
 		// connect to stanza-hub
 		if gs.hubConn == nil {
@@ -182,15 +187,6 @@ func QuotaServiceClient() hubv1.QuotaServiceClient {
 	gsLock.RLock()
 	defer gsLock.RUnlock()
 	return gs.hubQuotaClient
-}
-
-func GuardConfig(guard string) *hubv1.GuardConfig {
-	gsLock.RLock()
-	defer gsLock.RUnlock()
-	if gc, ok := gs.guardConfig[guard]; ok {
-		return gc
-	}
-	return nil
 }
 
 func InstrumentationName() string {
