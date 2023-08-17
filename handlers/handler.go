@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"time"
 
 	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/global"
@@ -59,35 +60,37 @@ func (h *Handler) NewGuard(ctx context.Context, name string) *Guard {
 	if ctx.Value(keys.StanzaDefaultWeightKey) != nil {
 		tlr.DefaultWeight = proto.Float32(ctx.Value(keys.StanzaDefaultWeightKey).(float32))
 	}
+	g.ctx = ctx
 
 	// Check Quota
 	g.quotaStatus, g.quotaToken = hub.CheckQuota(ctx, tlr)
 
 	// Add Guard and Feature to OTEL attributes
-	attr := append(h.Attributes(),
+	g.attr = append(h.Attributes(),
 		h.GuardKey(tlr.Selector.GetGuardName()),
 		h.FeatureKey(tlr.Selector.GetFeatureName()),
 	)
 	switch g.quotaStatus {
 	case hub.CheckQuotaBlocked:
-		attr = append(attr, h.ReasonQuota())
-		h.Meter().BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+		g.attr = append(g.attr, h.ReasonQuota())
+		h.Meter().BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(g.attr...)}...)
 		g.quotaReason = h.ReasonQuota().Value.AsString()
 		return g
 	case hub.CheckQuotaAllowed:
-		attr = append(attr, h.ReasonQuota())
+		g.attr = append(g.attr, h.ReasonQuota())
 		g.quotaReason = h.ReasonQuota().Value.AsString()
 	case hub.CheckQuotaSkipped:
-		attr = append(attr, h.ReasonQuotaCheckDisabled())
+		g.attr = append(g.attr, h.ReasonQuotaCheckDisabled())
 		g.quotaReason = h.ReasonQuotaCheckDisabled().Value.AsString()
 	case hub.CheckQuotaFailOpen:
-		attr = append(attr, h.ReasonQuotaFailOpen())
+		g.attr = append(g.attr, h.ReasonQuotaFailOpen())
 		g.quotaReason = h.ReasonQuotaFailOpen().Value.AsString()
 	default:
 		g.quotaReason = "quota_unknown"
 		g.quotaStatus = GuardUnknown
 	}
-	h.Meter().AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attr...)}...)
+	h.Meter().AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(g.attr...)}...)
+	g.start = time.Now()
 	return g
 }
 

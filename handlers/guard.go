@@ -1,6 +1,13 @@
 package handlers
 
-import "github.com/StanzaSystems/sdk-go/hub"
+import (
+	"context"
+	"time"
+
+	"github.com/StanzaSystems/sdk-go/hub"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+)
 
 const (
 	GuardSuccess = iota
@@ -9,6 +16,11 @@ const (
 )
 
 type Guard struct {
+	ctx   context.Context
+	start time.Time
+	meter *Meter
+	attr  []attribute.KeyValue
+
 	Success     int
 	Failure     int
 	Unknown     int
@@ -46,5 +58,17 @@ func (g *Guard) Error() error {
 }
 
 func (g *Guard) End(status int) {
+	g.meter.AllowedDuration.Record(g.ctx,
+		float64(time.Since(g.start).Microseconds())/1000,
+		[]metric.RecordOption{metric.WithAttributes(g.attr...)}...)
+	if status == g.Success {
+		g.meter.AllowedSuccessCount.Add(g.ctx, 1, []metric.AddOption{metric.WithAttributes(g.attr...)}...)
+	}
+	if status == g.Failure {
+		g.meter.AllowedFailureCount.Add(g.ctx, 1, []metric.AddOption{metric.WithAttributes(g.attr...)}...)
+	}
+	if status == g.Unknown {
+		g.meter.AllowedUnknownCount.Add(g.ctx, 1, []metric.AddOption{metric.WithAttributes(g.attr...)}...)
+	}
 	g.finalStatus = status
 }
