@@ -121,7 +121,7 @@ func (g *Guard) checkSentinel(name string) {
 }
 
 func (g *Guard) checkQuota(ctx context.Context, tlr *hubv1.GetTokenLeaseRequest) {
-	g.quotaStatus, g.quotaToken = hub.CheckQuota(ctx, tlr)
+	g.quotaStatus, g.quotaToken, g.err = hub.CheckQuota(ctx, tlr)
 
 	attrWithReason := g.attr
 	switch g.quotaStatus {
@@ -157,10 +157,10 @@ func (g *Guard) checkQuota(ctx context.Context, tlr *hubv1.GetTokenLeaseRequest)
 }
 
 func (g *Guard) checkToken(ctx context.Context, name string, tokens []string) {
-	status := hub.ValidateTokens(ctx, name, tokens)
+	g.quotaStatus, g.err = hub.ValidateTokens(ctx, name, tokens)
 
 	attrWithReason := g.attr
-	switch status {
+	switch g.quotaStatus {
 	case hub.ValidateTokensInvalid:
 		attrWithReason := append(attrWithReason, reason(ReasonQuotaToken))
 		g.quotaReason = reason(ReasonQuotaToken).Value.AsString()

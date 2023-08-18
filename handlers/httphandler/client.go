@@ -62,7 +62,7 @@ func (h *OutboundHandler) Request(ctx context.Context, guardName, httpMethod, ur
 				Header:     http.Header{
 					// TODO: Add retry-after header
 				},
-			}, nil
+			}, guard.Error()
 		}
 
 		// Stanza Allowed
@@ -84,9 +84,10 @@ func (h *OutboundHandler) Request(ctx context.Context, guardName, httpMethod, ur
 		resp, err := httpClient.Do(req)
 		if err != nil {
 			guard.End(guard.Failure)
+			return resp, err // TODO: multierr with guard.Error()?
 		} else {
 			guard.End(guard.Success)
+			return resp, guard.Error()
 		}
-		return resp, err
 	}
 }

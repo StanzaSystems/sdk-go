@@ -88,6 +88,10 @@ func main() {
 		// Create a new Stanza Guard
 		stz := stanza.Guard(ctx, "ZenQuotes")
 
+		if stz.Error() != nil {
+			logger.Error("ZenQuotes", zap.Error(stz.Error()))
+		}
+
 		// 🚫 Stanza Guard has *blocked* this workflow, log the reason and return 429 status
 		if stz.Blocked() {
 			logger.Info(stz.BlockMessage(), zap.String("reason", stz.BlockReason()))

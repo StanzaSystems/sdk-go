@@ -2,6 +2,7 @@ package hub
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/signal"
 	"sync"
@@ -89,33 +90,27 @@ func NewTokenLeaseRequest(ctx context.Context, guard string) *hubv1.GetTokenLeas
 	return &tlr
 }
 
-func CheckQuota(ctx context.Context, tlr *hubv1.GetTokenLeaseRequest) (int, string) {
+func CheckQuota(ctx context.Context, tlr *hubv1.GetTokenLeaseRequest) (int, string, error) {
 	if tlr == nil || tlr.Selector == nil {
-		logging.Debug(
-			"invalid token lease request, failing open",
-			"count", atomic.AddInt64(&failOpenCount, 1),
-		)
-		return CheckQuotaFailOpen, ""
+		errMsg := "invalid token lease request, failing open"
+		logging.Debug(errMsg, "count", atomic.AddInt64(&failOpenCount, 1))
+		return CheckQuotaFailOpen, "", errors.New(errMsg)
 	}
 	qsc := global.QuotaServiceClient()
 	if qsc == nil {
-		logging.Debug(
-			"invalid quota service client, failing open",
-			"count", atomic.AddInt64(&failOpenCount, 1),
-		)
-		return CheckQuotaFailOpen, ""
+		errMsg := "invalid quota service client, failing open"
+		logging.Debug(errMsg, "count", atomic.AddInt64(&failOpenCount, 1))
+		return CheckQuotaFailOpen, "", errors.New(errMsg)
 	}
 	guard := tlr.GetSelector().GetGuardName()
 	gc := global.GetGuardConfig(ctx, guard)
 	if gc == nil {
-		logging.Debug(
-			"invalid guard config, failing open",
-			"count", atomic.AddInt64(&failOpenCount, 1),
-		)
-		return CheckQuotaFailOpen, ""
+		errMsg := "invalid guard config, failing open"
+		logging.Debug(errMsg, "count", atomic.AddInt64(&failOpenCount, 1))
+		return CheckQuotaFailOpen, "", errors.New(errMsg)
 	}
 	if !gc.GetCheckQuota() {
-		return CheckQuotaSkipped, ""
+		return CheckQuotaSkipped, "", nil
 	}
 
 	// start a background batch token consumer
@@ -165,7 +160,7 @@ func CheckQuota(ctx context.Context, tlr *hubv1.GetTokenLeaseRequest) (int, stri
 							cachedLeases[guard] = newCache
 							cachedLeasesUsed[guard] += 1
 							cachedLeasesLock[guard].Unlock()
-							return CheckQuotaAllowed, tl.Token
+							return CheckQuotaAllowed, tl.Token, nil
 						}
 					}
 				}
@@ -181,7 +176,6 @@ func CheckQuota(ctx context.Context, tlr *hubv1.GetTokenLeaseRequest) (int, stri
 
 	resp, err := qsc.GetTokenLease(metadata.NewOutgoingContext(ctx, global.XStanzaKey()), tlr)
 	if err != nil {
-		logging.Error(err)
 		// TODO: Implement Error Handling as specified in SDK spec:
 		// If quota is required and the Stanza hub is unresponsive or does not return a valid
 		// response, then the SDK should do the following:
@@ -194,11 +188,11 @@ func CheckQuota(ctx context.Context, tlr *hubv1.GetTokenLeaseRequest) (int, stri
 		//   of those requests are successful, ramp up to 5%, 10%, 25%, 50% and 100% over successive
 		//   seconds.
 		//   Re-enablement should be logged at INFO.
-		return CheckQuotaFailOpen, "" // just fail open (for now)
+		return CheckQuotaFailOpen, "", err // just fail open (for now)
 	}
 	leases := resp.GetLeases()
 	if len(leases) == 0 {
-		return CheckQuotaBlocked, "" // not an error, there were no leases available
+		return CheckQuotaBlocked, "", nil // not an error, there were no leases available
 	}
 	if len(leases[1:]) > 0 {
 		// Start a background cached lease manager (the first time we get extra leases from Stanza Hub)
@@ -219,7 +213,7 @@ func CheckQuota(ctx context.Context, tlr *hubv1.GetTokenLeaseRequest) (int, stri
 
 	// Consume first token from leases (not cached, so this doesn't require the cached leases lock)
 	go consumeLease(guard, leases[0])
-	return CheckQuotaAllowed, leases[0].Token
+	return CheckQuotaAllowed, leases[0].Token, nil
 }
 
 func consumeLease(guard string, lease *hubv1.TokenLease) {
@@ -344,30 +338,32 @@ func cachedLeaseManager() {
 	}
 }
 
-func ValidateTokens(ctx context.Context, guard string, tokens []string) int {
+func ValidateTokens(ctx context.Context, guard string, tokens []string) (int, error) {
 	qsc := global.QuotaServiceClient()
 	if qsc == nil {
-		logging.Debug(
-			"invalid quota service client, failing open",
-			"count", atomic.AddInt64(&failOpenCount, 1),
-		)
-		return ValidateTokensFailOpen // fail open condition
+		errMsg := "invalid quota service client, failing open"
+		logging.Debug(errMsg,
+			"guard", guard,
+			"count", atomic.AddInt64(&failOpenCount, 1))
+		return ValidateTokensFailOpen, errors.New(errMsg)
 	}
 	gc := global.GetGuardConfig(ctx, guard)
 	if gc == nil {
-		logging.Debug(
-			"invalid guard config, failing open",
-			"count", atomic.AddInt64(&failOpenCount, 1),
-		)
-		return ValidateTokensFailOpen // fail open condition
+		errMsg := "invalid guard config, failing open"
+		logging.Debug(errMsg,
+			"guard", guard,
+			"count", atomic.AddInt64(&failOpenCount, 1))
+		return ValidateTokensFailOpen, errors.New(errMsg)
 	}
 
 	if !gc.GetValidateIngressTokens() {
-		return ValidateTokensSkipped // if we weren't asked to validate ingress tokens, don't
+		// if we weren't asked to validate ingress tokens, don't
+		return ValidateTokensSkipped, nil
 	}
 	if len(tokens) == 0 {
+		// fail fast in the case where we are supposed to validate, but no tokens found
 		logging.Warn("validate ingress tokens was specified, but no tokens were found", "guard", guard)
-		return ValidateTokensInvalid // fail fast in the case where we are supposed to validate, but no tokens found
+		return ValidateTokensInvalid, nil
 	}
 
 	gs := &hubv1.GuardSelector{Environment: global.GetServiceEnvironment(), Name: guard}
@@ -379,20 +375,18 @@ func ValidateTokens(ctx context.Context, guard string, tokens []string) int {
 	for {
 		select {
 		case <-ctx.Done():
-			logging.Error(ctx.Err())
-			return ValidateTokensFailOpen // deadline reached, log error and fail open
+			return ValidateTokensFailOpen, ctx.Err() // deadline reached, log error and fail open
 		default:
 			resp, err := qsc.ValidateToken(metadata.NewOutgoingContext(ctx, global.XStanzaKey()), vtr)
 			if err != nil {
-				logging.Error(err)
-				return ValidateTokensFailOpen // error from Stanza Hub, log error and fail open
+				return ValidateTokensFailOpen, err // error from Stanza Hub, log error and fail open
 			}
 			for _, t := range resp.GetTokensValid() {
 				if !t.Valid {
-					return ValidateTokensInvalid
+					return ValidateTokensInvalid, nil
 				}
 			}
-			return ValidateTokensValid
+			return ValidateTokensValid, nil
 		}
 	}
 }

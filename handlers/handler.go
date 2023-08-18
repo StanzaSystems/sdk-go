@@ -55,9 +55,15 @@ func (h *Handler) NewGuard(ctx context.Context, span trace.Span, name string, to
 	g := h.NewGuardError(ctx, span, attr, nil)
 	if h.SentinelEnabled() {
 		g.checkSentinel(name)
+		if g.sentinelBlock != nil {
+			return g
+		}
 	}
 	if len(tokens) > 0 {
 		g.checkToken(ctx, name, tokens)
+		if g.quotaStatus == hub.ValidateTokensInvalid {
+			return g
+		}
 	}
 	g.checkQuota(ctx, tlr)
 	g.start = time.Now()

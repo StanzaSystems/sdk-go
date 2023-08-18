@@ -99,9 +99,12 @@ func main() {
 	app.Get("/quote", func(c *fiber.Ctx) error {
 
 		// Outbound request with ZenQuotes Guard
-		resp, _ :=
+		resp, err :=
 			fiberstanza.HttpGet(
 				fiberstanza.Guard(c, "ZenQuotes", "https://zenquotes.io/api/random"))
+		if err != nil {
+			logger.Error("ZenQuotes", zap.Error(err))
+		}
 		defer resp.Body.Close()
 
 		// Success! 🎉
