@@ -39,6 +39,15 @@ func NewHandler() (*Handler, error) {
 }
 
 func (h *Handler) NewGuard(ctx context.Context, span trace.Span, name string, tokens []string) *Guard {
+	if span == nil {
+		// Default OTEL Tracer if none specified
+		opts := []trace.SpanStartOption{
+			trace.WithSpanKind(trace.SpanKindUnspecified),
+		}
+		ctx, span = h.Tracer().Start(ctx, name, opts...)
+		defer span.End()
+	}
+
 	g := h.NewGuardError(span, nil)
 	tlr := hub.NewTokenLeaseRequest(name)
 
@@ -92,6 +101,7 @@ func (h *Handler) NewGuardError(span trace.Span, err error) *Guard {
 		finalStatus:   GuardUnknown,
 		err:           err,
 		span:          span,
+		meter:         h.meter,
 		quotaMessage:  "",
 		quotaToken:    "",
 		quotaReason:   "quota_unknown",

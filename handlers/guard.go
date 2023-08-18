@@ -71,6 +71,10 @@ func (g *Guard) Error() error {
 	return g.err
 }
 
+func (g *Guard) Context() context.Context {
+	return g.ctx
+}
+
 func (g *Guard) End(status int) {
 	g.meter.AllowedDuration.Record(g.ctx,
 		float64(time.Since(g.start).Microseconds())/1000,

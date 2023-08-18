@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/StanzaSystems/sdk-go/handlers/httphandler"
 	"github.com/StanzaSystems/sdk-go/keys"
@@ -17,6 +16,8 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/semconv/v1.20.0/httpconv"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Client defines options for a new Stanza Client
@@ -54,7 +55,7 @@ var (
 )
 
 // New creates a new fiberstanza middleware fiber.Handler
-func New(guard string, opts ...Opt) fiber.Handler {
+func New(guardName string, opts ...Opt) fiber.Handler {
 	if inboundHandler == nil {
 		h, err := stanza.NewHttpInboundHandler()
 		if err != nil {
@@ -65,7 +66,6 @@ func New(guard string, opts ...Opt) fiber.Handler {
 				return c.Next()
 			}
 		}
-		// h.SetTokenLeaseRequest(guard, tokenLeaseRequest(guard, opts...))
 		inboundHandler = h
 	}
 	h := inboundHandler
@@ -79,23 +79,32 @@ func New(guard string, opts ...Opt) fiber.Handler {
 					h.ReasonFailOpen())...)}...)
 			return c.Next() // log error and fail open
 		}
-		ctx, status := h.VerifyServingCapacity(&req, c.Route().Path, guard)
-		if status != http.StatusOK {
-			c.SendString("Stanza Inbound Rate Limited")
-			return c.SendStatus(status)
-		}
-		c.SetUserContext(ctx)
 
-		start := time.Now()
-		savedCtx, cancel := context.WithCancel(c.UserContext())
-		defer func() {
-			h.Meter().AllowedDuration.Record(savedCtx,
-				float64(time.Since(start).Microseconds())/1000,
-				[]metric.RecordOption{metric.WithAttributes(h.Attributes()...)}...)
-			c.SetUserContext(savedCtx)
-			cancel()
-		}()
-		return c.Next()
+		ctx := h.Propagator().Extract(req.Context(), propagation.HeaderCarrier(req.Header))
+		traceOpts := []trace.SpanStartOption{
+			trace.WithAttributes(httpconv.ServerRequest("", &req)...),
+			trace.WithSpanKind(trace.SpanKindServer),
+		}
+		ctx, span := h.Tracer().Start(ctx, guardName, traceOpts...)
+		defer span.End()
+
+		guard := h.NewGuard(addKeys(ctx, opts...), span, guardName, req.Header.Values("x-stanza-token"))
+		c.SetUserContext(guard.Context())
+
+		// Stanza Blocked
+		if guard.Blocked() {
+			c.SendString("Stanza Inbound Rate Limited")
+			return c.SendStatus(http.StatusTooManyRequests)
+		}
+
+		// Stanza Allowed
+		err := c.Next() // intercept c.Next() for guard.End() status
+		if err != nil {
+			guard.End(guard.Failure)
+		} else {
+			guard.End(guard.Success)
+		}
+		return err
 	}
 }
 
@@ -130,6 +139,10 @@ func Guard(c *fiber.Ctx, name string, url string, opts ...Opt) guardRequest {
 	var req http.Request
 	fasthttpadaptor.ConvertRequest(c.Context(), &req, true)
 	ctx := otel.GetTextMapPropagator().Extract(req.Context(), propagation.HeaderCarrier(req.Header))
+	return guardRequest{ctx: addKeys(ctx, opts...), name: name, url: url}
+}
+
+func addKeys(ctx context.Context, opts ...Opt) context.Context {
 	if len(opts) == 1 {
 		if opts[0].Feature != "" {
 			ctx = context.WithValue(ctx, keys.StanzaFeatureNameKey, opts[0].Feature)
@@ -146,5 +159,5 @@ func Guard(c *fiber.Ctx, name string, url string, opts ...Opt) guardRequest {
 			ctx = context.WithValue(ctx, keys.OutboundHeadersKey, make(http.Header))
 		}
 	}
-	return guardRequest{ctx: ctx, name: name, url: url}
+	return ctx
 }
