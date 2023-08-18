@@ -2,14 +2,13 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/global"
 	"github.com/StanzaSystems/sdk-go/hub"
-	"github.com/StanzaSystems/sdk-go/keys"
 	"github.com/StanzaSystems/sdk-go/otel"
-	"google.golang.org/protobuf/proto"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
@@ -48,64 +47,44 @@ func (h *Handler) NewGuard(ctx context.Context, span trace.Span, name string, to
 		defer span.End()
 	}
 
-	g := h.NewGuardError(span, nil)
-	tlr := hub.NewTokenLeaseRequest(name)
-
-	// Inspect Baggage and Headers for Feature and PriorityBoost,
-	// propagate through context if found
-	ctx, tlr.Selector.FeatureName = otel.GetFeature(ctx, tlr.Selector.GetFeatureName())
-	ctx, tlr.PriorityBoost = otel.GetPriorityBoost(ctx, tlr.GetPriorityBoost())
-
-	// Override Baggage and Header values with user supplied data.
-	if ctx.Value(keys.StanzaFeatureNameKey) != nil {
-		tlr.Selector.FeatureName = proto.String(ctx.Value(keys.StanzaFeatureNameKey).(string))
-		ctx, tlr.Selector.FeatureName = otel.GetFeature(ctx, tlr.Selector.GetFeatureName())
-	}
-	if ctx.Value(keys.StanzaPriorityBoostKey) != nil {
-		tlr.PriorityBoost = proto.Int32(ctx.Value(keys.StanzaPriorityBoostKey).(int32))
-		ctx, tlr.PriorityBoost = otel.GetPriorityBoost(ctx, tlr.GetPriorityBoost())
-	}
-	if ctx.Value(keys.StanzaDefaultWeightKey) != nil {
-		tlr.DefaultWeight = proto.Float32(ctx.Value(keys.StanzaDefaultWeightKey).(float32))
-	}
-	g.ctx = ctx
-
-	// Add Guard and Feature to OTEL attributes
-	g.attr = append(h.Attributes(),
+	tlr := hub.NewTokenLeaseRequest(ctx, name)
+	attr := []attribute.KeyValue{
 		h.GuardKey(tlr.Selector.GetGuardName()),
 		h.FeatureKey(tlr.Selector.GetFeatureName()),
-	)
+	}
 
-	// Check Sentinel
+	g := h.NewGuardError(ctx, span, attr, nil)
+	fmt.Println(g.quotaStatus)
 	if h.SentinelEnabled() {
 		g.checkSentinel(name)
 	}
-
-	// Check Quota Token ()
 	if len(tokens) > 0 {
 		g.checkToken(ctx, name, tokens)
 	}
-
-	// Check Quota
 	g.checkQuota(ctx, tlr)
-
 	g.start = time.Now()
 	return g
 }
 
-func (h *Handler) NewGuardError(span trace.Span, err error) *Guard {
+func (h *Handler) NewGuardError(ctx context.Context, span trace.Span, attr []attribute.KeyValue, err error) *Guard {
 	return &Guard{
-		Success:       GuardSuccess,
-		Failure:       GuardFailure,
-		Unknown:       GuardUnknown,
-		finalStatus:   GuardUnknown,
-		err:           err,
-		span:          span,
-		meter:         h.meter,
-		quotaMessage:  "",
-		quotaToken:    "",
-		quotaReason:   "quota_unknown",
-		quotaStatus:   GuardUnknown,
+		ctx:   ctx,
+		start: time.Time{},
+		meter: h.meter,
+		span:  span,
+		attr:  append(h.Attributes(), attr...),
+		err:   err,
+
+		Success:     GuardSuccess,
+		Failure:     GuardFailure,
+		Unknown:     GuardUnknown,
+		finalStatus: GuardUnknown,
+
+		quotaMessage: "",
+		quotaToken:   "",
+		quotaReason:  "quota_unknown",
+		quotaStatus:  hub.CheckQuotaUnknown,
+
 		sentinelBlock: nil,
 	}
 }

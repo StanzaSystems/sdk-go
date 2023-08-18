@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	GuardSuccess = iota
+	GuardUnknown = iota
+	GuardSuccess
 	GuardFailure
-	GuardUnknown
 )
 
 type Guard struct {
@@ -76,9 +76,11 @@ func (g *Guard) Context() context.Context {
 }
 
 func (g *Guard) End(status int) {
-	g.meter.AllowedDuration.Record(g.ctx,
-		float64(time.Since(g.start).Microseconds())/1000,
-		[]metric.RecordOption{metric.WithAttributes(g.attr...)}...)
+	if !g.start.IsZero() {
+		g.meter.AllowedDuration.Record(g.ctx,
+			float64(time.Since(g.start).Microseconds())/1000,
+			[]metric.RecordOption{metric.WithAttributes(g.attr...)}...)
+	}
 	if status == g.Success {
 		g.meter.AllowedSuccessCount.Add(g.ctx, 1, []metric.AddOption{metric.WithAttributes(g.attr...)}...)
 	}

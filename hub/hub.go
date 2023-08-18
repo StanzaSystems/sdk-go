@@ -11,7 +11,9 @@ import (
 
 	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/global"
+	"github.com/StanzaSystems/sdk-go/keys"
 	"github.com/StanzaSystems/sdk-go/logging"
+	"github.com/StanzaSystems/sdk-go/otel"
 
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
@@ -24,13 +26,15 @@ const (
 	BATCH_TOKEN_CONSUME_INTERVAL = 200 * time.Millisecond // TODO: what should this be set to?
 
 	// CheckQuota Response Codes
-	CheckQuotaAllowed = iota
+	CheckQuotaUnknown = iota
+	CheckQuotaAllowed
 	CheckQuotaBlocked
 	CheckQuotaSkipped  // special case of Allowed
 	CheckQuotaFailOpen // special case of Allowed
 
 	// ValidateTokens Response Codes
-	ValidateTokensValid = iota
+	ValidateTokensUnknown = iota
+	ValidateTokensValid
 	ValidateTokensInvalid
 	ValidateTokensSkipped  // special case of Valid
 	ValidateTokensFailOpen // special case of Valid
@@ -55,14 +59,34 @@ var (
 	failOpenCount = int64(0)
 )
 
-func NewTokenLeaseRequest(guard string) *hubv1.GetTokenLeaseRequest {
-	return &hubv1.GetTokenLeaseRequest{
+func NewTokenLeaseRequest(ctx context.Context, guard string) *hubv1.GetTokenLeaseRequest {
+	tlr := hubv1.GetTokenLeaseRequest{
 		ClientId: proto.String(global.GetClientID()),
 		Selector: &hubv1.GuardFeatureSelector{
 			GuardName:   guard,
 			Environment: global.GetServiceEnvironment(),
 		},
 	}
+
+	// Inspect Baggage and Headers for Feature and PriorityBoost,
+	// propagate through context if found
+	ctx, tlr.Selector.FeatureName = otel.GetFeature(ctx, tlr.Selector.GetFeatureName())
+	ctx, tlr.PriorityBoost = otel.GetPriorityBoost(ctx, tlr.GetPriorityBoost())
+
+	// Override Baggage and Header values with user supplied data.
+	if ctx.Value(keys.StanzaFeatureNameKey) != nil {
+		tlr.Selector.FeatureName = proto.String(ctx.Value(keys.StanzaFeatureNameKey).(string))
+		ctx, tlr.Selector.FeatureName = otel.GetFeature(ctx, tlr.Selector.GetFeatureName())
+	}
+	if ctx.Value(keys.StanzaPriorityBoostKey) != nil {
+		tlr.PriorityBoost = proto.Int32(ctx.Value(keys.StanzaPriorityBoostKey).(int32))
+		ctx, tlr.PriorityBoost = otel.GetPriorityBoost(ctx, tlr.GetPriorityBoost())
+	}
+	if ctx.Value(keys.StanzaDefaultWeightKey) != nil {
+		tlr.DefaultWeight = proto.Float32(ctx.Value(keys.StanzaDefaultWeightKey).(float32))
+	}
+
+	return &tlr
 }
 
 func CheckQuota(ctx context.Context, tlr *hubv1.GetTokenLeaseRequest) (int, string) {

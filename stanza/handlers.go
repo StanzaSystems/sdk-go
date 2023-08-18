@@ -32,7 +32,7 @@ func Guard(ctx context.Context, name string) *handlers.Guard {
 		if err != nil {
 			err = fmt.Errorf("failed to create guard handler: %s", err)
 			logging.Error(err)
-			return gh.NewGuardError(nil, err)
+			return gh.NewGuardError(ctx, nil, nil, err)
 		}
 	}
 	opts := []trace.SpanStartOption{
