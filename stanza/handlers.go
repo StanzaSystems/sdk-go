@@ -7,6 +7,7 @@ import (
 	"github.com/StanzaSystems/sdk-go/handlers"
 	"github.com/StanzaSystems/sdk-go/handlers/httphandler"
 	"github.com/StanzaSystems/sdk-go/logging"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var (
@@ -31,8 +32,14 @@ func Guard(ctx context.Context, name string) *handlers.Guard {
 		if err != nil {
 			err = fmt.Errorf("failed to create guard handler: %s", err)
 			logging.Error(err)
-			return gh.NewGuardError(err)
+			return gh.NewGuardError(nil, err)
 		}
 	}
-	return gh.NewGuard(ctx, name)
+	opts := []trace.SpanStartOption{
+		// WithAttributes?
+		trace.WithSpanKind(trace.SpanKindInternal),
+	}
+	ctx, span := gh.Tracer().Start(ctx, name, opts...)
+	defer span.End()
+	return gh.NewGuard(ctx, span, name, []string{})
 }

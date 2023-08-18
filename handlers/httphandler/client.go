@@ -11,6 +11,8 @@ import (
 	"github.com/StanzaSystems/sdk-go/keys"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/semconv/v1.13.0/httpconv"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type OutboundHandler struct {
@@ -38,12 +40,17 @@ func (h *OutboundHandler) Post(ctx context.Context, guard, url string, body io.R
 
 // Request wraps a HTTP request of the given HTTP method
 func (h *OutboundHandler) Request(ctx context.Context, guardName, httpMethod, url string, body io.Reader) (*http.Response, error) {
-	// TODO: Add a Span around this Request, like otelhttp does:
-	// https://pkg.go.dev/go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp#Get
 	if req, err := http.NewRequestWithContext(ctx, httpMethod, url, body); err != nil {
 		return nil, err // FAIL OPEN!
 	} else {
-		guard := h.NewGuard(ctx, guardName)
+		opts := []trace.SpanStartOption{
+			trace.WithAttributes(httpconv.ClientRequest(req)...),
+			trace.WithSpanKind(trace.SpanKindClient),
+		}
+		ctx, span := h.Tracer().Start(ctx, guardName, opts...)
+		defer span.End()
+
+		guard := h.NewGuard(ctx, span, guardName, []string{})
 
 		// Stanza Blocked
 		if guard.Blocked() {

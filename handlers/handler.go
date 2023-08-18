@@ -12,7 +12,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -39,8 +38,8 @@ func NewHandler() (*Handler, error) {
 	}, err
 }
 
-func (h *Handler) NewGuard(ctx context.Context, name string) *Guard {
-	g := h.NewGuardError(nil)
+func (h *Handler) NewGuard(ctx context.Context, span trace.Span, name string, tokens []string) *Guard {
+	g := h.NewGuardError(span, nil)
 	tlr := hub.NewTokenLeaseRequest(name)
 
 	// Inspect Baggage and Headers for Feature and PriorityBoost,
@@ -62,49 +61,42 @@ func (h *Handler) NewGuard(ctx context.Context, name string) *Guard {
 	}
 	g.ctx = ctx
 
-	// Check Quota
-	g.quotaStatus, g.quotaToken = hub.CheckQuota(ctx, tlr)
-
 	// Add Guard and Feature to OTEL attributes
 	g.attr = append(h.Attributes(),
 		h.GuardKey(tlr.Selector.GetGuardName()),
 		h.FeatureKey(tlr.Selector.GetFeatureName()),
 	)
-	switch g.quotaStatus {
-	case hub.CheckQuotaBlocked:
-		g.attr = append(g.attr, h.ReasonQuota())
-		h.Meter().BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(g.attr...)}...)
-		g.quotaReason = h.ReasonQuota().Value.AsString()
-		return g
-	case hub.CheckQuotaAllowed:
-		g.attr = append(g.attr, h.ReasonQuota())
-		g.quotaReason = h.ReasonQuota().Value.AsString()
-	case hub.CheckQuotaSkipped:
-		g.attr = append(g.attr, h.ReasonQuotaCheckDisabled())
-		g.quotaReason = h.ReasonQuotaCheckDisabled().Value.AsString()
-	case hub.CheckQuotaFailOpen:
-		g.attr = append(g.attr, h.ReasonQuotaFailOpen())
-		g.quotaReason = h.ReasonQuotaFailOpen().Value.AsString()
-	default:
-		g.quotaReason = "quota_unknown"
-		g.quotaStatus = GuardUnknown
+
+	// Check Sentinel
+	if h.SentinelEnabled() {
+		g.checkSentinel(name)
 	}
-	h.Meter().AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(g.attr...)}...)
+
+	// Check Quota Token ()
+	if len(tokens) > 0 {
+		g.checkToken(ctx, name, tokens)
+	}
+
+	// Check Quota
+	g.checkQuota(ctx, tlr)
+
 	g.start = time.Now()
 	return g
 }
 
-func (h *Handler) NewGuardError(err error) *Guard {
+func (h *Handler) NewGuardError(span trace.Span, err error) *Guard {
 	return &Guard{
-		Success:      GuardSuccess,
-		Failure:      GuardFailure,
-		Unknown:      GuardUnknown,
-		finalStatus:  GuardUnknown,
-		err:          err,
-		quotaMessage: "",
-		quotaToken:   "",
-		quotaReason:  "quota_unknown",
-		quotaStatus:  GuardUnknown,
+		Success:       GuardSuccess,
+		Failure:       GuardFailure,
+		Unknown:       GuardUnknown,
+		finalStatus:   GuardUnknown,
+		err:           err,
+		span:          span,
+		quotaMessage:  "",
+		quotaToken:    "",
+		quotaReason:   "quota_unknown",
+		quotaStatus:   GuardUnknown,
+		sentinelBlock: nil,
 	}
 }
 
@@ -133,32 +125,8 @@ func (h *Handler) FeatureKey(feat string) attribute.KeyValue {
 	return featureKey.String(feat)
 }
 
-func (h *Handler) ReasonKey(reason string) attribute.KeyValue {
-	return reasonKey.String(reason)
-}
-
 func (h *Handler) ReasonFailOpen() attribute.KeyValue {
-	return reasonKey.String("fail_open")
-}
-
-func (h *Handler) ReasonQuota() attribute.KeyValue {
-	return reasonKey.String("quota")
-}
-
-func (h *Handler) ReasonQuotaCheckDisabled() attribute.KeyValue {
-	return reasonKey.String("quota_check_disabled")
-}
-
-func (h *Handler) ReasonQuotaFailOpen() attribute.KeyValue {
-	return reasonKey.String("quota_fail_open")
-}
-
-func (h *Handler) ReasonQuotaInvalidToken() attribute.KeyValue {
-	return reasonKey.String("quota_invalid_token")
-}
-
-func (h *Handler) ReasonToken() attribute.KeyValue {
-	return reasonKey.String("token")
+	return reason(ReasonFailOpen)
 }
 
 // Global Helper Functions //
