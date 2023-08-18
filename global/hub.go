@@ -28,7 +28,7 @@ func hubConnect(ctx context.Context) (func(), func()) {
 	}
 	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(creds),
-		// grpc.WithUserAgent(), // todo: SDK spec
+		grpc.WithUserAgent(UserAgent()),
 		// todo: add keepalives, backoff config, etc
 	}
 	hubConn, err := grpc.Dial(gs.hubURI, opts...)

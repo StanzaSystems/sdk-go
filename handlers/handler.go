@@ -1,8 +1,12 @@
 package handlers
 
 import (
+	"context"
+	"time"
+
 	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/global"
+	"github.com/StanzaSystems/sdk-go/hub"
 	"github.com/StanzaSystems/sdk-go/otel"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -32,6 +36,58 @@ func NewHandler() (*Handler, error) {
 	}, err
 }
 
+func (h *Handler) NewGuard(ctx context.Context, span trace.Span, name string, tokens []string) *Guard {
+	if span == nil {
+		// Default OTEL Tracer if none specified
+		opts := []trace.SpanStartOption{
+			trace.WithSpanKind(trace.SpanKindUnspecified),
+		}
+		ctx, span = h.Tracer().Start(ctx, name, opts...)
+		defer span.End()
+	}
+
+	tlr := hub.NewTokenLeaseRequest(ctx, name)
+	attr := []attribute.KeyValue{
+		h.GuardKey(tlr.Selector.GetGuardName()),
+		h.FeatureKey(tlr.Selector.GetFeatureName()),
+	}
+
+	g := h.NewGuardError(ctx, span, attr, nil)
+	if h.SentinelEnabled() {
+		g.checkSentinel(name)
+		if g.sentinelBlock != nil {
+			return g
+		}
+	}
+	if len(tokens) > 0 {
+		g.checkToken(ctx, name, tokens)
+		if g.quotaStatus == hub.ValidateTokensInvalid {
+			return g
+		}
+	}
+	g.checkQuota(ctx, tlr)
+	g.start = time.Now()
+	return g
+}
+
+func (h *Handler) NewGuardError(ctx context.Context, span trace.Span, attr []attribute.KeyValue, err error) *Guard {
+	return &Guard{
+		ctx:   ctx,
+		start: time.Time{},
+		meter: h.meter,
+		span:  span,
+		attr:  append(h.Attributes(), attr...),
+		err:   err,
+
+		Success:     GuardSuccess,
+		Failure:     GuardFailure,
+		Unknown:     GuardUnknown,
+		finalStatus: GuardUnknown,
+
+		sentinelBlock: nil,
+	}
+}
+
 func (h *Handler) Meter() *Meter {
 	return h.meter
 }
@@ -57,24 +113,8 @@ func (h *Handler) FeatureKey(feat string) attribute.KeyValue {
 	return featureKey.String(feat)
 }
 
-func (h *Handler) ReasonKey(reason string) attribute.KeyValue {
-	return reasonKey.String(reason)
-}
-
 func (h *Handler) ReasonFailOpen() attribute.KeyValue {
-	return reasonKey.String("fail_open")
-}
-
-func (h *Handler) ReasonInvalidToken() attribute.KeyValue {
-	return reasonKey.String("invalid_token")
-}
-
-func (h *Handler) ReasonQuota() attribute.KeyValue {
-	return reasonKey.String("quota")
-}
-
-func (h *Handler) ReasonToken() attribute.KeyValue {
-	return reasonKey.String("token")
+	return reason(ReasonFailOpen)
 }
 
 // Global Helper Functions //
@@ -84,10 +124,6 @@ func (h *Handler) APIKey() string {
 
 func (h *Handler) ClientID() string {
 	return global.GetClientID()
-}
-
-func (h *Handler) GuardConfig(guard string) *hubv1.GuardConfig {
-	return global.GuardConfig(guard)
 }
 
 func (h *Handler) Environment() string {

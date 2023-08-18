@@ -99,9 +99,12 @@ func main() {
 	app.Get("/quote", func(c *fiber.Ctx) error {
 
 		// Outbound request with ZenQuotes Guard
-		resp, _ :=
+		resp, err :=
 			fiberstanza.HttpGet(
 				fiberstanza.Guard(c, "ZenQuotes", "https://zenquotes.io/api/random"))
+		if err != nil {
+			logger.Error("ZenQuotes", zap.Error(err))
+		}
 		defer resp.Body.Close()
 
 		// Success! 🎉
@@ -142,12 +145,6 @@ func main() {
 				opt.PriorityBoost += 1
 			}
 		}
-
-		// Add Headers to be sent with the outbound HTTP request
-		headers := make(http.Header)
-		headers.Add("Referer", "https://gophers.slack.com/messages")
-		headers.Add("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0")
-		opt.Headers = headers
 
 		// Guard outbound request with StressTest
 		resp, err :=

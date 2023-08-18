@@ -5,10 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sync"
-	"time"
 
-	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/handlers/httphandler"
 	"github.com/StanzaSystems/sdk-go/keys"
 	"github.com/StanzaSystems/sdk-go/logging"
@@ -19,6 +16,8 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/semconv/v1.20.0/httpconv"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Client defines options for a new Stanza Client
@@ -44,22 +43,19 @@ type Opt struct {
 }
 
 type guardRequest struct {
-	c       *fiber.Ctx
-	tlr     *hubv1.GetTokenLeaseRequest
-	headers http.Header
-	url     string
-	body    io.Reader
+	ctx  context.Context
+	name string
+	url  string
+	body io.Reader
 }
 
 var (
 	inboundHandler  *httphandler.InboundHandler  = nil
 	outboundHandler *httphandler.OutboundHandler = nil
-	seenGuard       map[string]bool              = make(map[string]bool)
-	seenGuardLock                                = &sync.RWMutex{}
 )
 
 // New creates a new fiberstanza middleware fiber.Handler
-func New(guard string, opts ...Opt) fiber.Handler {
+func New(guardName string, opts ...Opt) fiber.Handler {
 	if inboundHandler == nil {
 		h, err := stanza.NewHttpInboundHandler()
 		if err != nil {
@@ -70,7 +66,6 @@ func New(guard string, opts ...Opt) fiber.Handler {
 				return c.Next()
 			}
 		}
-		h.SetTokenLeaseRequest(guard, tokenLeaseRequest(guard, opts...))
 		inboundHandler = h
 	}
 	h := inboundHandler
@@ -84,23 +79,32 @@ func New(guard string, opts ...Opt) fiber.Handler {
 					h.ReasonFailOpen())...)}...)
 			return c.Next() // log error and fail open
 		}
-		ctx, status := h.VerifyServingCapacity(&req, c.Route().Path, guard)
-		if status != http.StatusOK {
-			c.SendString("Stanza Inbound Rate Limited")
-			return c.SendStatus(status)
-		}
-		c.SetUserContext(ctx)
 
-		start := time.Now()
-		savedCtx, cancel := context.WithCancel(c.UserContext())
-		defer func() {
-			h.Meter().AllowedDuration.Record(savedCtx,
-				float64(time.Since(start).Microseconds())/1000,
-				[]metric.RecordOption{metric.WithAttributes(h.Attributes()...)}...)
-			c.SetUserContext(savedCtx)
-			cancel()
-		}()
-		return c.Next()
+		ctx := h.Propagator().Extract(req.Context(), propagation.HeaderCarrier(req.Header))
+		traceOpts := []trace.SpanStartOption{
+			trace.WithAttributes(httpconv.ServerRequest("", &req)...),
+			trace.WithSpanKind(trace.SpanKindServer),
+		}
+		ctx, span := h.Tracer().Start(ctx, guardName, traceOpts...)
+		defer span.End()
+
+		guard := h.NewGuard(addKeys(ctx, opts...), span, guardName, req.Header.Values("x-stanza-token"))
+		c.SetUserContext(guard.Context())
+
+		// Stanza Blocked
+		if guard.Blocked() {
+			c.SendString("Stanza Inbound Rate Limited")
+			return c.SendStatus(http.StatusTooManyRequests)
+		}
+
+		// Stanza Allowed
+		err := c.Next() // intercept c.Next() for guard.End() status
+		if err != nil {
+			guard.End(guard.Failure)
+		} else {
+			guard.End(guard.Success)
+		}
+		return err
 	}
 }
 
@@ -122,60 +126,38 @@ func Init(ctx context.Context, client Client) (func(), error) {
 
 // HttpGet is a fiberstanza helper function (passthrough to stanza.NewHttpOutboundHandler)
 func HttpGet(req guardRequest) (*http.Response, error) {
-	return outboundHandler.Get(WithHeaders(req.c, req.headers), req.url, req.tlr)
+	return outboundHandler.Get(req.ctx, req.name, req.url)
 }
 
 // HttpPost is a fiberstanza helper function (passthrough to stanza.NewHttpOutboundHandler)
 func HttpPost(req guardRequest) (*http.Response, error) {
-	return outboundHandler.Post(WithHeaders(req.c, req.headers), req.url, req.body, req.tlr)
-}
-
-// Add Headers to Context
-func WithHeaders(c *fiber.Ctx, headers http.Header) context.Context {
-	var req http.Request
-	if err := fasthttpadaptor.ConvertRequest(c.Context(), &req, true); err != nil {
-		logging.Error(fmt.Errorf("failed to convert request from fasthttp: %v", err))
-	}
-	ctx := otel.GetTextMapPropagator().Extract(req.Context(), propagation.HeaderCarrier(req.Header))
-	return context.WithValue(ctx, keys.OutboundHeadersKey, headers)
+	return outboundHandler.Post(req.ctx, req.name, req.url, req.body)
 }
 
 // Guard is a fiberstanza helper function
-func Guard(c *fiber.Ctx, guard string, url string, opts ...Opt) guardRequest {
-	req := guardRequest{c: c, headers: make(http.Header)}
-	tlr := tokenLeaseRequest(guard, opts...)
-	if len(opts) == 1 {
-		if opts[0].Headers != nil {
-			req.headers = opts[0].Headers
-		}
-	}
-	req.tlr = tlr
-	req.url = url
-	return req
+func Guard(c *fiber.Ctx, name string, url string, opts ...Opt) guardRequest {
+	var req http.Request
+	fasthttpadaptor.ConvertRequest(c.Context(), &req, true)
+	ctx := otel.GetTextMapPropagator().Extract(req.Context(), propagation.HeaderCarrier(req.Header))
+	return guardRequest{ctx: addKeys(ctx, opts...), name: name, url: url}
 }
 
-func tokenLeaseRequest(guard string, opts ...Opt) *hubv1.GetTokenLeaseRequest {
-	seenGuardLock.RLock()
-	_, ok := seenGuard[guard]
-	seenGuardLock.RUnlock()
-	if !ok {
-		stanza.RegisterGuard(context.Background(), guard)
-		seenGuardLock.Lock()
-		seenGuard[guard] = true
-		seenGuardLock.Unlock()
-	}
-	dfs := &hubv1.GuardFeatureSelector{GuardName: guard}
-	tlr := &hubv1.GetTokenLeaseRequest{Selector: dfs}
+func addKeys(ctx context.Context, opts ...Opt) context.Context {
 	if len(opts) == 1 {
 		if opts[0].Feature != "" {
-			tlr.Selector.FeatureName = &opts[0].Feature
+			ctx = context.WithValue(ctx, keys.StanzaFeatureNameKey, opts[0].Feature)
 		}
 		if opts[0].PriorityBoost != 0 {
-			tlr.PriorityBoost = &opts[0].PriorityBoost
+			ctx = context.WithValue(ctx, keys.StanzaPriorityBoostKey, opts[0].PriorityBoost)
 		}
 		if opts[0].DefaultWeight != 0 {
-			tlr.DefaultWeight = &opts[0].DefaultWeight
+			ctx = context.WithValue(ctx, keys.StanzaDefaultWeightKey, opts[0].DefaultWeight)
+		}
+		if opts[0].Headers != nil {
+			ctx = context.WithValue(ctx, keys.OutboundHeadersKey, opts[0].Headers)
+		} else {
+			ctx = context.WithValue(ctx, keys.OutboundHeadersKey, make(http.Header))
 		}
 	}
-	return tlr
+	return ctx
 }

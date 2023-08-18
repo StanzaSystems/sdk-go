@@ -8,6 +8,17 @@ import (
 )
 
 const (
+	ReasonUnknown = iota
+	ReasonFailOpen
+	ReasonDarkLaunch
+	ReasonQuota
+	ReasonQuotaToken
+	ReasonQuotaFailOpen
+	ReasonQuotaCheckDisabled
+	ReasonQuotaInvalidToken
+	ReasonQuotaUnknown
+	ReasonSentinel
+
 	// Stanza SDK Metrics:
 	// https://github.com/StanzaSystems/sdk-spec#telemetry-metrics
 	stanzaAllowed         = "stanza.guard.allowed"          // counter
@@ -37,6 +48,28 @@ type Meter struct {
 	AllowedUnknownCount metric.Int64Counter
 	AllowedDuration     metric.Float64Histogram
 	BlockedCount        metric.Int64Counter
+}
+
+func reason(reason int) attribute.KeyValue {
+	switch reason {
+	case ReasonFailOpen:
+		return reasonKey.String("fail_open")
+	case ReasonDarkLaunch:
+		return reasonKey.String("dark_launch")
+	case ReasonQuota:
+		return reasonKey.String("quota")
+	case ReasonQuotaToken:
+		return reasonKey.String("quota_token")
+	case ReasonQuotaFailOpen:
+		return reasonKey.String("quota_fail_open")
+	case ReasonQuotaCheckDisabled:
+		return reasonKey.String("quota_check_disabled")
+	case ReasonQuotaInvalidToken:
+		return reasonKey.String("quota_invalid_token")
+	case ReasonQuotaUnknown:
+		return reasonKey.String("quota_unknown")
+	}
+	return reasonKey.String("unknown")
 }
 
 func GetStanzaMeter() (*Meter, error) {
