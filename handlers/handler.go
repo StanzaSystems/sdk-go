@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
@@ -54,7 +53,6 @@ func (h *Handler) NewGuard(ctx context.Context, span trace.Span, name string, to
 	}
 
 	g := h.NewGuardError(ctx, span, attr, nil)
-	fmt.Println(g.quotaStatus)
 	if h.SentinelEnabled() {
 		g.checkSentinel(name)
 	}
@@ -79,11 +77,6 @@ func (h *Handler) NewGuardError(ctx context.Context, span trace.Span, attr []att
 		Failure:     GuardFailure,
 		Unknown:     GuardUnknown,
 		finalStatus: GuardUnknown,
-
-		quotaMessage: "",
-		quotaToken:   "",
-		quotaReason:  "quota_unknown",
-		quotaStatus:  hub.CheckQuotaUnknown,
 
 		sentinelBlock: nil,
 	}

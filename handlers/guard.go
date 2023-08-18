@@ -151,7 +151,6 @@ func (g *Guard) checkQuota(ctx context.Context, tlr *hubv1.GetTokenLeaseRequest)
 }
 
 func (g *Guard) checkToken(ctx context.Context, name string, tokens []string) {
-	// status := hub.ValidateTokens(ctx, guard, r.Header.Values("x-stanza-token"))
 	status := hub.ValidateTokens(ctx, name, tokens)
 
 	attrWithReason := g.attr
