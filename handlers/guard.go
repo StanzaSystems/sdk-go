@@ -56,10 +56,16 @@ func (g *Guard) Blocked() bool {
 }
 
 func (g *Guard) BlockMessage() string {
+	if g.sentinelBlock != nil {
+		return g.sentinelBlock.BlockMsg()
+	}
 	return g.quotaMessage
 }
 
 func (g *Guard) BlockReason() string {
+	if g.sentinelBlock != nil {
+		return g.sentinelBlock.BlockType().String()
+	}
 	return g.quotaReason
 }
 
