@@ -52,7 +52,6 @@ require (
 	github.com/valyala/tcplisten v1.0.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.3 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.43.0 // indirect
-	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.17.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric v0.40.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v0.40.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.17.0 // indirect
