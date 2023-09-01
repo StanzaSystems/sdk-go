@@ -91,6 +91,7 @@ func GetServiceConfig(ctx context.Context, skipPoll bool) {
 		res, err := gs.hubConfigClient.GetServiceConfig(
 			metadata.NewOutgoingContext(ctx, XStanzaKey()),
 			&hubv1.GetServiceConfigRequest{
+				ClientId:    proto.String(GetClientID()),
 				VersionSeen: gs.svcConfigVersion,
 				Service: &hubv1.ServiceSelector{
 					Environment: gs.svcEnvironment,
