@@ -1,0 +1,16 @@
+syntax = "proto3";
+package quote.v1;
+
+option go_package = "v1";
+
+service QuoteService {
+  rpc GetQuote(GetQuoteRequest) returns (GetQuoteResponse);
+}
+
+message GetQuoteRequest {}
+
+message GetQuoteResponse{
+    string quote = 1;
+    string author = 2;
+    string source = 3;
+}
