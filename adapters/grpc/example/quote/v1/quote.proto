@@ -9,8 +9,8 @@ service QuoteService {
 
 message GetQuoteRequest {}
 
-message GetQuoteResponse{
-    string quote = 1;
-    string author = 2;
-    string source = 3;
+message GetQuoteResponse {
+  string quote = 1;
+  string author = 2;
+  string source = 3;
 }
