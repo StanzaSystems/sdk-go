@@ -7,6 +7,7 @@ import (
 	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/hub"
 	"github.com/StanzaSystems/sdk-go/logging"
+
 	"github.com/alibaba/sentinel-golang/api"
 	"github.com/alibaba/sentinel-golang/core/base"
 	"go.opentelemetry.io/otel/attribute"
@@ -128,6 +129,7 @@ func (g *Guard) checkQuota(ctx context.Context, tlr *hubv1.GetTokenLeaseRequest)
 	case hub.CheckQuotaBlocked:
 		attrWithReason = append(attrWithReason, reason(ReasonQuota))
 		g.quotaReason = reason(ReasonQuota).Value.AsString()
+		g.quotaMessage = "Stanza quota exhausted. Please try again later."
 		g.meter.BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
 		g.span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
 		logging.Debug("Stanza blocked",
