@@ -15,9 +15,9 @@ type ClientOptions struct {
 	APIKey string // customer generated API key
 
 	// Optional
-	Name        string // defines applications unique name
-	Release     string // defines applications version
-	Environment string // defines applications environment
+	Name        string // defines service unique name
+	Release     string // defines service version
+	Environment string // defines service environment
 	StanzaHub   string // host:port (ipv4, ipv6, or resolvable hostname)
 
 	Guard []string // prefetch config for these guards
