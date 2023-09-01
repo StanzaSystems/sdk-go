@@ -73,7 +73,7 @@ func (qs *QuoteServer) GetQuote(ctx context.Context, req *quotev1.GetQuoteReques
 	// 🚫 Stanza Guard has *blocked* this workflow, log the reason and return 429 status
 	if stz.Blocked() {
 		qs.log.Info(stz.BlockMessage(), zap.String("reason", stz.BlockReason()))
-		return nil, status.Error(codes.ResourceExhausted, "Too Many Requests")
+		return nil, status.Error(codes.ResourceExhausted, stz.BlockMessage())
 	}
 
 	// ✅ Stanza Guard has *allowed* this workflow, business logic goes here.
