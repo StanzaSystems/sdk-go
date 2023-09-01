@@ -88,6 +88,7 @@ func main() {
 		// Create a new Stanza Guard
 		stz := stanza.Guard(ctx, "ZenQuotes")
 
+		// Check for and log any returned error messages
 		if stz.Error() != nil {
 			logger.Error("ZenQuotes", zap.Error(stz.Error()))
 		}
