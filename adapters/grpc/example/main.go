@@ -55,6 +55,7 @@ var zq []struct {
 	A string
 }
 
+// Implement QuoteService gRPC server API
 type QuoteServer struct {
 	quotev1.UnimplementedQuoteServiceServer
 	log *zap.Logger
@@ -105,7 +106,7 @@ func (qs *QuoteServer) GetQuote(ctx context.Context, req *quotev1.GetQuoteReques
 }
 
 func main() {
-	// Flag parsing -- most important being apikey
+	// Parse command line flags
 	flag.StringVar(&env, "environment", "dev", "Environment: for example, dev, staging, qa (default dev)")
 	flag.IntVar(&port, "port", 3000, "Port to listen/accept requests on")
 	flag.BoolVar(&debug, "debug", true, "Debugging on/off")
@@ -115,7 +116,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Configure structured logger.
+	// Configure structured logger
 	logger := NewZapLogger(env, debug)
 	defer logger.Sync()
 
