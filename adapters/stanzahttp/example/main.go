@@ -85,7 +85,7 @@ func main() {
 	// Use ZenQuotes to get a random quote
 	http.HandleFunc("/quote", func(w http.ResponseWriter, r *http.Request) {
 
-		// Create a new Stanza Guard
+		// Name the Stanza Guard which protects this workflow
 		stz := stanza.Guard(ctx, "ZenQuotes")
 
 		// Check for and log any returned error messages

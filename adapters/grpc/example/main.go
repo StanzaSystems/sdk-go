@@ -62,7 +62,7 @@ type QuoteServer struct {
 }
 
 func (qs *QuoteServer) GetQuote(ctx context.Context, req *quotev1.GetQuoteRequest) (*quotev1.GetQuoteResponse, error) {
-	// Create a new Stanza Guard
+	// Name the Stanza Guard which protects this workflow
 	stz := stanza.Guard(ctx, "ZenQuotes")
 
 	// Check for and log any returned error messages
