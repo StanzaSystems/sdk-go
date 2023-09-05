@@ -84,6 +84,8 @@ func hubPoller(ctx context.Context, pollInterval time.Duration) {
 					}
 					GetServiceConfig(ctx, false)
 					GetGuardConfigs(ctx, false)
+					otelShutdown = OtelStartup(ctx)
+					sentinelShutdown = SentinelStartup(ctx)
 				} else {
 					// 120 attempts * 15 seconds == 1800 seconds == 30 minutes
 					if connectAttempt > 120 {
