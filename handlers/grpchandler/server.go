@@ -2,7 +2,6 @@ package grpchandler
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/StanzaSystems/sdk-go/handlers"
 
@@ -60,7 +59,6 @@ func (h *InboundHandler) start(ctx context.Context, spanName string) (context.Co
 	tokens := []string{}
 
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		fmt.Println(md)
 		tokens = md.Get("x-stanza-token")
 		// blunt force "header" propagation
 		// TODO: replace with OTEL propagator extract/inject
