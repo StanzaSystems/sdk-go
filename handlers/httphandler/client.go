@@ -11,6 +11,7 @@ import (
 	"github.com/StanzaSystems/sdk-go/keys"
 
 	"go.opentelemetry.io/otel/codes"
+	semconv "go.opentelemetry.io/otel/semconv/v1.20.0"
 	"go.opentelemetry.io/otel/semconv/v1.20.0/httpconv"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -82,8 +83,8 @@ func (h *OutboundHandler) Request(ctx context.Context, guardName, httpMethod, ur
 		httpClient := &http.Client{Transport: http.DefaultTransport}
 		resp, err := httpClient.Do(req)
 		span.SetAttributes(
-			h.HttpUserAgentKey(req.Header.Get("User-Agent")),
-			h.HttpStatusCodeKey(resp.StatusCode),
+			semconv.UserAgentOriginal(req.Header.Get("User-Agent")),
+			semconv.HTTPStatusCode(resp.StatusCode),
 		)
 		if err != nil {
 			span.RecordError(err)

@@ -30,9 +30,6 @@ const (
 )
 
 var (
-	httpStatusCodeKey = attribute.Key("http.status_code")
-	httpUserAgentKey  = attribute.Key("http.user_agent")
-
 	clientIdKey    = attribute.Key("client_id")
 	customerIdKey  = attribute.Key("customer_id")
 	guardKey       = attribute.Key("guard")
