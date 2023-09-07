@@ -29,13 +29,13 @@ func NewOutboundHandler() (*OutboundHandler, error) {
 }
 
 // Get wraps a HTTP GET request
-func (h *OutboundHandler) Get(ctx context.Context, guard, url string) (*http.Response, error) {
-	return h.Request(ctx, guard, http.MethodGet, url, http.NoBody)
+func (h *OutboundHandler) Get(ctx context.Context, guardName, url string) (*http.Response, error) {
+	return h.Request(ctx, guardName, http.MethodGet, url, http.NoBody)
 }
 
 // Post wraps a HTTP POST request
-func (h *OutboundHandler) Post(ctx context.Context, guard, url string, body io.Reader) (*http.Response, error) {
-	return h.Request(ctx, guard, http.MethodPost, url, body)
+func (h *OutboundHandler) Post(ctx context.Context, guardName, url string, body io.Reader) (*http.Response, error) {
+	return h.Request(ctx, guardName, http.MethodPost, url, body)
 }
 
 // Request wraps a HTTP request of the given HTTP method

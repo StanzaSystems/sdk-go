@@ -96,5 +96,6 @@ func (h *InboundHandler) allowed(span trace.Span, guard *handlers.Guard, err err
 
 func (h *InboundHandler) blocked(span trace.Span, guard *handlers.Guard) error {
 	span.SetAttributes(semconv.RPCGRPCStatusCodeKey.Int64(int64(codes.ResourceExhausted)))
+	span.SetStatus(otel_codes.Error, guard.BlockMessage())
 	return status.Errorf(codes.ResourceExhausted, guard.BlockMessage())
 }
