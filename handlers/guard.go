@@ -43,14 +43,18 @@ type Guard struct {
 }
 
 func (g *Guard) Allowed() bool {
-	if g.sentinelBlock == nil && g.quotaStatus != hub.CheckQuotaBlocked {
+	if g.sentinelBlock == nil &&
+		g.quotaStatus != hub.CheckQuotaBlocked &&
+		g.quotaStatus != hub.ValidateTokensInvalid {
 		return true
 	}
 	return false
 }
 
 func (g *Guard) Blocked() bool {
-	if g.sentinelBlock != nil || g.quotaStatus == hub.CheckQuotaBlocked {
+	if g.sentinelBlock != nil ||
+		g.quotaStatus == hub.CheckQuotaBlocked ||
+		g.quotaStatus == hub.ValidateTokensInvalid {
 		return true
 	}
 	return false
@@ -166,6 +170,7 @@ func (g *Guard) checkToken(ctx context.Context, name string, tokens []string) {
 	case hub.ValidateTokensInvalid:
 		attrWithReason := append(attrWithReason, reason(ReasonQuotaToken))
 		g.quotaReason = reason(ReasonQuotaToken).Value.AsString()
+		g.quotaMessage = "Invalid or expired x-stanza-token."
 		g.meter.BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
 		g.span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
 		logging.Debug("Stanza blocked",

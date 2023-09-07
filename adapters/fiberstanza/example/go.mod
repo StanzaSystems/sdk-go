@@ -5,15 +5,10 @@ go 1.21
 toolchain go1.21.0
 
 require (
-	github.com/StanzaSystems/sdk-go/adapters/fiberstanza v0.0.0-20230818190237-c8e9e4192c7d
+	github.com/StanzaSystems/sdk-go/adapters/fiberstanza v0.0.0-20230905175106-13c258a9efa1
 	github.com/gofiber/contrib/fiberzap v1.0.2
-	github.com/gofiber/fiber/v2 v2.49.0
+	github.com/gofiber/fiber/v2 v2.49.1
 	go.uber.org/zap v1.25.0
-)
-
-require (
-	github.com/felixge/httpsnoop v1.0.3 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.43.0 // indirect
 )
 
 require (
@@ -68,9 +63,9 @@ require (
 	go.opentelemetry.io/otel/trace v1.17.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.0.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/net v0.14.0 // indirect
-	golang.org/x/sys v0.11.0 // indirect
-	golang.org/x/text v0.12.0 // indirect
+	golang.org/x/net v0.15.0 // indirect
+	golang.org/x/sys v0.12.0 // indirect
+	golang.org/x/text v0.13.0 // indirect
 	google.golang.org/genproto v0.0.0-20230822172742-b8732ec3820d // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20230822172742-b8732ec3820d // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20230822172742-b8732ec3820d // indirect

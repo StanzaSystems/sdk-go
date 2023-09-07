@@ -14,27 +14,33 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	quotev1 "github.com/StanzaSystems/sdk-go/adapters/grpc/example/gen/quote/v1"
 	"github.com/StanzaSystems/sdk-go/stanza"
 
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/selector"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 )
 
 var (
-	wg        sync.WaitGroup
-	env       string
-	debug     bool
-	port      int
-	srv       = grpc.NewServer()
-	healthSrv = health.NewServer()
+	wg           sync.WaitGroup
+	env          string
+	debugLogging bool
+	port         int
+	srv          = grpc.NewServer()
+	healthSrv    = health.NewServer()
+	logOpts      = []logging.Option{logging.WithLogOnEvents(logging.FinishCall)}
+	guardOpts    = stanza.GuardOpt{MethodFilter: []string{"/quote.v1.QuoteService/GetQuote"}}
 
 	name      = "fiber-example" // TODO: add new service (this isn't "fiber")
 	release   = "1.0.0"
@@ -45,7 +51,7 @@ var (
 		Environment: env,
 
 		// optionally prefetch Guard configs
-		Guard: []string{"ZenQuotes"},
+		Guard: []string{"RootGuard", "ZenQuotes"},
 	}
 )
 
@@ -62,17 +68,19 @@ type QuoteServer struct {
 }
 
 func (qs *QuoteServer) GetQuote(ctx context.Context, req *quotev1.GetQuoteRequest) (*quotev1.GetQuoteResponse, error) {
+	guardName := "ZenQuotes"
+
 	// Name the Stanza Guard which protects this workflow
-	stz := stanza.Guard(ctx, "ZenQuotes")
+	stz := stanza.Guard(ctx, guardName)
 
 	// Check for and log any returned error messages
 	if stz.Error() != nil {
-		qs.log.Error("ZenQuotes", zap.Error(stz.Error()))
+		qs.log.Error(guardName, zap.Error(stz.Error()))
 	}
 
 	// 🚫 Stanza Guard has *blocked* this workflow, log the reason and return 429 status
 	if stz.Blocked() {
-		qs.log.Info(stz.BlockMessage(), zap.String("reason", stz.BlockReason()))
+		qs.log.Info(stz.BlockMessage(), zap.String("guard", guardName), zap.String("reason", stz.BlockReason()))
 		return nil, status.Error(codes.ResourceExhausted, stz.BlockMessage())
 	}
 
@@ -100,7 +108,7 @@ func (qs *QuoteServer) GetQuote(ctx context.Context, req *quotev1.GetQuoteReques
 		}
 	}
 
-	// 😭 Sad path, our "business logic" failed
+	// 😭 Sad path, our "business logic" failed (nil response from http.Get)
 	stz.End(stz.Failure)
 	return nil, status.Error(codes.Unavailable, "Service Unavailable")
 }
@@ -109,15 +117,15 @@ func main() {
 	// Parse command line flags
 	flag.StringVar(&env, "environment", "dev", "Environment: for example, dev, staging, qa (default dev)")
 	flag.IntVar(&port, "port", 3000, "Port to listen/accept requests on")
-	flag.BoolVar(&debug, "debug", true, "Debugging on/off")
+	flag.BoolVar(&debugLogging, "debug", true, "Debugging on/off")
 	flag.Parse()
 
 	// Create an interruptible context to use for graceful server shutdowns
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Configure structured logger
-	logger := NewZapLogger(env, debug)
+	// Configure Zap structured logger
+	logger := newZapLogger(env, debugLogging)
 	defer logger.Sync()
 
 	// Init Stanza fault tolerance library
@@ -128,14 +136,36 @@ func main() {
 		os.Exit(-1)
 	}
 
-	// Start our example gRPC service
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+
+		// Create new gRPC server with logging and Stanza Guard middleware
+		srv = grpc.NewServer(
+			grpc.ConnectionTimeout(5*time.Second),
+			grpc.KeepaliveParams(keepalive.ServerParameters{MaxConnectionAge: 2 * time.Minute}),
+			grpc.ChainStreamInterceptor(
+				recovery.StreamServerInterceptor(recoveryInterceptor(logger)),
+				selector.StreamServerInterceptor(
+					logging.StreamServerInterceptor(zapInterceptor(logger), logOpts...),
+					selector.MatchFunc(logSkip)),
+				stanza.StreamServerInterceptor("RootGuard", guardOpts),
+			),
+			grpc.ChainUnaryInterceptor(
+				recovery.UnaryServerInterceptor(recoveryInterceptor(logger)),
+				selector.UnaryServerInterceptor(
+					logging.UnaryServerInterceptor(zapInterceptor(logger), logOpts...),
+					selector.MatchFunc(logSkip)),
+				stanza.UnaryServerInterceptor("RootGuard", guardOpts),
+			),
+		)
+
+		// Register gRPC services with server
 		quotev1.RegisterQuoteServiceServer(srv, &QuoteServer{log: logger})
 		grpc_health_v1.RegisterHealthServer(srv, healthSrv)
 		reflection.Register(srv)
 
+		// Start our example gRPC service
 		lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 		if err != nil {
 			logger.Error("net.Listen", zap.Error(err))
@@ -159,21 +189,4 @@ func main() {
 
 	wg.Wait()
 	os.Exit(2)
-}
-
-func NewZapLogger(env string, debug bool) *zap.Logger {
-	zc := zap.NewProductionConfig()
-	zc.DisableStacktrace = true
-	zc.DisableCaller = true
-	if env == "dev" {
-		zc.Level = zap.NewAtomicLevelAt(zapcore.InfoLevel)
-	} else {
-		zc.Level = zap.NewAtomicLevelAt(zapcore.WarnLevel)
-	}
-	if debug {
-		zc.Level = zap.NewAtomicLevelAt(zapcore.DebugLevel)
-	}
-	logger, _ := zc.Build()
-	zap.ReplaceGlobals(logger.WithOptions(zap.AddCallerSkip(1)))
-	return logger
 }

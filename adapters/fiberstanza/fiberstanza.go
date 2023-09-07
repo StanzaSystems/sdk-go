@@ -14,6 +14,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/semconv/v1.20.0/httpconv"
@@ -42,16 +43,8 @@ type Opt struct {
 	DefaultWeight float32
 }
 
-type guardRequest struct {
-	ctx  context.Context
-	name string
-	url  string
-	body io.Reader
-}
-
 var (
-	inboundHandler  *httphandler.InboundHandler  = nil
-	outboundHandler *httphandler.OutboundHandler = nil
+	inboundHandler *httphandler.InboundHandler = nil
 )
 
 // New creates a new fiberstanza middleware fiber.Handler
@@ -93,15 +86,19 @@ func New(guardName string, opts ...Opt) fiber.Handler {
 
 		// Stanza Blocked
 		if guard.Blocked() {
-			c.SendString("Stanza Inbound Rate Limited")
+			span.SetStatus(codes.Error, guard.BlockMessage())
+			c.SendString(guard.BlockMessage())
 			return c.SendStatus(http.StatusTooManyRequests)
 		}
 
 		// Stanza Allowed
 		err := c.Next() // intercept c.Next() for guard.End() status
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			guard.End(guard.Failure)
 		} else {
+			span.SetStatus(codes.Ok, "OK")
 			guard.End(guard.Success)
 		}
 		return err
@@ -114,32 +111,37 @@ func Init(ctx context.Context, client Client) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	if outboundHandler == nil {
-		outboundHandler, err = stanza.NewHttpOutboundHandler()
-		if err != nil {
-			logging.Error(fmt.Errorf("failed to create HTTP outbound handler: %v", err))
-			return nil, err
-		}
-	}
 	return exit, nil
 }
 
-// HttpGet is a fiberstanza helper function (passthrough to stanza.NewHttpOutboundHandler)
-func HttpGet(req guardRequest) (*http.Response, error) {
-	return outboundHandler.Get(req.ctx, req.name, req.url)
+// HttpGet is a fiberstanza helper function (passthrough to stanza.HttpGet)
+func HttpGet(req stanza.GuardRequest) (*http.Response, error) {
+	return stanza.HttpGet(req)
 }
 
-// HttpPost is a fiberstanza helper function (passthrough to stanza.NewHttpOutboundHandler)
-func HttpPost(req guardRequest) (*http.Response, error) {
-	return outboundHandler.Post(req.ctx, req.name, req.url, req.body)
+// HttpPost is a fiberstanza helper function (passthrough to stanza.HttpPost)
+func HttpPost(req stanza.GuardRequest, body io.Reader) (*http.Response, error) {
+	req.Body = body
+	return stanza.HttpPost(req)
 }
 
 // Guard is a fiberstanza helper function
-func Guard(c *fiber.Ctx, name string, url string, opts ...Opt) guardRequest {
+func Guard(c *fiber.Ctx, name string, url string, opts ...Opt) stanza.GuardRequest {
 	var req http.Request
 	fasthttpadaptor.ConvertRequest(c.Context(), &req, true)
 	ctx := otel.GetTextMapPropagator().Extract(req.Context(), propagation.HeaderCarrier(req.Header))
-	return guardRequest{ctx: addKeys(ctx, opts...), name: name, url: url}
+	guardRequest := stanza.GuardRequest{
+		Context: ctx,
+		Name:    name,
+		URL:     url,
+	}
+	if len(opts) == 1 {
+		guardRequest.Headers = opts[0].Headers
+		guardRequest.Opt.Feature = opts[0].Feature
+		guardRequest.Opt.PriorityBoost = opts[0].PriorityBoost
+		guardRequest.Opt.DefaultWeight = opts[0].DefaultWeight
+	}
+	return guardRequest
 }
 
 func addKeys(ctx context.Context, opts ...Opt) context.Context {
