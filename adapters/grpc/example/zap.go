@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"runtime/debug"
 
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 	"go.uber.org/zap"
@@ -65,6 +66,10 @@ func zapInterceptor(l *zap.Logger) logging.Logger {
 			panic(fmt.Sprintf("unknown level %v", lvl))
 		}
 	})
+}
+
+func logSkip(_ context.Context, c interceptors.CallMeta) bool {
+	return c.Service == "quote.v1.QuoteService"
 }
 
 func recoveryInterceptor(logger *zap.Logger) recovery.Option {

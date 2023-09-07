@@ -21,6 +21,7 @@ import (
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/selector"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -144,14 +145,18 @@ func main() {
 			grpc.ConnectionTimeout(5*time.Second),
 			grpc.KeepaliveParams(keepalive.ServerParameters{MaxConnectionAge: 2 * time.Minute}),
 			grpc.ChainStreamInterceptor(
-				logging.StreamServerInterceptor(zapInterceptor(logger), logOpts...),
-				stanza.StreamServerInterceptor("RootGuard", guardOpts),
 				recovery.StreamServerInterceptor(recoveryInterceptor(logger)),
+				selector.StreamServerInterceptor(
+					logging.StreamServerInterceptor(zapInterceptor(logger), logOpts...),
+					selector.MatchFunc(logSkip)),
+				stanza.StreamServerInterceptor("RootGuard", guardOpts),
 			),
 			grpc.ChainUnaryInterceptor(
-				logging.UnaryServerInterceptor(zapInterceptor(logger), logOpts...),
-				stanza.UnaryServerInterceptor("RootGuard", guardOpts),
 				recovery.UnaryServerInterceptor(recoveryInterceptor(logger)),
+				selector.UnaryServerInterceptor(
+					logging.UnaryServerInterceptor(zapInterceptor(logger), logOpts...),
+					selector.MatchFunc(logSkip)),
+				stanza.UnaryServerInterceptor("RootGuard", guardOpts),
 			),
 		)
 
