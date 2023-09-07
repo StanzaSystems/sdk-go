@@ -10,8 +10,8 @@ import (
 	"github.com/StanzaSystems/sdk-go/handlers"
 	"github.com/StanzaSystems/sdk-go/keys"
 
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-	"go.opentelemetry.io/otel/semconv/v1.20.0/httpconv"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/semconv/v1.13.0/httpconv"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -43,17 +43,19 @@ func (h *OutboundHandler) Request(ctx context.Context, guardName, httpMethod, ur
 	if req, err := http.NewRequestWithContext(ctx, httpMethod, url, body); err != nil {
 		return nil, err // FAIL OPEN!
 	} else {
-		opts := []trace.SpanStartOption{
-			trace.WithAttributes(httpconv.ClientRequest(req)...),
+		ctx, span := h.Tracer().Start(
+			ctx,
+			guardName,
 			trace.WithSpanKind(trace.SpanKindClient),
-		}
-		ctx, span := h.Tracer().Start(ctx, guardName, opts...)
+			trace.WithAttributes(httpconv.ClientRequest(req)...),
+		)
 		defer span.End()
 
 		guard := h.NewGuard(ctx, span, guardName, []string{})
 
 		// Stanza Blocked
 		if guard.Blocked() {
+			span.SetStatus(codes.Error, guard.BlockMessage())
 			return &http.Response{
 				Status:     fmt.Sprintf("%d Too Many Request", http.StatusTooManyRequests),
 				StatusCode: http.StatusTooManyRequests,
@@ -77,15 +79,19 @@ func (h *OutboundHandler) Request(ctx context.Context, guardName, httpMethod, ur
 				req.Header.Set(k, v[0])
 			}
 		}
-		httpClient := &http.Client{
-			Transport: otelhttp.NewTransport(
-				http.DefaultTransport,
-			)}
+		httpClient := &http.Client{Transport: http.DefaultTransport}
 		resp, err := httpClient.Do(req)
+		span.SetAttributes(
+			h.HttpUserAgentKey(req.Header.Get("User-Agent")),
+			h.HttpStatusCodeKey(resp.StatusCode),
+		)
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			guard.End(guard.Failure)
 			return resp, err // TODO: multierr with guard.Error()?
 		} else {
+			span.SetStatus(codes.Ok, "OK")
 			guard.End(guard.Success)
 			return resp, guard.Error()
 		}

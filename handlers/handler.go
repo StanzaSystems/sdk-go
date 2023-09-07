@@ -105,12 +105,20 @@ func (h *Handler) Attributes() []attribute.KeyValue {
 	return append(h.attr, customerIdKey.String(global.GetCustomerID()))
 }
 
+func (h *Handler) FeatureKey(feat string) attribute.KeyValue {
+	return featureKey.String(feat)
+}
+
 func (h *Handler) GuardKey(guard string) attribute.KeyValue {
 	return guardKey.String(guard)
 }
 
-func (h *Handler) FeatureKey(feat string) attribute.KeyValue {
-	return featureKey.String(feat)
+func (h *Handler) HttpStatusCodeKey(code int) attribute.KeyValue {
+	return httpStatusCodeKey.Int(code)
+}
+
+func (h *Handler) HttpUserAgentKey(ua string) attribute.KeyValue {
+	return httpUserAgentKey.String(ua)
 }
 
 func (h *Handler) ReasonFailOpen() attribute.KeyValue {
