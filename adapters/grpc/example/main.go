@@ -67,20 +67,36 @@ type QuoteServer struct {
 }
 
 func (qs *QuoteServer) GetQuote(ctx context.Context, req *quotev1.GetQuoteRequest) (*quotev1.GetQuoteResponse, error) {
-	url := "https://zenquotes.io/api/random"
-	resp, err := stanza.HttpGet(
-		stanza.GuardRequest{
-			Context: ctx,
-			Name:    "ZenQuotes",
-			URL:     url,
-		})
-	if err != nil {
-		return nil, status.Error(codes.Unknown, err.Error())
+	// Name the Stanza Guard which protects this workflow
+	stz := stanza.Guard(ctx, "ZenQuotes")
+
+	// Check for and log any returned error messages
+	if stz.Error() != nil {
+		qs.log.Error("ZenQuotes", zap.Error(stz.Error()))
 	}
-	if resp != nil {
+
+	// 🚫 Stanza Guard has *blocked* this workflow, log the reason and return 429 status
+	if stz.Blocked() {
+		qs.log.Info(stz.BlockMessage(), zap.String("reason", stz.BlockReason()))
+		return nil, status.Error(codes.ResourceExhausted, stz.BlockMessage())
+	}
+
+	// ✅ Stanza Guard has *allowed* this workflow, business logic goes here.
+	url := "https://zenquotes.io/api/random"
+	if resp, _ := http.Get(url); resp != nil {
 		defer resp.Body.Close()
+
 		if resp.StatusCode == http.StatusOK {
 			json.NewDecoder(resp.Body).Decode(&zq)
+
+			// 😭 Sad path, rate limited by ZenQuotes
+			if zq[0].A == "zenquotes.io" {
+				// TODO: Add a secondary quote source here
+				return nil, status.Error(codes.ResourceExhausted, zq[0].Q)
+			}
+
+			// 🎉 Happy path, our "business logic" succeeded
+			stz.End(stz.Success)
 			return &quotev1.GetQuoteResponse{
 				Quote:  zq[0].Q,
 				Author: zq[0].A,
@@ -88,49 +104,10 @@ func (qs *QuoteServer) GetQuote(ctx context.Context, req *quotev1.GetQuoteReques
 			}, nil
 		}
 	}
+
+	// 😭 Sad path, our "business logic" failed (nil response from http.Get)
+	stz.End(stz.Failure)
 	return nil, status.Error(codes.Unavailable, "Service Unavailable")
-
-	// // Name the Stanza Guard which protects this workflow
-	// stz := stanza.Guard(ctx, "ZenQuotes")
-
-	// // Check for and log any returned error messages
-	// if stz.Error() != nil {
-	// 	qs.log.Error("ZenQuotes", zap.Error(stz.Error()))
-	// }
-
-	// // 🚫 Stanza Guard has *blocked* this workflow, log the reason and return 429 status
-	// if stz.Blocked() {
-	// 	qs.log.Info(stz.BlockMessage(), zap.String("reason", stz.BlockReason()))
-	// 	return nil, status.Error(codes.ResourceExhausted, stz.BlockMessage())
-	// }
-
-	// // ✅ Stanza Guard has *allowed* this workflow, business logic goes here.
-	// url := "https://zenquotes.io/api/random"
-	// if resp, _ := http.Get(url); resp != nil {
-	// 	defer resp.Body.Close()
-
-	// 	if resp.StatusCode == http.StatusOK {
-	// 		json.NewDecoder(resp.Body).Decode(&zq)
-
-	// 		// 😭 Sad path, rate limited by ZenQuotes
-	// 		if zq[0].A == "zenquotes.io" {
-	// 			// TODO: Add a secondary quote source here
-	// 			return nil, status.Error(codes.ResourceExhausted, zq[0].Q)
-	// 		}
-
-	// 		// 🎉 Happy path, our "business logic" succeeded
-	// 		stz.End(stz.Success)
-	// 		return &quotev1.GetQuoteResponse{
-	// 			Quote:  zq[0].Q,
-	// 			Author: zq[0].A,
-	// 			Source: url,
-	// 		}, nil
-	// 	}
-	// }
-
-	// // 😭 Sad path, our "business logic" failed
-	// stz.End(stz.Failure)
-	// return nil, status.Error(codes.Unavailable, "Service Unavailable")
 }
 
 func main() {
@@ -168,8 +145,9 @@ func main() {
 			grpc.ConnectionTimeout(5*time.Second),
 			grpc.KeepaliveParams(keepalive.ServerParameters{MaxConnectionAge: 2 * time.Minute}),
 			grpc.ChainStreamInterceptor(
-				// stanza.StreamServerInterceptor(stanza.Guard(ctx, "ZenQuotes")),
+				stanza.StreamServerInterceptor("RootGuard"),
 				logging.StreamServerInterceptor(zapInterceptor(logger), logOpts...),
+				recovery.StreamServerInterceptor(recoveryInterceptor(logger)),
 			),
 			grpc.ChainUnaryInterceptor(
 				stanza.UnaryServerInterceptor("RootGuard"),
