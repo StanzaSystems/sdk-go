@@ -6,11 +6,10 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"net/http"
-
 	"flag"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"sync"
