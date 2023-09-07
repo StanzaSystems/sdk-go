@@ -39,6 +39,7 @@ var (
 	srv          = grpc.NewServer()
 	healthSrv    = health.NewServer()
 	logOpts      = []logging.Option{logging.WithLogOnEvents(logging.FinishCall)}
+	guardOpts    = stanza.GuardOpt{MethodFilter: []string{"/quote.v1.QuoteService/GetQuote"}}
 
 	name      = "fiber-example" // TODO: add new service (this isn't "fiber")
 	release   = "1.0.0"
@@ -66,17 +67,19 @@ type QuoteServer struct {
 }
 
 func (qs *QuoteServer) GetQuote(ctx context.Context, req *quotev1.GetQuoteRequest) (*quotev1.GetQuoteResponse, error) {
+	guardName := "ZenQuotes"
+
 	// Name the Stanza Guard which protects this workflow
-	stz := stanza.Guard(ctx, "ZenQuotes")
+	stz := stanza.Guard(ctx, guardName)
 
 	// Check for and log any returned error messages
 	if stz.Error() != nil {
-		qs.log.Error("ZenQuotes", zap.Error(stz.Error()))
+		qs.log.Error(guardName, zap.Error(stz.Error()))
 	}
 
 	// 🚫 Stanza Guard has *blocked* this workflow, log the reason and return 429 status
 	if stz.Blocked() {
-		qs.log.Info(stz.BlockMessage(), zap.String("reason", stz.BlockReason()))
+		qs.log.Info(stz.BlockMessage(), zap.String("guard", guardName), zap.String("reason", stz.BlockReason()))
 		return nil, status.Error(codes.ResourceExhausted, stz.BlockMessage())
 	}
 
@@ -136,21 +139,18 @@ func main() {
 	go func() {
 		defer wg.Done()
 
-		// stanza.NewGrpcGuard(ctx, "ZenQuotes")
-		// guardOpts :=
-
 		// Create new gRPC server with logging and Stanza Guard middleware
 		srv = grpc.NewServer(
 			grpc.ConnectionTimeout(5*time.Second),
 			grpc.KeepaliveParams(keepalive.ServerParameters{MaxConnectionAge: 2 * time.Minute}),
 			grpc.ChainStreamInterceptor(
-				stanza.StreamServerInterceptor("RootGuard"),
 				logging.StreamServerInterceptor(zapInterceptor(logger), logOpts...),
+				stanza.StreamServerInterceptor("RootGuard", guardOpts),
 				recovery.StreamServerInterceptor(recoveryInterceptor(logger)),
 			),
 			grpc.ChainUnaryInterceptor(
-				stanza.UnaryServerInterceptor("RootGuard"),
 				logging.UnaryServerInterceptor(zapInterceptor(logger), logOpts...),
+				stanza.UnaryServerInterceptor("RootGuard", guardOpts),
 				recovery.UnaryServerInterceptor(recoveryInterceptor(logger)),
 			),
 		)

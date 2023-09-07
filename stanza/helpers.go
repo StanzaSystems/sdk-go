@@ -19,6 +19,7 @@ type GuardOpt struct {
 	Feature       string
 	PriorityBoost int32
 	DefaultWeight float32
+	MethodFilter  []string
 }
 
 type GuardRequest struct {
@@ -27,7 +28,7 @@ type GuardRequest struct {
 	Name    string
 	URL     string
 	Body    io.Reader
-	Opt     *GuardOpt
+	Opt     *GuardOpt // overrides OTEL baggage (if exists)
 }
 
 // HttpGet is a helper function to Guard an outbound HTTP GET
@@ -51,23 +52,25 @@ func HttpPost(req GuardRequest) (*http.Response, error) {
 }
 
 // UnaryServerInterceptor is a helper function to Guard an inbound grpc unary server
-func UnaryServerInterceptor(guardName string) grpc.UnaryServerInterceptor {
+func UnaryServerInterceptor(guardName string, opts ...GuardOpt) grpc.UnaryServerInterceptor {
 	h, err := grpchandler.NewInboundHandler()
 	if err != nil {
 		logging.Error(err)
 		return nil
 	}
-	return h.NewUnaryServerInterceptor(guardName)
+	methodFilter, featureName, boost, weight := opt(opts)
+	return h.NewUnaryServerInterceptor(methodFilter, guardName, featureName, boost, weight)
 }
 
 // StreamServerInterceptor is a helper function to Guard an inbound grpc streaming server
-func StreamServerInterceptor(guardName string) grpc.StreamServerInterceptor {
+func StreamServerInterceptor(guardName string, opts ...GuardOpt) grpc.StreamServerInterceptor {
 	h, err := grpchandler.NewInboundHandler()
 	if err != nil {
 		logging.Error(err)
 		return nil
 	}
-	return h.NewStreamServerInterceptor(guardName)
+	methodFilter, featureName, boost, weight := opt(opts)
+	return h.NewStreamServerInterceptor(methodFilter, guardName, featureName, boost, weight)
 }
 
 // Guard is a helper function to Guard any arbitrary block of code
@@ -85,6 +88,20 @@ func Guard(ctx context.Context, name string) *handlers.Guard {
 	ctx, span := h.Tracer().Start(ctx, name, opts...)
 	defer span.End()
 	return h.NewGuard(ctx, span, name, []string{})
+}
+
+func opt(opts []GuardOpt) ([]string, string, int32, float32) {
+	mf := []string{}
+	fn := ""
+	pb := int32(0)
+	dw := float32(0)
+	if len(opts) == 1 {
+		mf = opts[0].MethodFilter
+		fn = opts[0].Feature
+		pb = opts[0].PriorityBoost
+		dw = opts[0].DefaultWeight
+	}
+	return mf, fn, pb, dw
 }
 
 func ctx(req GuardRequest) context.Context {
