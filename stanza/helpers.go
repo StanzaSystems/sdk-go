@@ -8,6 +8,7 @@ import (
 
 	"github.com/StanzaSystems/sdk-go/handlers"
 	"github.com/StanzaSystems/sdk-go/handlers/grpchandler"
+	"github.com/StanzaSystems/sdk-go/handlers/httphandler"
 	"github.com/StanzaSystems/sdk-go/keys"
 	"github.com/StanzaSystems/sdk-go/logging"
 
@@ -19,7 +20,6 @@ type GuardOpt struct {
 	Feature       string
 	PriorityBoost int32
 	DefaultWeight float32
-	MethodFilter  []string
 }
 
 type GuardRequest struct {
@@ -29,6 +29,25 @@ type GuardRequest struct {
 	URL     string
 	Body    io.Reader
 	Opt     *GuardOpt // overrides OTEL baggage (if exists)
+}
+
+// HttpServer is a helper function to Guard inbound HTTP requests
+func HttpServer(guardName string, opts ...GuardOpt) (*httphandler.InboundHandler, error) {
+	featureName, boost, weight := opt(opts...)
+	return NewHttpInboundHandler(guardName, &featureName, &boost, &weight)
+}
+
+func GuardHandler(next http.Handler, guardName string, opts ...GuardOpt) http.Handler {
+	featureName, boost, weight := opt(opts...)
+	h, err := NewHttpInboundHandler(guardName, &featureName, &boost, &weight)
+	if err != nil {
+		logging.Error(fmt.Errorf("no HTTP inbound handler, failing open"))
+		if h != nil {
+			h.FailOpen(context.Background())
+		}
+		return next
+	}
+	return h.Guard(next)
 }
 
 // HttpGet is a helper function to Guard an outbound HTTP GET
@@ -53,24 +72,24 @@ func HttpPost(req GuardRequest) (*http.Response, error) {
 
 // UnaryServerInterceptor is a helper function to Guard an inbound grpc unary server
 func UnaryServerInterceptor(guardName string, opts ...GuardOpt) grpc.UnaryServerInterceptor {
-	h, err := grpchandler.NewInboundHandler()
+	featureName, boost, weight := opt(opts...)
+	h, err := grpchandler.NewInboundHandler(guardName, &featureName, &boost, &weight)
 	if err != nil {
 		logging.Error(err)
 		return nil
 	}
-	methodFilter, featureName, boost, weight := opt(opts)
-	return h.NewUnaryServerInterceptor(methodFilter, guardName, featureName, boost, weight)
+	return h.NewUnaryServerInterceptor()
 }
 
 // StreamServerInterceptor is a helper function to Guard an inbound grpc streaming server
 func StreamServerInterceptor(guardName string, opts ...GuardOpt) grpc.StreamServerInterceptor {
-	h, err := grpchandler.NewInboundHandler()
+	featureName, boost, weight := opt(opts...)
+	h, err := grpchandler.NewInboundHandler(guardName, &featureName, &boost, &weight)
 	if err != nil {
 		logging.Error(err)
 		return nil
 	}
-	methodFilter, featureName, boost, weight := opt(opts)
-	return h.NewStreamServerInterceptor(methodFilter, guardName, featureName, boost, weight)
+	return h.NewStreamServerInterceptor()
 }
 
 // Guard is a helper function to Guard any arbitrary block of code
@@ -90,18 +109,11 @@ func Guard(ctx context.Context, name string) *handlers.Guard {
 	return h.NewGuard(ctx, span, name, []string{})
 }
 
-func opt(opts []GuardOpt) ([]string, string, int32, float32) {
-	mf := []string{}
-	fn := ""
-	pb := int32(0)
-	dw := float32(0)
-	if len(opts) == 1 {
-		mf = opts[0].MethodFilter
-		fn = opts[0].Feature
-		pb = opts[0].PriorityBoost
-		dw = opts[0].DefaultWeight
+func opt(opts ...GuardOpt) (string, int32, float32) {
+	if len(opts) != 1 {
+		opts = make([]GuardOpt, 1)
 	}
-	return mf, fn, pb, dw
+	return opts[0].Feature, opts[0].PriorityBoost, opts[0].DefaultWeight
 }
 
 func ctx(req GuardRequest) context.Context {

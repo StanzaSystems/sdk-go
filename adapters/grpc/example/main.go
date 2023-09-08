@@ -39,8 +39,6 @@ var (
 	port         int
 	srv          = grpc.NewServer()
 	healthSrv    = health.NewServer()
-	logOpts      = []logging.Option{logging.WithLogOnEvents(logging.FinishCall)}
-	guardOpts    = stanza.GuardOpt{MethodFilter: []string{"/quote.v1.QuoteService/GetQuote"}}
 
 	name      = "fiber-example" // TODO: add new service (this isn't "fiber")
 	release   = "1.0.0"
@@ -140,6 +138,13 @@ func main() {
 	go func() {
 		defer wg.Done()
 
+		logOpts := []logging.Option{logging.WithLogOnEvents(logging.FinishCall)}
+		guardOpts := stanza.GuardOpt{
+			// Feature:       "test", // Set Feature (overrides values sent via OTEL baggage)
+			// PriorityBoost: -1,     // Set PriorityBoost (overrides values sent via OTEL baggage)
+			// DefaultWeight: 0.5,    // Set DefaultWeight (can't be sent via OTEL baggage)
+		}
+
 		// Create new gRPC server with logging and Stanza Guard middleware
 		srv = grpc.NewServer(
 			grpc.ConnectionTimeout(5*time.Second),
@@ -148,15 +153,19 @@ func main() {
 				recovery.StreamServerInterceptor(recoveryInterceptor(logger)),
 				selector.StreamServerInterceptor(
 					logging.StreamServerInterceptor(zapInterceptor(logger), logOpts...),
-					selector.MatchFunc(logSkip)),
-				stanza.StreamServerInterceptor("RootGuard", guardOpts),
+					selector.MatchFunc(serviceMatcher)),
+				selector.StreamServerInterceptor(
+					stanza.StreamServerInterceptor("RootGuard", guardOpts),
+					selector.MatchFunc(serviceMatcher)),
 			),
 			grpc.ChainUnaryInterceptor(
 				recovery.UnaryServerInterceptor(recoveryInterceptor(logger)),
 				selector.UnaryServerInterceptor(
 					logging.UnaryServerInterceptor(zapInterceptor(logger), logOpts...),
-					selector.MatchFunc(logSkip)),
-				stanza.UnaryServerInterceptor("RootGuard", guardOpts),
+					selector.MatchFunc(serviceMatcher)),
+				selector.UnaryServerInterceptor(
+					stanza.UnaryServerInterceptor("RootGuard", guardOpts),
+					selector.MatchFunc(serviceMatcher)),
 			),
 		)
 

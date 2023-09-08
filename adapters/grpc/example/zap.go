@@ -68,7 +68,7 @@ func zapInterceptor(l *zap.Logger) logging.Logger {
 	})
 }
 
-func logSkip(_ context.Context, c interceptors.CallMeta) bool {
+func serviceMatcher(_ context.Context, c interceptors.CallMeta) bool {
 	return c.Service == "quote.v1.QuoteService"
 }
 

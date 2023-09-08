@@ -2,9 +2,9 @@ package grpchandler
 
 import (
 	"context"
-	"slices"
 
 	"github.com/StanzaSystems/sdk-go/handlers"
+	"github.com/StanzaSystems/sdk-go/keys"
 
 	otel_codes "go.opentelemetry.io/otel/codes"
 	semconv "go.opentelemetry.io/otel/semconv/v1.20.0"
@@ -17,27 +17,27 @@ import (
 
 type InboundHandler struct {
 	*handlers.InboundHandler
+	guardName     string
+	featureName   *string  // overrides request baggage
+	priorityBoost *int32   // overrides request baggage
+	defaultWeight *float32 // overrides request baggage
 }
 
 // NewInboundHandler returns a new InboundHandler
-func NewInboundHandler() (*InboundHandler, error) {
+func NewInboundHandler(gn string, fn *string, pb *int32, dw *float32) (*InboundHandler, error) {
 	h, err := handlers.NewInboundHandler()
 	if err != nil {
 		return nil, err
 	}
-	return &InboundHandler{h}, nil
+	return &InboundHandler{h, gn, fn, pb, dw}, nil
 }
 
-func (h *InboundHandler) NewUnaryServerInterceptor(methodFilter []string, guardName, featureName string, prioBoost int32, defWeight float32) grpc.UnaryServerInterceptor {
+func (h *InboundHandler) NewUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		if !slices.Contains(methodFilter, info.FullMethod) {
-			return handler(ctx, req)
-		}
-
-		ctx, tokens, span := h.start(ctx, info.FullMethod, featureName, prioBoost, defWeight)
+		ctx, tokens, span := h.start(ctx, info.FullMethod, *h.featureName, *h.priorityBoost, *h.defaultWeight)
 		defer span.End()
 
-		if guard := h.NewGuard(ctx, span, guardName, tokens); guard.Blocked() {
+		if guard := h.NewGuard(ctx, span, h.guardName, tokens); guard.Blocked() {
 			return nil, h.blocked(span, guard)
 		} else {
 			next, err := handler(ctx, req)
@@ -46,16 +46,12 @@ func (h *InboundHandler) NewUnaryServerInterceptor(methodFilter []string, guardN
 	}
 }
 
-func (h *InboundHandler) NewStreamServerInterceptor(methodFilter []string, guardName, featureName string, prioBoost int32, defWeight float32) grpc.StreamServerInterceptor {
+func (h *InboundHandler) NewStreamServerInterceptor() grpc.StreamServerInterceptor {
 	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		if !slices.Contains(methodFilter, info.FullMethod) {
-			return handler(srv, stream)
-		}
-
-		ctx, tokens, span := h.start(stream.Context(), info.FullMethod, featureName, prioBoost, defWeight)
+		ctx, tokens, span := h.start(stream.Context(), info.FullMethod, *h.featureName, *h.priorityBoost, *h.defaultWeight)
 		defer span.End()
 
-		if guard := h.NewGuard(ctx, span, guardName, tokens); guard.Blocked() {
+		if guard := h.NewGuard(ctx, span, h.guardName, tokens); guard.Blocked() {
 			return h.blocked(span, guard)
 		} else {
 			err := handler(srv, stream)
@@ -70,6 +66,11 @@ func (h *InboundHandler) start(ctx context.Context, spanName, featureName string
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		md = md.Copy()
 		tokens = md.Get("x-stanza-token")
+
+		ctx = context.WithValue(ctx, keys.StanzaFeatureNameKey, featureName)
+		ctx = context.WithValue(ctx, keys.StanzaPriorityBoostKey, prioBoost)
+		ctx = context.WithValue(ctx, keys.StanzaDefaultWeightKey, defWeight)
+
 		// blunt force "header" propagation
 		// TODO: replace with OTEL propagator extract/inject
 		ctx = metadata.NewOutgoingContext(ctx, md)
@@ -86,13 +87,11 @@ func (h *InboundHandler) start(ctx context.Context, spanName, featureName string
 }
 
 func (h *InboundHandler) allowed(span trace.Span, guard *handlers.Guard, err error) error {
+	s, _ := status.FromError(err)
+	span.SetAttributes(semconv.RPCGRPCStatusCodeKey.Int64(int64(s.Code())))
+
 	if err != nil {
-		s, ok := status.FromError(err)
-		if ok {
-			span.SetAttributes(semconv.RPCGRPCStatusCodeKey.Int64(int64(s.Code())))
-		} else {
-			span.SetStatus(otel_codes.Error, err.Error())
-		}
+		span.SetStatus(otel_codes.Error, err.Error())
 		span.RecordError(err)
 		guard.End(guard.Failure)
 	} else {
