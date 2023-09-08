@@ -48,9 +48,10 @@ func (h *InboundHandler) Guard(next http.Handler) http.Handler {
 		}
 
 		m := httpsnoop.CaptureMetrics(next, w, r.WithContext(ctx))
+		code, msg := h.HTTPServerStatus(m.Code)
 		span.SetAttributes(semconv.HTTPStatusCode(m.Code))
-		span.SetStatus(h.HTTPServerStatus(m.Code))
-		if m.Code != http.StatusOK {
+		span.SetStatus(code, msg)
+		if code == codes.Error {
 			guard.End(guard.Failure)
 		} else {
 			guard.End(guard.Success)
@@ -86,6 +87,9 @@ func (h *InboundHandler) Start(r *http.Request) (context.Context, trace.Span, []
 func (h *InboundHandler) HTTPServerStatus(code int) (codes.Code, string) {
 	if code < 100 || code >= 600 {
 		return codes.Error, fmt.Sprintf("Invalid HTTP status code %d", code)
+	}
+	if code >= 200 && code <= 299 {
+		return codes.Ok, ""
 	}
 	if code >= 500 {
 		return codes.Error, ""
