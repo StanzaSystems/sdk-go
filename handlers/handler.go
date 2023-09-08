@@ -10,6 +10,7 @@ import (
 	"github.com/StanzaSystems/sdk-go/otel"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -140,4 +141,12 @@ func (h *Handler) SentinelEnabled() bool {
 
 func (h *Handler) QuotaServiceClient() hubv1.QuotaServiceClient {
 	return global.QuotaServiceClient()
+}
+
+func (h *Handler) FailOpen(ctx context.Context) {
+	if h.meter != nil {
+		h.meter.AllowedSuccessCount.Add(ctx, 1,
+			[]metric.AddOption{metric.WithAttributes(append(h.attr,
+				h.ReasonFailOpen())...)}...)
+	}
 }

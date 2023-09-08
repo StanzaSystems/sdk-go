@@ -6,8 +6,6 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/StanzaSystems/sdk-go/handlers/httphandler"
-	"github.com/StanzaSystems/sdk-go/keys"
 	"github.com/StanzaSystems/sdk-go/logging"
 	"github.com/StanzaSystems/sdk-go/stanza"
 
@@ -15,10 +13,8 @@ import (
 	"github.com/valyala/fasthttp/fasthttpadaptor"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/semconv/v1.20.0/httpconv"
-	"go.opentelemetry.io/otel/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.20.0"
 )
 
 // Client defines options for a new Stanza Client
@@ -27,12 +23,11 @@ type Client struct {
 	APIKey string // customer generated API key
 
 	// Optional
-	Name        string // defines applications name
-	Release     string // defines applications version
-	Environment string // defines applications environment
-	StanzaHub   string // host:port (ipv4, ipv6, or resolvable hostname)
-
-	Guard []string // prefetch config for these guards
+	Name        string   // defines applications name
+	Release     string   // defines applications version
+	Environment string   // defines applications environment
+	StanzaHub   string   // host:port (ipv4, ipv6, or resolvable hostname)
+	Guard       []string // prefetch config for these guards
 }
 
 // Optional arguments
@@ -43,49 +38,47 @@ type Opt struct {
 	DefaultWeight float32
 }
 
-var (
-	inboundHandler *httphandler.InboundHandler = nil
-)
-
 // New creates a new fiberstanza middleware fiber.Handler
 func New(guardName string, opts ...Opt) fiber.Handler {
-	if inboundHandler == nil {
-		h, err := stanza.NewHttpInboundHandler()
-		if err != nil {
-			logging.Error(fmt.Errorf("failed to create HTTP inbound handler: %v", err))
-			return func(c *fiber.Ctx) error {
-				// with no InboundHandler there is nothing we can do but fail open
-				logging.Error(fmt.Errorf("no HTTP inbound handler, failing open"))
-				return c.Next()
+	h, err := stanza.HttpServer(guardName, guardOpts(opts...))
+	if err != nil {
+		logging.Error(fmt.Errorf("failed to create HTTP inbound handler: %v", err))
+		return func(c *fiber.Ctx) error {
+			// with no InboundHandler there is nothing we can do but fail open
+			logging.Error(fmt.Errorf("no HTTP inbound handler, failing open"))
+			if h != nil {
+				h.FailOpen(c.UserContext())
 			}
+			return c.Next()
 		}
-		inboundHandler = h
 	}
-	h := inboundHandler
 
 	return func(c *fiber.Ctx) error {
+		if h == nil {
+			// with no InboundHandler there is nothing we can do but fail open
+			logging.Error(fmt.Errorf("no HTTP inbound handler, failing open"))
+			return c.Next()
+		}
+
 		var req http.Request
 		if err := fasthttpadaptor.ConvertRequest(c.Context(), &req, true); err != nil {
+			// if we can't convert from fasthttp to http.Request, log the error and fail open
 			logging.Error(fmt.Errorf("failed to convert request from fasthttp: %v", err))
-			h.Meter().AllowedSuccessCount.Add(c.UserContext(), 1,
-				[]metric.AddOption{metric.WithAttributes(append(h.Attributes(),
-					h.ReasonFailOpen())...)}...)
-			return c.Next() // log error and fail open
+			if h != nil {
+				h.FailOpen(c.UserContext())
+			}
+			return c.Next()
 		}
 
-		ctx := h.Propagator().Extract(req.Context(), propagation.HeaderCarrier(req.Header))
-		traceOpts := []trace.SpanStartOption{
-			trace.WithAttributes(httpconv.ServerRequest("", &req)...),
-			trace.WithSpanKind(trace.SpanKindServer),
-		}
-		ctx, span := h.Tracer().Start(ctx, guardName, traceOpts...)
+		ctx, span, tokens := h.Start(&req)
 		defer span.End()
 
-		guard := h.NewGuard(addKeys(ctx, opts...), span, guardName, req.Header.Values("x-stanza-token"))
+		guard := h.NewGuard(ctx, span, guardName, tokens)
 		c.SetUserContext(guard.Context())
 
 		// Stanza Blocked
 		if guard.Blocked() {
+			span.SetAttributes(semconv.HTTPStatusCode(http.StatusTooManyRequests))
 			span.SetStatus(codes.Error, guard.BlockMessage())
 			c.SendString(guard.BlockMessage())
 			return c.SendStatus(http.StatusTooManyRequests)
@@ -93,15 +86,18 @@ func New(guardName string, opts ...Opt) fiber.Handler {
 
 		// Stanza Allowed
 		err := c.Next() // intercept c.Next() for guard.End() status
+		span.SetAttributes(semconv.HTTPStatusCode(c.Response().StatusCode()))
+		span.SetStatus(h.HTTPServerStatus(c.Response().StatusCode()))
 		if err != nil {
 			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
+			// invokes the registered HTTP error handler
+			// to get the correct response status code
+			_ = c.App().Config().ErrorHandler(c, err)
 			guard.End(guard.Failure)
 		} else {
-			span.SetStatus(codes.Ok, "OK")
 			guard.End(guard.Success)
 		}
-		return err
+		return nil
 	}
 }
 
@@ -136,30 +132,24 @@ func Guard(c *fiber.Ctx, name string, url string, opts ...Opt) stanza.GuardReque
 		URL:     url,
 	}
 	if len(opts) == 1 {
+		if opts[0].Headers == nil {
+			opts[0].Headers = make(http.Header)
+		}
 		guardRequest.Headers = opts[0].Headers
-		guardRequest.Opt.Feature = opts[0].Feature
-		guardRequest.Opt.PriorityBoost = opts[0].PriorityBoost
-		guardRequest.Opt.DefaultWeight = opts[0].DefaultWeight
+		guardRequest.Opt = &stanza.GuardOpt{
+			Feature:       opts[0].Feature,
+			PriorityBoost: opts[0].PriorityBoost,
+			DefaultWeight: opts[0].DefaultWeight,
+		}
 	}
 	return guardRequest
 }
 
-func addKeys(ctx context.Context, opts ...Opt) context.Context {
+func guardOpts(opts ...Opt) (guardOpt stanza.GuardOpt) {
 	if len(opts) == 1 {
-		if opts[0].Feature != "" {
-			ctx = context.WithValue(ctx, keys.StanzaFeatureNameKey, opts[0].Feature)
-		}
-		if opts[0].PriorityBoost != 0 {
-			ctx = context.WithValue(ctx, keys.StanzaPriorityBoostKey, opts[0].PriorityBoost)
-		}
-		if opts[0].DefaultWeight != 0 {
-			ctx = context.WithValue(ctx, keys.StanzaDefaultWeightKey, opts[0].DefaultWeight)
-		}
-		if opts[0].Headers != nil {
-			ctx = context.WithValue(ctx, keys.OutboundHeadersKey, opts[0].Headers)
-		} else {
-			ctx = context.WithValue(ctx, keys.OutboundHeadersKey, make(http.Header))
-		}
+		guardOpt.Feature = opts[0].Feature
+		guardOpt.PriorityBoost = opts[0].PriorityBoost
+		guardOpt.DefaultWeight = opts[0].DefaultWeight
 	}
-	return ctx
+	return guardOpt
 }

@@ -11,8 +11,8 @@ func NewHttpOutboundHandler() (*httphandler.OutboundHandler, error) {
 }
 
 // HTTP Server
-func NewHttpInboundHandler() (*httphandler.InboundHandler, error) {
-	return httphandler.NewInboundHandler()
+func NewHttpInboundHandler(gn string, fn *string, pb *int32, dw *float32) (*httphandler.InboundHandler, error) {
+	return httphandler.NewInboundHandler(gn, fn, pb, dw)
 }
 
 // gRPC Client
@@ -21,6 +21,6 @@ func NewGrpcOutboundHandler() (*grpchandler.OutboundHandler, error) {
 }
 
 // gRPC Server
-func NewGrpcInboundHandler() (*grpchandler.InboundHandler, error) {
-	return grpchandler.NewInboundHandler()
+func NewGrpcInboundHandler(gn string, fn *string, pb *int32, dw *float32) (*grpchandler.InboundHandler, error) {
+	return grpchandler.NewInboundHandler(gn, fn, pb, dw)
 }

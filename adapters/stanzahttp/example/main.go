@@ -69,7 +69,7 @@ func main() {
 			Environment: env,
 
 			// optionally prefetch Guard configs
-			Guard: []string{"ZenQuotes"},
+			Guard: []string{"RootGuard", "ZenQuotes"},
 		})
 	defer stanzaExit()
 	if stanzaInitErr != nil {
@@ -77,14 +77,16 @@ func main() {
 		os.Exit(-1)
 	}
 
-	// healthcheck
-	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+	// Create a new HTTP server
+	r := http.NewServeMux()
+
+	// Add a healthcheck endpoint
+	r.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, "OK")
 	})
 
 	// Use ZenQuotes to get a random quote
-	http.HandleFunc("/quote", func(w http.ResponseWriter, r *http.Request) {
-
+	r.HandleFunc("/quote", func(w http.ResponseWriter, r *http.Request) {
 		// Name the Stanza Guard which protects this workflow
 		stz := stanza.Guard(ctx, "ZenQuotes")
 
@@ -118,7 +120,10 @@ func main() {
 		http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
 	})
 
-	go http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
+	go http.ListenAndServe(
+		fmt.Sprintf(":%d", port),
+		stanza.GuardHandler(r, "RootGuard"), // Add a Stanza Guard as HTTP middleware for ALL requests!
+	)
 
 	// GRACEFUL SHUTDOWN
 	// - watches for a "Done" signal to the context we setup at the start
