@@ -47,7 +47,7 @@ func GuardHandler(next http.Handler, guardName string, opts ...GuardOpt) http.Ha
 		}
 		return next
 	}
-	return h.Guard(next)
+	return h.GuardHandler(next)
 }
 
 // HttpGet is a helper function to Guard an outbound HTTP GET
@@ -98,7 +98,7 @@ func Guard(ctx context.Context, name string) *handlers.Guard {
 	if err != nil {
 		err = fmt.Errorf("failed to create guard handler: %s", err)
 		logging.Error(err)
-		return h.NewGuardError(ctx, nil, nil, err)
+		return h.NewGuard(ctx, nil, nil, err)
 	}
 	opts := []trace.SpanStartOption{
 		// WithAttributes?
@@ -106,7 +106,7 @@ func Guard(ctx context.Context, name string) *handlers.Guard {
 	}
 	ctx, span := h.Tracer().Start(ctx, name, opts...)
 	defer span.End()
-	return h.NewGuard(ctx, span, name, []string{})
+	return h.Guard(ctx, span, name, []string{})
 }
 
 func opt(opts ...GuardOpt) (string, int32, float32) {

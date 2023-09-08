@@ -42,6 +42,7 @@ func (h *OutboundHandler) Post(ctx context.Context, guardName, url string, body 
 // Request wraps a HTTP request of the given HTTP method
 func (h *OutboundHandler) Request(ctx context.Context, guardName, httpMethod, url string, body io.Reader) (*http.Response, error) {
 	if req, err := http.NewRequestWithContext(ctx, httpMethod, url, body); err != nil {
+		h.FailOpen(ctx)
 		return nil, err // FAIL OPEN!
 	} else {
 		ctx, span := h.Tracer().Start(
@@ -52,7 +53,7 @@ func (h *OutboundHandler) Request(ctx context.Context, guardName, httpMethod, ur
 		)
 		defer span.End()
 
-		guard := h.NewGuard(ctx, span, guardName, []string{})
+		guard := h.Guard(ctx, span, guardName, []string{})
 
 		// Stanza Blocked
 		if guard.Blocked() {

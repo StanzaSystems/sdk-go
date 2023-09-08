@@ -18,9 +18,9 @@ import (
 type InboundHandler struct {
 	*handlers.InboundHandler
 	guardName     string
-	featureName   *string  // overrides request baggage
-	priorityBoost *int32   // overrides request baggage
-	defaultWeight *float32 // overrides request baggage
+	featureName   *string // overrides request baggage (if any)
+	priorityBoost *int32  // overrides request baggage (if any)
+	defaultWeight *float32
 }
 
 // NewInboundHandler returns a new InboundHandler
@@ -37,7 +37,7 @@ func (h *InboundHandler) NewUnaryServerInterceptor() grpc.UnaryServerInterceptor
 		ctx, tokens, span := h.start(ctx, info.FullMethod, *h.featureName, *h.priorityBoost, *h.defaultWeight)
 		defer span.End()
 
-		if guard := h.NewGuard(ctx, span, h.guardName, tokens); guard.Blocked() {
+		if guard := h.Guard(ctx, span, h.guardName, tokens); guard.Blocked() {
 			return nil, h.blocked(span, guard)
 		} else {
 			next, err := handler(ctx, req)
@@ -51,7 +51,7 @@ func (h *InboundHandler) NewStreamServerInterceptor() grpc.StreamServerIntercept
 		ctx, tokens, span := h.start(stream.Context(), info.FullMethod, *h.featureName, *h.priorityBoost, *h.defaultWeight)
 		defer span.End()
 
-		if guard := h.NewGuard(ctx, span, h.guardName, tokens); guard.Blocked() {
+		if guard := h.Guard(ctx, span, h.guardName, tokens); guard.Blocked() {
 			return h.blocked(span, guard)
 		} else {
 			err := handler(srv, stream)

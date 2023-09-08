@@ -19,9 +19,9 @@ import (
 type InboundHandler struct {
 	*handlers.InboundHandler
 	guardName     string
-	featureName   *string  // overrides request baggage
-	priorityBoost *int32   // overrides request baggage
-	defaultWeight *float32 // overrides request baggage
+	featureName   *string // overrides request baggage (if any)
+	priorityBoost *int32  // overrides request baggage (if any)
+	defaultWeight *float32
 }
 
 // NewInboundHandler returns a new InboundHandler
@@ -33,13 +33,13 @@ func NewInboundHandler(gn string, fn *string, pb *int32, dw *float32) (*InboundH
 	return &InboundHandler{h, gn, fn, pb, dw}, nil
 }
 
-// Guard implements HTTP handler (middleware) for adding a Stanza Guard to an HTTP Server
-func (h *InboundHandler) Guard(next http.Handler) http.Handler {
+// GuardHandler implements HTTP handler (middleware) for adding a Stanza Guard to an HTTP Server
+func (h *InboundHandler) GuardHandler(next http.Handler) http.Handler {
 	fn := func(w http.ResponseWriter, r *http.Request) {
 		ctx, span, tokens := h.Start(r)
 		defer span.End()
 
-		guard := h.NewGuard(ctx, span, h.guardName, tokens)
+		guard := h.Guard(ctx, span, h.guardName, tokens)
 		if guard.Blocked() {
 			span.SetStatus(codes.Error, guard.BlockMessage())
 			w.WriteHeader(http.StatusTooManyRequests)

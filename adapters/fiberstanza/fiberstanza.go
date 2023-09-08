@@ -73,7 +73,7 @@ func New(guardName string, opts ...Opt) fiber.Handler {
 		ctx, span, tokens := h.Start(&req)
 		defer span.End()
 
-		guard := h.NewGuard(ctx, span, guardName, tokens)
+		guard := h.Guard(ctx, span, guardName, tokens)
 		c.SetUserContext(guard.Context())
 
 		// Stanza Blocked

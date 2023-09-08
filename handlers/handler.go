@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/global"
 	"github.com/StanzaSystems/sdk-go/hub"
 	"github.com/StanzaSystems/sdk-go/otel"
@@ -37,7 +36,7 @@ func NewHandler() (*Handler, error) {
 	}, err
 }
 
-func (h *Handler) NewGuard(ctx context.Context, span trace.Span, name string, tokens []string) *Guard {
+func (h *Handler) Guard(ctx context.Context, span trace.Span, name string, tokens []string) *Guard {
 	if span == nil {
 		// Default OTEL Tracer if none specified
 		opts := []trace.SpanStartOption{
@@ -49,11 +48,11 @@ func (h *Handler) NewGuard(ctx context.Context, span trace.Span, name string, to
 
 	tlr := hub.NewTokenLeaseRequest(ctx, name)
 	attr := []attribute.KeyValue{
-		h.GuardKey(tlr.Selector.GetGuardName()),
-		h.FeatureKey(tlr.Selector.GetFeatureName()),
+		guardKey.String(tlr.Selector.GetGuardName()),
+		featureKey.String(tlr.Selector.GetFeatureName()),
 	}
 
-	g := h.NewGuardError(ctx, span, attr, nil)
+	g := h.NewGuard(ctx, span, attr, nil)
 	if h.SentinelEnabled() {
 		g.checkSentinel(name)
 		if g.sentinelBlock != nil {
@@ -71,13 +70,14 @@ func (h *Handler) NewGuard(ctx context.Context, span trace.Span, name string, to
 	return g
 }
 
-func (h *Handler) NewGuardError(ctx context.Context, span trace.Span, attr []attribute.KeyValue, err error) *Guard {
+func (h *Handler) NewGuard(ctx context.Context, span trace.Span, attr []attribute.KeyValue, err error) *Guard {
+	attr = append(attr, customerIdKey.String(global.GetCustomerID()))
 	return &Guard{
 		ctx:   ctx,
 		start: time.Time{},
 		meter: h.meter,
 		span:  span,
-		attr:  append(h.Attributes(), attr...),
+		attr:  append(h.attr, attr...),
 		err:   err,
 
 		Success:     GuardSuccess,
@@ -89,10 +89,7 @@ func (h *Handler) NewGuardError(ctx context.Context, span trace.Span, attr []att
 	}
 }
 
-func (h *Handler) Meter() *Meter {
-	return h.meter
-}
-
+// OTEL Helper Functions //
 func (h *Handler) Tracer() trace.Tracer {
 	return h.tracer
 }
@@ -101,52 +98,21 @@ func (h *Handler) Propagator() propagation.TextMapPropagator {
 	return otel.GetTextMapPropagator()
 }
 
-// OTEL Attribute Helper Functions //
-func (h *Handler) Attributes() []attribute.KeyValue {
-	return append(h.attr, customerIdKey.String(global.GetCustomerID()))
-}
-
-func (h *Handler) FeatureKey(feat string) attribute.KeyValue {
-	return featureKey.String(feat)
-}
-
-func (h *Handler) GuardKey(guard string) attribute.KeyValue {
-	return guardKey.String(guard)
-}
-
-func (h *Handler) ReasonFailOpen() attribute.KeyValue {
-	return reason(ReasonFailOpen)
+func (h *Handler) FailOpen(ctx context.Context) {
+	if h.meter != nil {
+		h.meter.AllowedCount.Add(ctx, 1,
+			[]metric.AddOption{metric.WithAttributes(append(h.attr,
+				reason(ReasonFailOpen))...)}...)
+		h.meter.AllowedUnknownCount.Add(ctx, 1,
+			[]metric.AddOption{metric.WithAttributes(h.attr...)}...)
+	}
 }
 
 // Global Helper Functions //
-func (h *Handler) APIKey() string {
-	return global.GetServiceKey()
-}
-
-func (h *Handler) ClientID() string {
-	return global.GetClientID()
-}
-
-func (h *Handler) Environment() string {
-	return global.GetServiceEnvironment()
-}
-
 func (h *Handler) OTELEnabled() bool {
 	return global.OtelEnabled()
 }
 
 func (h *Handler) SentinelEnabled() bool {
 	return global.SentinelEnabled()
-}
-
-func (h *Handler) QuotaServiceClient() hubv1.QuotaServiceClient {
-	return global.QuotaServiceClient()
-}
-
-func (h *Handler) FailOpen(ctx context.Context) {
-	if h.meter != nil {
-		h.meter.AllowedSuccessCount.Add(ctx, 1,
-			[]metric.AddOption{metric.WithAttributes(append(h.attr,
-				h.ReasonFailOpen())...)}...)
-	}
 }
