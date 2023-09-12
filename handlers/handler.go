@@ -17,7 +17,7 @@ import (
 type Handler struct {
 	guardName     string
 	featureName   *string // overrides request baggage (if any)
-	priorityBoost *int32  // overrides request baggage (if any)
+	priorityBoost *int32  // adds to request baggage (if any)
 	defaultWeight *float32
 	tracer        trace.Tracer
 	meter         *Meter

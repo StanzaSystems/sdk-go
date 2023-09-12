@@ -55,6 +55,8 @@ func GetPriorityBoost(ctx context.Context, pb *int32) (context.Context, *int32) 
 		if boostInt, err := strconv.Atoi(ctx.Value(keys.OtStzBoostKey).(string)); err == nil {
 			boost = proto.Int32(*pb + int32(boostInt))
 		}
+	} else if pb != nil {
+		boost = pb
 	}
 	if boost != nil {
 		boostStr := strconv.Itoa(int(*boost))

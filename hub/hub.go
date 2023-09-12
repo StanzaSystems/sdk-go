@@ -219,11 +219,12 @@ func consumeLease(guard string, lease *hubv1.TokenLease) {
 	consumedLeasesLock.Lock()
 	consumedLeases = append(consumedLeases, lease.GetToken())
 	consumedLeasesLock.Unlock()
-	logging.Debug("consumed quota lease",
-		"guard", guard,
-		"feature", lease.Feature,
-		"weight", lease.Weight,
-		"priority_boost", lease.PriorityBoost)
+	// TODO: Fix hub bug (feature, weight, and priority_boost aren't optional)
+	// logging.Debug("consumed quota lease",
+	// 	"guard", guard,
+	// 	"feature", lease.Feature,
+	// 	"weight", lease.Weight,
+	// 	"priority_boost", lease.PriorityBoost)
 }
 
 func batchTokenConsumer() {
