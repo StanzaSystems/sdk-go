@@ -69,15 +69,13 @@ func NewTokenLeaseRequest(ctx context.Context, gn string, fn *string, pb *int32,
 	}
 
 	// Inspect Baggage and Headers for Feature, propagate through context if found
-	var feat *string
-	ctx, feat = otel.GetFeature(ctx, fn)
+	ctx, feat := otel.GetFeature(ctx, fn)
 	if feat != nil {
 		tlr.Selector.FeatureName = feat
 	}
 
 	// Inspect Baggage and Headers for PriorityBoost, propagate through context if found
-	var boost *int32
-	ctx, boost = otel.GetPriorityBoost(ctx, pb)
+	ctx, boost := otel.GetPriorityBoost(ctx, pb)
 	if boost != nil {
 		tlr.PriorityBoost = boost
 	}
