@@ -6,8 +6,8 @@ import (
 )
 
 // HTTP Client
-func NewHttpOutboundHandler() (*httphandler.OutboundHandler, error) {
-	return httphandler.NewOutboundHandler()
+func NewHttpOutboundHandler(gn string, fn *string, pb *int32, dw *float32) (*httphandler.OutboundHandler, error) {
+	return httphandler.NewOutboundHandler(gn, fn, pb, dw)
 }
 
 // HTTP Server
@@ -16,8 +16,8 @@ func NewHttpInboundHandler(gn string, fn *string, pb *int32, dw *float32) (*http
 }
 
 // gRPC Client
-func NewGrpcOutboundHandler() (*grpchandler.OutboundHandler, error) {
-	return grpchandler.NewOutboundHandler()
+func NewGrpcOutboundHandler(gn string, fn *string, pb *int32, dw *float32) (*grpchandler.OutboundHandler, error) {
+	return grpchandler.NewOutboundHandler(gn, fn, pb, dw)
 }
 
 // gRPC Server

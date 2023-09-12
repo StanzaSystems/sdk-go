@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
@@ -136,13 +137,7 @@ func (g *Guard) checkQuota(ctx context.Context, tlr *hubv1.GetTokenLeaseRequest)
 		g.quotaMessage = "Stanza quota exhausted. Please try again later."
 		g.meter.BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
 		g.span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
-		logging.Debug("Stanza blocked",
-			"guard", tlr.GetSelector().GetGuardName(),
-			"feature", tlr.GetSelector().GetFeatureName(),
-			"default_weight", tlr.DefaultWeight,
-			"priority_boost", tlr.PriorityBoost,
-			"reason", g.quotaReason,
-		)
+		logging.Debug("Stanza blocked", tlrLogReason(tlr, g.quotaReason)...)
 		return
 	case hub.CheckQuotaAllowed:
 		attrWithReason = append(attrWithReason, reason(ReasonQuota))
@@ -159,6 +154,7 @@ func (g *Guard) checkQuota(ctx context.Context, tlr *hubv1.GetTokenLeaseRequest)
 		g.quotaStatus = GuardUnknown
 	}
 	g.span.AddEvent("Stanza allowed", trace.WithAttributes(attrWithReason...))
+	logging.Debug("Stanza allowed", tlrLogReason(tlr, g.quotaReason)...)
 	g.meter.AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
 }
 
@@ -189,5 +185,28 @@ func (g *Guard) checkToken(ctx context.Context, name string, tokens []string) {
 		g.quotaReason = reason(ReasonQuotaCheckDisabled).Value.AsString()
 	}
 	g.span.AddEvent("Stanza allowed", trace.WithAttributes(attrWithReason...))
+	logging.Debug("Stanza allowed",
+		"guard", name,
+		"reason", g.quotaReason,
+	)
 	g.meter.AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
+}
+
+func tlrLogReason(tlr *hubv1.GetTokenLeaseRequest, reason string) []interface{} {
+	resp := make([]interface{}, 0, 10)
+	if tlr != nil {
+		if tlr.Selector != nil {
+			resp = append(resp, "guard", tlr.GetSelector().GetGuardName())
+			if tlr.GetSelector().FeatureName != nil {
+				resp = append(resp, "feature", tlr.GetSelector().GetFeatureName())
+			}
+		}
+		if tlr.PriorityBoost != nil {
+			resp = append(resp, "priority_boost", fmt.Sprintf("%d", tlr.GetPriorityBoost()))
+		}
+		if tlr.DefaultWeight != nil {
+			resp = append(resp, "default_weight", fmt.Sprintf("%.2f", tlr.GetDefaultWeight()))
+		}
+	}
+	return append(resp, "reason", reason)
 }

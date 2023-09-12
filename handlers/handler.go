@@ -15,15 +15,23 @@ import (
 )
 
 type Handler struct {
-	tracer trace.Tracer
-	meter  *Meter
-	attr   []attribute.KeyValue
+	guardName     string
+	featureName   *string // overrides request baggage (if any)
+	priorityBoost *int32  // adds to request baggage (if any)
+	defaultWeight *float32
+	tracer        trace.Tracer
+	meter         *Meter
+	attr          []attribute.KeyValue
 }
 
-func NewHandler() (*Handler, error) {
+func NewHandler(gn string, fn *string, pb *int32, dw *float32) (*Handler, error) {
 	m, err := GetStanzaMeter()
 	return &Handler{
-		meter: m,
+		guardName:     gn,
+		featureName:   fn,
+		priorityBoost: pb,
+		defaultWeight: dw,
+		meter:         m,
 		tracer: otel.GetTracerProvider().Tracer(
 			global.InstrumentationName(),
 			global.InstrumentationTraceVersion(),
@@ -36,17 +44,17 @@ func NewHandler() (*Handler, error) {
 	}, err
 }
 
-func (h *Handler) Guard(ctx context.Context, span trace.Span, name string, tokens []string) *Guard {
+func (h *Handler) Guard(ctx context.Context, span trace.Span, tokens []string) *Guard {
 	if span == nil {
 		// Default OTEL Tracer if none specified
 		opts := []trace.SpanStartOption{
 			trace.WithSpanKind(trace.SpanKindUnspecified),
 		}
-		ctx, span = h.Tracer().Start(ctx, name, opts...)
+		ctx, span = h.Tracer().Start(ctx, h.GuardName(), opts...)
 		defer span.End()
 	}
 
-	tlr := hub.NewTokenLeaseRequest(ctx, name)
+	ctx, tlr := hub.NewTokenLeaseRequest(ctx, h.GuardName(), h.FeatureName(), h.PriorityBoost(), h.DefaultWeight())
 	attr := []attribute.KeyValue{
 		guardKey.String(tlr.Selector.GetGuardName()),
 		featureKey.String(tlr.Selector.GetFeatureName()),
@@ -54,13 +62,13 @@ func (h *Handler) Guard(ctx context.Context, span trace.Span, name string, token
 
 	g := h.NewGuard(ctx, span, attr, nil)
 	if h.SentinelEnabled() {
-		g.checkSentinel(name)
+		g.checkSentinel(h.GuardName())
 		if g.sentinelBlock != nil {
 			return g
 		}
 	}
 	if len(tokens) > 0 {
-		g.checkToken(ctx, name, tokens)
+		g.checkToken(ctx, h.GuardName(), tokens)
 		if g.quotaStatus == hub.ValidateTokensInvalid {
 			return g
 		}
@@ -87,6 +95,22 @@ func (h *Handler) NewGuard(ctx context.Context, span trace.Span, attr []attribut
 
 		sentinelBlock: nil,
 	}
+}
+
+func (h *Handler) GuardName() string {
+	return h.guardName
+}
+
+func (h *Handler) FeatureName() *string {
+	return h.featureName
+}
+
+func (h *Handler) PriorityBoost() *int32 {
+	return h.priorityBoost
+}
+
+func (h *Handler) DefaultWeight() *float32 {
+	return h.defaultWeight
 }
 
 // OTEL Helper Functions //

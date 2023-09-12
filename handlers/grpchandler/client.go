@@ -9,8 +9,8 @@ type OutboundHandler struct {
 }
 
 // NewOutboundHandler returns a new OutboundHandler
-func NewOutboundHandler() (*OutboundHandler, error) {
-	h, err := handlers.NewOutboundHandler()
+func NewOutboundHandler(gn string, fn *string, pb *int32, dw *float32) (*OutboundHandler, error) {
+	h, err := handlers.NewOutboundHandler(gn, fn, pb, dw)
 	if err != nil {
 		return nil, err
 	}

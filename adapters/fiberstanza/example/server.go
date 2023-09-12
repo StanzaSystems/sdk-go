@@ -99,9 +99,7 @@ func main() {
 	app.Get("/quote", func(c *fiber.Ctx) error {
 
 		// Outbound request with ZenQuotes Guard
-		resp, err :=
-			fiberstanza.HttpGet(
-				fiberstanza.Guard(c, "ZenQuotes", "https://zenquotes.io/api/random"))
+		resp, err := fiberstanza.HttpGet(c, "ZenQuotes", "https://zenquotes.io/api/random")
 		if err != nil {
 			logger.Error("ZenQuotes", zap.Error(err))
 		}
@@ -137,7 +135,7 @@ func main() {
 		}
 
 		// Set outbound request priority boost based on `X-User-Plan` request header
-		opt := fiberstanza.Opt{PriorityBoost: 0, DefaultWeight: 1}
+		opt := fiberstanza.Opt{PriorityBoost: 0}
 		if plan, ok := c.GetReqHeaders()["X-User-Plan"]; ok {
 			if plan == "free" {
 				opt.PriorityBoost -= 1
@@ -147,9 +145,7 @@ func main() {
 		}
 
 		// Guard outbound request with StressTest
-		resp, err :=
-			fiberstanza.HttpGet(
-				fiberstanza.Guard(c, "StressTest", string(url), opt))
+		resp, err := fiberstanza.HttpGet(c, "StressTest", string(url), opt)
 		if err != nil {
 			logger.Error("StressTest", zap.Error(err))
 			if resp != nil && resp.StatusCode >= 400 {
