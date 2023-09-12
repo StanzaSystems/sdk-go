@@ -5,7 +5,7 @@ type InboundHandler struct {
 }
 
 // NewInboundHandler returns a new InboundHandler
-func NewInboundHandler() (*InboundHandler, error) {
-	h, err := NewHandler()
+func NewInboundHandler(gn string, fn *string, pb *int32, dw *float32) (*InboundHandler, error) {
+	h, err := NewHandler(gn, fn, pb, dw)
 	return &InboundHandler{h}, err
 }

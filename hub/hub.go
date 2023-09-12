@@ -12,7 +12,6 @@ import (
 
 	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/global"
-	"github.com/StanzaSystems/sdk-go/keys"
 	"github.com/StanzaSystems/sdk-go/logging"
 	"github.com/StanzaSystems/sdk-go/otel"
 
@@ -60,34 +59,34 @@ var (
 	failOpenCount = int64(0)
 )
 
-func NewTokenLeaseRequest(ctx context.Context, guard string) *hubv1.GetTokenLeaseRequest {
+func NewTokenLeaseRequest(ctx context.Context, gn string, fn *string, pb *int32, dw *float32) (context.Context, *hubv1.GetTokenLeaseRequest) {
 	tlr := hubv1.GetTokenLeaseRequest{
 		ClientId: proto.String(global.GetClientID()),
 		Selector: &hubv1.GuardFeatureSelector{
-			GuardName:   guard,
+			GuardName:   gn,
 			Environment: global.GetServiceEnvironment(),
 		},
 	}
 
-	// Inspect Baggage and Headers for Feature and PriorityBoost,
-	// propagate through context if found
-	ctx, tlr.Selector.FeatureName = otel.GetFeature(ctx, tlr.Selector.GetFeatureName())
-	ctx, tlr.PriorityBoost = otel.GetPriorityBoost(ctx, tlr.GetPriorityBoost())
-
-	// Override Baggage and Header values with user supplied data.
-	if ctx.Value(keys.StanzaFeatureNameKey) != nil {
-		tlr.Selector.FeatureName = proto.String(ctx.Value(keys.StanzaFeatureNameKey).(string))
-		ctx, tlr.Selector.FeatureName = otel.GetFeature(ctx, tlr.Selector.GetFeatureName())
-	}
-	if ctx.Value(keys.StanzaPriorityBoostKey) != nil {
-		tlr.PriorityBoost = proto.Int32(ctx.Value(keys.StanzaPriorityBoostKey).(int32))
-		ctx, tlr.PriorityBoost = otel.GetPriorityBoost(ctx, tlr.GetPriorityBoost())
-	}
-	if ctx.Value(keys.StanzaDefaultWeightKey) != nil {
-		tlr.DefaultWeight = proto.Float32(ctx.Value(keys.StanzaDefaultWeightKey).(float32))
+	// Inspect Baggage and Headers for Feature, propagate through context if found
+	var feat *string
+	ctx, feat = otel.GetFeature(ctx, fn)
+	if feat != nil {
+		tlr.Selector.FeatureName = feat
 	}
 
-	return &tlr
+	// Inspect Baggage and Headers for PriorityBoost, propagate through context if found
+	var boost *int32
+	ctx, boost = otel.GetPriorityBoost(ctx, pb)
+	if boost != nil {
+		tlr.PriorityBoost = boost
+	}
+
+	// DefaultWeight can not be set via Baggage or Headers
+	if dw != nil {
+		tlr.DefaultWeight = dw
+	}
+	return ctx, &tlr
 }
 
 func CheckQuota(ctx context.Context, tlr *hubv1.GetTokenLeaseRequest) (int, string, error) {
@@ -222,9 +221,9 @@ func consumeLease(guard string, lease *hubv1.TokenLease) {
 	consumedLeasesLock.Unlock()
 	logging.Debug("consumed quota lease",
 		"guard", guard,
-		"feature", lease.GetFeature(),
-		"weight", lease.GetWeight(),
-		"priority_boost", lease.GetPriorityBoost())
+		"feature", lease.Feature,
+		"weight", lease.Weight,
+		"priority_boost", lease.PriorityBoost)
 }
 
 func batchTokenConsumer() {

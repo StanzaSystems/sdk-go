@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	"github.com/StanzaSystems/sdk-go/handlers"
-	"github.com/StanzaSystems/sdk-go/keys"
 
 	"github.com/felixge/httpsnoop"
 	"go.opentelemetry.io/otel/codes"
@@ -18,19 +17,15 @@ import (
 
 type InboundHandler struct {
 	*handlers.InboundHandler
-	guardName     string
-	featureName   *string // overrides request baggage (if any)
-	priorityBoost *int32  // overrides request baggage (if any)
-	defaultWeight *float32
 }
 
 // NewInboundHandler returns a new InboundHandler
 func NewInboundHandler(gn string, fn *string, pb *int32, dw *float32) (*InboundHandler, error) {
-	h, err := handlers.NewInboundHandler()
+	h, err := handlers.NewInboundHandler(gn, fn, pb, dw)
 	if err != nil {
 		return nil, err
 	}
-	return &InboundHandler{h, gn, fn, pb, dw}, nil
+	return &InboundHandler{h}, nil
 }
 
 // GuardHandler implements HTTP handler (middleware) for adding a Stanza Guard to an HTTP Server
@@ -39,7 +34,7 @@ func (h *InboundHandler) GuardHandler(next http.Handler) http.Handler {
 		ctx, span, tokens := h.Start(r)
 		defer span.End()
 
-		guard := h.Guard(ctx, span, h.guardName, tokens)
+		guard := h.Guard(ctx, span, tokens)
 		if guard.Blocked() {
 			span.SetStatus(codes.Error, guard.BlockMessage())
 			w.WriteHeader(http.StatusTooManyRequests)
@@ -62,16 +57,6 @@ func (h *InboundHandler) GuardHandler(next http.Handler) http.Handler {
 
 func (h *InboundHandler) Start(r *http.Request) (context.Context, trace.Span, []string) {
 	ctx := h.Propagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
-	if h.featureName != nil {
-		ctx = context.WithValue(ctx, keys.StanzaFeatureNameKey, *h.featureName)
-	}
-	if h.priorityBoost != nil {
-		ctx = context.WithValue(ctx, keys.StanzaPriorityBoostKey, *h.priorityBoost)
-	}
-	if h.defaultWeight != nil {
-		ctx = context.WithValue(ctx, keys.StanzaDefaultWeightKey, *h.defaultWeight)
-	}
-
 	ctx, span := h.Tracer().Start(
 		ctx,
 		r.URL.Path,

@@ -138,7 +138,7 @@ func (g *Guard) checkQuota(ctx context.Context, tlr *hubv1.GetTokenLeaseRequest)
 		g.span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
 		logging.Debug("Stanza blocked",
 			"guard", tlr.GetSelector().GetGuardName(),
-			"feature", tlr.GetSelector().GetFeatureName(),
+			"feature", tlr.GetSelector().FeatureName,
 			"default_weight", tlr.DefaultWeight,
 			"priority_boost", tlr.PriorityBoost,
 			"reason", g.quotaReason,

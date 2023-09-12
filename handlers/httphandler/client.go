@@ -21,8 +21,8 @@ type OutboundHandler struct {
 }
 
 // NewOutboundHandler returns a new OutboundHandler
-func NewOutboundHandler() (*OutboundHandler, error) {
-	h, err := handlers.NewOutboundHandler()
+func NewOutboundHandler(gn string, fn *string, pb *int32, dw *float32) (*OutboundHandler, error) {
+	h, err := handlers.NewOutboundHandler(gn, fn, pb, dw)
 	if err != nil {
 		return nil, err
 	}
@@ -30,30 +30,30 @@ func NewOutboundHandler() (*OutboundHandler, error) {
 }
 
 // Get wraps a HTTP GET request
-func (h *OutboundHandler) Get(ctx context.Context, guardName, url string) (*http.Response, error) {
-	return h.Request(ctx, guardName, http.MethodGet, url, http.NoBody)
+func (h *OutboundHandler) Get(ctx context.Context, url string) (*http.Response, error) {
+	return h.Request(ctx, http.MethodGet, url, http.NoBody)
 }
 
 // Post wraps a HTTP POST request
-func (h *OutboundHandler) Post(ctx context.Context, guardName, url string, body io.Reader) (*http.Response, error) {
-	return h.Request(ctx, guardName, http.MethodPost, url, body)
+func (h *OutboundHandler) Post(ctx context.Context, url string, body io.Reader) (*http.Response, error) {
+	return h.Request(ctx, http.MethodPost, url, body)
 }
 
 // Request wraps a HTTP request of the given HTTP method
-func (h *OutboundHandler) Request(ctx context.Context, guardName, httpMethod, url string, body io.Reader) (*http.Response, error) {
+func (h *OutboundHandler) Request(ctx context.Context, httpMethod, url string, body io.Reader) (*http.Response, error) {
 	if req, err := http.NewRequestWithContext(ctx, httpMethod, url, body); err != nil {
 		h.FailOpen(ctx)
 		return nil, err // FAIL OPEN!
 	} else {
 		ctx, span := h.Tracer().Start(
 			ctx,
-			guardName,
+			h.GuardName(),
 			trace.WithSpanKind(trace.SpanKindClient),
 			trace.WithAttributes(httpconv.ClientRequest(req)...),
 		)
 		defer span.End()
 
-		guard := h.Guard(ctx, span, guardName, []string{})
+		guard := h.Guard(ctx, span, []string{})
 
 		// Stanza Blocked
 		if guard.Blocked() {

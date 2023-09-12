@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/StanzaSystems/sdk-go/keys"
 	"github.com/StanzaSystems/sdk-go/logging"
 	"github.com/StanzaSystems/sdk-go/stanza"
 
@@ -40,7 +41,7 @@ type Opt struct {
 
 // New creates a new fiberstanza middleware fiber.Handler
 func New(guardName string, opts ...Opt) fiber.Handler {
-	h, err := stanza.HttpServer(guardName, guardOpts(opts...))
+	h, err := stanza.HttpServer(guardName, withOpts(opts...))
 	if err != nil {
 		logging.Error(fmt.Errorf("failed to create HTTP inbound handler: %v", err))
 		return func(c *fiber.Ctx) error {
@@ -73,7 +74,7 @@ func New(guardName string, opts ...Opt) fiber.Handler {
 		ctx, span, tokens := h.Start(&req)
 		defer span.End()
 
-		guard := h.Guard(ctx, span, guardName, tokens)
+		guard := h.Guard(ctx, span, tokens)
 		c.SetUserContext(guard.Context())
 
 		// Stanza Blocked
@@ -111,45 +112,42 @@ func Init(ctx context.Context, client Client) (func(), error) {
 }
 
 // HttpGet is a fiberstanza helper function (passthrough to stanza.HttpGet)
-func HttpGet(req stanza.GuardRequest) (*http.Response, error) {
-	return stanza.HttpGet(req)
-}
-
-// HttpPost is a fiberstanza helper function (passthrough to stanza.HttpPost)
-func HttpPost(req stanza.GuardRequest, body io.Reader) (*http.Response, error) {
-	req.Body = body
-	return stanza.HttpPost(req)
-}
-
-// Guard is a fiberstanza helper function
-func Guard(c *fiber.Ctx, name string, url string, opts ...Opt) stanza.GuardRequest {
+func HttpGet(c *fiber.Ctx, guardName string, url string, opts ...Opt) (*http.Response, error) {
 	var req http.Request
 	fasthttpadaptor.ConvertRequest(c.Context(), &req, true)
 	ctx := otel.GetTextMapPropagator().Extract(req.Context(), propagation.HeaderCarrier(req.Header))
-	guardRequest := stanza.GuardRequest{
-		Context: ctx,
-		Name:    name,
-		URL:     url,
-	}
-	if len(opts) == 1 {
-		if opts[0].Headers == nil {
-			opts[0].Headers = make(http.Header)
-		}
-		guardRequest.Headers = opts[0].Headers
-		guardRequest.Opt = &stanza.GuardOpt{
-			Feature:       opts[0].Feature,
-			PriorityBoost: opts[0].PriorityBoost,
-			DefaultWeight: opts[0].DefaultWeight,
-		}
-	}
-	return guardRequest
+	return stanza.HttpGet(withHeaders(ctx, opts...), guardName, url, withOpts(opts...))
 }
 
-func guardOpts(opts ...Opt) (guardOpt stanza.GuardOpt) {
+// HttpPost is a fiberstanza helper function (passthrough to stanza.HttpPost)
+func HttpPost(c *fiber.Ctx, guardName string, url string, body io.Reader, opts ...Opt) (*http.Response, error) {
+	var req http.Request
+	fasthttpadaptor.ConvertRequest(c.Context(), &req, true)
+	ctx := otel.GetTextMapPropagator().Extract(req.Context(), propagation.HeaderCarrier(req.Header))
+	return stanza.HttpPost(withHeaders(ctx, opts...), guardName, url, body, withOpts(opts...))
+}
+
+func withHeaders(ctx context.Context, opts ...Opt) context.Context {
 	if len(opts) == 1 {
-		guardOpt.Feature = opts[0].Feature
-		guardOpt.PriorityBoost = opts[0].PriorityBoost
-		guardOpt.DefaultWeight = opts[0].DefaultWeight
+		if opts[0].Headers != nil {
+			ctx = context.WithValue(ctx, keys.OutboundHeadersKey, opts[0].Headers)
+		}
+	}
+	return ctx
+}
+
+func withOpts(opts ...Opt) stanza.GuardOpt {
+	guardOpt := stanza.GuardOpt{}
+	if len(opts) == 1 {
+		if opts[0].Feature != "" {
+			guardOpt.Feature = &opts[0].Feature
+		}
+		if opts[0].PriorityBoost != 0 {
+			guardOpt.PriorityBoost = &opts[0].PriorityBoost
+		}
+		if opts[0].DefaultWeight != 0 {
+			guardOpt.DefaultWeight = &opts[0].DefaultWeight
+		}
 	}
 	return guardOpt
 }
