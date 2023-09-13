@@ -15,6 +15,7 @@ import (
 	"syscall"
 
 	"github.com/StanzaSystems/sdk-go/stanza"
+
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -88,7 +89,7 @@ func main() {
 	// Use ZenQuotes to get a random quote
 	r.HandleFunc("/quote", func(w http.ResponseWriter, r *http.Request) {
 		// Name the Stanza Guard which protects this workflow
-		stz := stanza.Guard(ctx, "ZenQuotes")
+		stz := stanza.Guard(stanza.ContextWithHeaders(r), "ZenQuotes")
 
 		// Check for and log any returned error messages
 		if stz.Error() != nil {
@@ -122,7 +123,8 @@ func main() {
 
 	go http.ListenAndServe(
 		fmt.Sprintf(":%d", port),
-		stanza.GuardHandler(r, "RootGuard"), // Add a Stanza Guard as HTTP middleware for ALL requests!
+		// stanza.GuardHandler(r, "RootGuard"), // Add a Stanza Guard as HTTP middleware for ALL requests!
+		r,
 	)
 
 	// GRACEFUL SHUTDOWN
