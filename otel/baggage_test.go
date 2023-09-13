@@ -6,11 +6,9 @@ import (
 	"testing"
 
 	"github.com/StanzaSystems/sdk-go/keys"
+
 	"go.opentelemetry.io/otel/baggage"
 	"google.golang.org/protobuf/proto"
-	// pb "github.com/StanzaSystems/hub/gen/go/stanza/hub/v1"
-	// "github.com/StanzaSystems/hub/util"
-	// "github.com/google/go-cmp/cmp"
 )
 
 func TestGetFeature(t *testing.T) {
