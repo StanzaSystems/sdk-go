@@ -10,7 +10,9 @@ import (
 	"github.com/StanzaSystems/sdk-go/handlers/grpchandler"
 	"github.com/StanzaSystems/sdk-go/handlers/httphandler"
 	"github.com/StanzaSystems/sdk-go/logging"
+	"github.com/StanzaSystems/sdk-go/otel"
 
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 )
@@ -93,6 +95,10 @@ func Guard(ctx context.Context, guardName string, opts ...GuardOpt) *handlers.Gu
 	ctx, span := h.Tracer().Start(ctx, guardName, traceOpts...)
 	defer span.End()
 	return h.Guard(ctx, span, []string{})
+}
+
+func ContextWithHeaders(r *http.Request) context.Context {
+	return otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
 }
 
 func withOpts(gn string, opts ...GuardOpt) (string, *string, *int32, *float32) {
