@@ -45,15 +45,15 @@ func GetPriorityBoost(ctx context.Context, pb *int32) (context.Context, *int32) 
 	boostFromBaggage := baggage.FromContext(ctx).Member(keys.StzBoost).Value()
 	if boostFromBaggage != "" {
 		if boostInt, err := strconv.Atoi(boostFromBaggage); err == nil { // Inspect OTEL baggage
-			boost = proto.Int32(*pb + int32(boostInt))
+			boost = totalBoost(boost, boostInt)
 		}
 	} else if ctx.Value(keys.UberctxStzBoostKey) != nil { // Otherwise inspect Jaeger uberctx
 		if boostInt, err := strconv.Atoi(ctx.Value(keys.UberctxStzBoostKey).(string)); err == nil {
-			boost = proto.Int32(*pb + int32(boostInt))
+			boost = totalBoost(boost, boostInt)
 		}
 	} else if ctx.Value(keys.OtStzBoostKey) != nil { // Otherwise inspect Datadog ot-baggage
 		if boostInt, err := strconv.Atoi(ctx.Value(keys.OtStzBoostKey).(string)); err == nil {
-			boost = proto.Int32(*pb + int32(boostInt))
+			boost = totalBoost(boost, boostInt)
 		}
 	} else if pb != nil {
 		boost = pb
@@ -74,4 +74,14 @@ func GetPriorityBoost(ctx context.Context, pb *int32) (context.Context, *int32) 
 		ctx = context.WithValue(ctx, keys.OutboundHeadersKey, oh)
 	}
 	return ctx, boost
+}
+
+func totalBoost(b1 *int32, b2 int) *int32 {
+	var totalBoost int32
+	if b1 == nil {
+		totalBoost = int32(b2)
+	} else {
+		totalBoost = *b1 + int32(b2)
+	}
+	return &totalBoost
 }
