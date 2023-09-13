@@ -7,6 +7,7 @@ import (
 
 	"github.com/StanzaSystems/sdk-go/keys"
 
+	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/otel/baggage"
 	"google.golang.org/protobuf/proto"
 )
@@ -113,15 +114,7 @@ func TestGetFeature(t *testing.T) {
 			ctx = context.WithValue(ctx, keys.OtStzFeatKey, tc.otBaggage)
 		}
 		_, got := GetFeature(ctx, tc.featureName)
-		if tc.want == nil {
-			if got != nil {
-				t.Errorf("Test '%s' wrong feature name. Got %v, want nil", tc.testName, got)
-			}
-		} else {
-			if *got != *tc.want {
-				t.Errorf("Test '%s' wrong feature name. Got %s, want %s", tc.testName, *got, *tc.want)
-			}
-		}
+		assert.Equal(t, got, tc.want)
 		// TODO: also verify context!
 	}
 }
@@ -220,15 +213,7 @@ func TestGetPriorityBoost(t *testing.T) {
 			ctx = context.WithValue(ctx, keys.OtStzBoostKey, strconv.Itoa(int(tc.otBaggage)))
 		}
 		_, got := GetPriorityBoost(ctx, tc.priorityBoost)
-		if tc.want == nil {
-			if got != nil {
-				t.Errorf("Test '%s' wrong priority boost. Got %d, want nil", tc.testName, got)
-			}
-		} else {
-			if *got != *tc.want {
-				t.Errorf("Test '%s' wrong priority boost. Got %d, want %d", tc.testName, *got, *tc.want)
-			}
-		}
+		assert.Equal(t, got, tc.want)
 		// TODO: also verify context!
 	}
 }
