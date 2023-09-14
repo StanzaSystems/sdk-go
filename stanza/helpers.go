@@ -113,7 +113,7 @@ func Guard(ctx context.Context, guardName string, opts ...GuardOpt) *handlers.Gu
 	}
 	ctx, span := h.Tracer().Start(ctx, guardName, traceOpts...)
 	defer span.End()
-	return h.Guard(ctx, span, []string{})
+	return h.Guard(ctx, span, nil)
 }
 
 // ContextWithHeaders is a helper function which extracts and OTEL TraceContext, Baggage,
