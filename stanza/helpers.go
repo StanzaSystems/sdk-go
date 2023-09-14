@@ -12,7 +12,6 @@ import (
 	"github.com/StanzaSystems/sdk-go/logging"
 	"github.com/StanzaSystems/sdk-go/otel"
 
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 )
@@ -97,8 +96,10 @@ func Guard(ctx context.Context, guardName string, opts ...GuardOpt) *handlers.Gu
 	return h.Guard(ctx, span, []string{})
 }
 
+// ContextWithHeaders is a helper function which extracts and OTEL TraceContext, Baggage,
+// and StanzaHeaders from a given http.Request into a context.Context.
 func ContextWithHeaders(r *http.Request) context.Context {
-	return otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+	return otel.ContextWithHeaders(r)
 }
 
 func withOpts(gn string, opts ...GuardOpt) (string, *string, *int32, *float32) {

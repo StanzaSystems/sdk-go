@@ -19,8 +19,8 @@ type Handler struct {
 	featureName   *string // overrides request baggage (if any)
 	priorityBoost *int32  // adds to request baggage (if any)
 	defaultWeight *float32
+	meter         *meter
 	tracer        trace.Tracer
-	meter         *Meter
 	attr          []attribute.KeyValue
 }
 

@@ -6,8 +6,7 @@ import (
 	"os"
 
 	"github.com/StanzaSystems/sdk-go/global"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/propagation"
+	"github.com/StanzaSystems/sdk-go/otel"
 )
 
 type ClientOptions struct {
@@ -68,11 +67,7 @@ func Init(ctx context.Context, co ClientOptions) (func(), error) {
 
 	// Set global propagation, we do this here since **propagation** is something
 	// we want to do even if we aren't emitting OTEL metrics or traces.
-	otel.SetTextMapPropagator(
-		propagation.NewCompositeTextMapPropagator(
-			propagation.TraceContext{},
-			propagation.Baggage{},
-			StanzaHeaders{}))
+	otel.InitTextMapPropagator(otel.StanzaHeaders{})
 
 	// Initialize new global state
 	hubDone := global.NewState(ctx,
