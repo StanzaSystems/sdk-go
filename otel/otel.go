@@ -69,12 +69,21 @@ func InitTraceProvider(ctx context.Context, tc *hubv1.TraceConfig, token, ua str
 	return nil
 }
 
+// GetTracePropagator is a passthrough helper function
+func GetTracerProvider() ot.TracerProvider {
+	return otel.GetTracerProvider()
+}
+
 // GetTextMapPropagator is a passthrough helper function
 func GetTextMapPropagator() propagation.TextMapPropagator {
 	return otel.GetTextMapPropagator()
 }
 
-// GetTracePropagator is a passthrough helper function
-func GetTracerProvider() ot.TracerProvider {
-	return otel.GetTracerProvider()
+// InitTextMapPropagator is a passthrough helper function
+func InitTextMapPropagator(propagator propagation.TextMapPropagator) {
+	otel.SetTextMapPropagator(
+		propagation.NewCompositeTextMapPropagator(
+			propagation.TraceContext{},
+			propagation.Baggage{},
+			propagator))
 }

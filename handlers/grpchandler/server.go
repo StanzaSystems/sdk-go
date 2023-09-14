@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/StanzaSystems/sdk-go/handlers"
+	"github.com/StanzaSystems/sdk-go/otel"
 
 	otel_codes "go.opentelemetry.io/otel/codes"
 	semconv "go.opentelemetry.io/otel/semconv/v1.20.0"
@@ -24,6 +25,7 @@ func NewInboundHandler(gn string, fn *string, pb *int32, dw *float32) (*InboundH
 	if err != nil {
 		return nil, err
 	}
+
 	return &InboundHandler{h}, nil
 }
 
@@ -57,16 +59,14 @@ func (h *InboundHandler) NewStreamServerInterceptor() grpc.StreamServerIntercept
 
 func (h *InboundHandler) start(ctx context.Context, spanName string) (context.Context, []string, trace.Span) {
 	tokens := []string{}
-
-	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		md = md.Copy()
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		md = metadata.MD{}
+	} else {
 		tokens = md.Get("x-stanza-token")
-
-		// blunt force "header" propagation
-		// TODO: replace with OTEL propagator extract/inject
-		ctx = metadata.NewOutgoingContext(ctx, md)
 	}
 
+	ctx = h.Propagator().Extract(ctx, &otel.MetadataSupplier{Metadata: &md})
 	ctx, span := h.Tracer().Start(
 		ctx,
 		spanName,

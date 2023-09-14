@@ -38,10 +38,10 @@ var (
 	serviceKey     = attribute.Key("service")
 	reasonKey      = attribute.Key("reason")
 
-	stanzaMeter *Meter
+	stanzaMeter *meter
 )
 
-type Meter struct {
+type meter struct {
 	AllowedCount        metric.Int64Counter
 	AllowedSuccessCount metric.Int64Counter
 	AllowedFailureCount metric.Int64Counter
@@ -72,53 +72,53 @@ func reason(reason int) attribute.KeyValue {
 	return reasonKey.String("unknown")
 }
 
-func GetStanzaMeter() (*Meter, error) {
+func GetStanzaMeter() (*meter, error) {
 	if stanzaMeter != nil {
 		return stanzaMeter, nil
 	}
-	meter := otel.Meter(
+	om := otel.Meter(
 		global.InstrumentationName(),
 		global.InstrumentationMetricVersion(),
 	)
 
 	var err error
-	var m Meter
-	m.AllowedCount, err = meter.Int64Counter(
+	var m meter
+	m.AllowedCount, err = om.Int64Counter(
 		stanzaAllowed,
 		metric.WithUnit("1"),
 		metric.WithDescription("measures the number of executions that were allowed"))
 	if err != nil {
 		return nil, err
 	}
-	m.BlockedCount, err = meter.Int64Counter(
+	m.BlockedCount, err = om.Int64Counter(
 		stanzaBlocked,
 		metric.WithUnit("1"),
 		metric.WithDescription("measures the number of executions that were backpressured"))
 	if err != nil {
 		return nil, err
 	}
-	m.AllowedSuccessCount, err = meter.Int64Counter(
+	m.AllowedSuccessCount, err = om.Int64Counter(
 		stanzaAllowedSuccess,
 		metric.WithUnit("1"),
 		metric.WithDescription("measures the number of executions that succeeded"))
 	if err != nil {
 		return nil, err
 	}
-	m.AllowedFailureCount, err = meter.Int64Counter(
+	m.AllowedFailureCount, err = om.Int64Counter(
 		stanzaAllowedFailure,
 		metric.WithUnit("1"),
 		metric.WithDescription("measures the number of executions that failed"))
 	if err != nil {
 		return nil, err
 	}
-	m.AllowedUnknownCount, err = meter.Int64Counter(
+	m.AllowedUnknownCount, err = om.Int64Counter(
 		stanzaAllowedUnknown,
 		metric.WithUnit("1"),
 		metric.WithDescription("measures the number of executions where the success (or failure) was unknown"))
 	if err != nil {
 		return nil, err
 	}
-	m.AllowedDuration, err = meter.Float64Histogram(
+	m.AllowedDuration, err = om.Float64Histogram(
 		stanzaAllowedDuration,
 		metric.WithUnit("ms"),
 		metric.WithDescription("measures the total executions time of guarded requests"))

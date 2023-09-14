@@ -25,7 +25,7 @@ const (
 type Guard struct {
 	ctx   context.Context
 	start time.Time
-	meter *Meter
+	meter *meter
 	span  trace.Span
 	attr  []attribute.KeyValue
 	err   error
