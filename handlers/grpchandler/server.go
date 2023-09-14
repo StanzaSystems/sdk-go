@@ -29,8 +29,14 @@ func NewInboundHandler(gn string, fn *string, pb *int32, dw *float32) (*InboundH
 	return &InboundHandler{h}, nil
 }
 
+// NewUnaryServerInterceptor returns a Guarded grpc.UnaryServerInterceptor
 func (h *InboundHandler) NewUnaryServerInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	return func(
+		ctx context.Context,
+		req any,
+		info *grpc.UnaryServerInfo,
+		handler grpc.UnaryHandler,
+	) (any, error) {
 		ctx, tokens, span := h.start(ctx, info.FullMethod)
 		defer span.End()
 
@@ -43,8 +49,14 @@ func (h *InboundHandler) NewUnaryServerInterceptor() grpc.UnaryServerInterceptor
 	}
 }
 
+// NewStreamServerInterceptor returns a Guarded grpc.StreamServerInterceptor
 func (h *InboundHandler) NewStreamServerInterceptor() grpc.StreamServerInterceptor {
-	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	return func(
+		srv any,
+		stream grpc.ServerStream,
+		info *grpc.StreamServerInfo,
+		handler grpc.StreamHandler,
+	) error {
 		ctx, tokens, span := h.start(stream.Context(), info.FullMethod)
 		defer span.End()
 
