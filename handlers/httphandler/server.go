@@ -57,12 +57,16 @@ func (h *InboundHandler) GuardHandler(next http.Handler) http.Handler {
 
 func (h *InboundHandler) Start(r *http.Request) (context.Context, trace.Span, []string) {
 	ctx := h.Propagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
-	ctx, span := h.Tracer().Start(
-		ctx,
-		r.URL.Path,
+
+	opts := []trace.SpanStartOption{
 		trace.WithSpanKind(trace.SpanKindServer),
 		trace.WithAttributes(httpconv.ServerRequest("", r)...),
-	)
+	}
+	if s := trace.SpanContextFromContext(ctx); s.IsValid() && s.IsRemote() {
+		opts = append(opts, trace.WithLinks(trace.Link{SpanContext: s}))
+	}
+
+	ctx, span := h.Tracer().Start(ctx, r.URL.Path, opts...)
 	return ctx, span, r.Header.Values("x-stanza-token")
 }
 

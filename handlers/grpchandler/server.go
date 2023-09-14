@@ -37,7 +37,7 @@ func (h *InboundHandler) NewUnaryServerInterceptor() grpc.UnaryServerInterceptor
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
 	) (any, error) {
-		ctx, tokens, span := h.start(ctx, info.FullMethod)
+		ctx, span, tokens := h.start(ctx, info.FullMethod)
 		defer span.End()
 
 		if guard := h.Guard(ctx, span, tokens); guard.Blocked() {
@@ -57,7 +57,7 @@ func (h *InboundHandler) NewStreamServerInterceptor() grpc.StreamServerIntercept
 		info *grpc.StreamServerInfo,
 		handler grpc.StreamHandler,
 	) error {
-		ctx, tokens, span := h.start(stream.Context(), info.FullMethod)
+		ctx, span, tokens := h.start(stream.Context(), info.FullMethod)
 		defer span.End()
 
 		if guard := h.Guard(ctx, span, tokens); guard.Blocked() {
@@ -69,7 +69,7 @@ func (h *InboundHandler) NewStreamServerInterceptor() grpc.StreamServerIntercept
 	}
 }
 
-func (h *InboundHandler) start(ctx context.Context, spanName string) (context.Context, []string, trace.Span) {
+func (h *InboundHandler) start(ctx context.Context, spanName string) (context.Context, trace.Span, []string) {
 	tokens := []string{}
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
@@ -77,16 +77,18 @@ func (h *InboundHandler) start(ctx context.Context, spanName string) (context.Co
 	} else {
 		tokens = md.Get("x-stanza-token")
 	}
-
 	ctx = h.Propagator().Extract(ctx, &otel.MetadataSupplier{Metadata: &md})
-	ctx, span := h.Tracer().Start(
-		ctx,
-		spanName,
+
+	opts := []trace.SpanStartOption{
 		trace.WithSpanKind(trace.SpanKindServer),
 		trace.WithAttributes(semconv.RPCSystemGRPC),
-	)
+	}
+	if s := trace.SpanContextFromContext(ctx); s.IsValid() && s.IsRemote() {
+		opts = append(opts, trace.WithLinks(trace.Link{SpanContext: s}))
+	}
 
-	return ctx, tokens, span
+	ctx, span := h.Tracer().Start(ctx, spanName, opts...)
+	return ctx, span, tokens
 }
 
 func (h *InboundHandler) allowed(span trace.Span, guard *handlers.Guard, err error) error {
@@ -94,7 +96,7 @@ func (h *InboundHandler) allowed(span trace.Span, guard *handlers.Guard, err err
 	span.SetAttributes(semconv.RPCGRPCStatusCodeKey.Int64(int64(s.Code())))
 
 	if err != nil {
-		span.SetStatus(otel_codes.Error, err.Error())
+		span.SetStatus(otel_codes.Error, s.Message())
 		span.RecordError(err)
 		guard.End(guard.Failure)
 	} else {
