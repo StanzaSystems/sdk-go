@@ -11,6 +11,7 @@ import (
 	"github.com/StanzaSystems/sdk-go/keys"
 
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
 	semconv "go.opentelemetry.io/otel/semconv/v1.20.0"
 	"go.opentelemetry.io/otel/semconv/v1.20.0/httpconv"
 	"go.opentelemetry.io/otel/trace"
@@ -46,14 +47,15 @@ func (h *OutboundHandler) Request(ctx context.Context, httpMethod, url string, b
 		return nil, err // FAIL OPEN!
 	} else {
 		ctx, span := h.Tracer().Start(
-			ctx,
+			req.Context(),
 			h.GuardName(),
 			trace.WithSpanKind(trace.SpanKindClient),
 			trace.WithAttributes(httpconv.ClientRequest(req)...),
 		)
 		defer span.End()
+		h.Propagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 
-		guard := h.Guard(ctx, span, []string{})
+		guard := h.Guard(ctx, span, nil)
 
 		// Stanza Blocked
 		if guard.Blocked() {
