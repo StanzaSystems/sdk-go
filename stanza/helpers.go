@@ -79,6 +79,26 @@ func StreamServerInterceptor(guardName string, opts ...GuardOpt) grpc.StreamServ
 	return h.NewStreamServerInterceptor()
 }
 
+// UnaryClientInterceptor is a helper function to Guard an outbound grpc unary client
+func UnaryClientInterceptor(guardName string, opts ...GuardOpt) grpc.UnaryClientInterceptor {
+	h, err := grpchandler.NewOutboundHandler(withOpts(guardName, opts...))
+	if err != nil {
+		logging.Error(err)
+		return nil
+	}
+	return h.NewUnaryClientInterceptor()
+}
+
+// StreamClientInterceptor is a helper function to Guard an outbound grpc streaming client
+func StreamClientInterceptor(guardName string, opts ...GuardOpt) grpc.StreamClientInterceptor {
+	h, err := grpchandler.NewOutboundHandler(withOpts(guardName, opts...))
+	if err != nil {
+		logging.Error(err)
+		return nil
+	}
+	return h.NewStreamClientInterceptor()
+}
+
 // Guard is a helper function to Guard any arbitrary block of code
 func Guard(ctx context.Context, guardName string, opts ...GuardOpt) *handlers.Guard {
 	h, err := handlers.NewHandler(withOpts(guardName, opts...))
