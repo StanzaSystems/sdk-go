@@ -5,10 +5,10 @@ go 1.21
 toolchain go1.21.0
 
 require (
-	github.com/StanzaSystems/sdk-go/adapters/fiberstanza v0.0.0-20230914010339-8fc85eb34c8c
+	github.com/StanzaSystems/sdk-go/adapters/fiberstanza v0.0.0-20230914201253-28cade3ef0be
 	github.com/gofiber/contrib/fiberzap v1.0.2
 	github.com/gofiber/fiber/v2 v2.49.2
-	go.uber.org/zap v1.25.0
+	go.uber.org/zap v1.26.0
 )
 
 require (
