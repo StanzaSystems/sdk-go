@@ -26,6 +26,7 @@ import (
 var (
 	name    = "fiber-example"
 	release = "1.0.0"
+	commit  = "dev"
 	env     string
 	debug   bool
 	port    int
@@ -84,16 +85,21 @@ func main() {
 	// fiber: HTTP server
 	app := fiber.New()
 
-	// middleware: logging
-	app.Use(fiberzap.New(fiberzap.Config{Logger: zap.L()}))
-
-	// middleware: stanza inbound guard
-	// app.Use(fiberstanza.New("RootGuard"))
+	// service commit version
+	app.Get("/commit", func(c *fiber.Ctx) error {
+		return c.SendString(commit)
+	})
 
 	// healthcheck
 	app.Get("/healthz", func(c *fiber.Ctx) error {
 		return c.SendString("OK")
 	})
+
+	// middleware: logging
+	app.Use(fiberzap.New(fiberzap.Config{Logger: zap.L()}))
+
+	// middleware: stanza inbound guard
+	// app.Use(fiberstanza.New("RootGuard"))
 
 	// Use ZenQuotes to get a random quote
 	app.Get("/quote", func(c *fiber.Ctx) error {

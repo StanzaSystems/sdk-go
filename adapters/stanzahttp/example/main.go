@@ -23,6 +23,7 @@ import (
 var (
 	name    = "fiber-example"
 	release = "1.0.0"
+	commit  = "dev"
 	env     string
 	debug   bool
 	port    int
@@ -84,6 +85,11 @@ func main() {
 	// Add a healthcheck endpoint
 	r.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, "OK")
+	})
+
+	// Service commit version
+	r.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, commit)
 	})
 
 	// Use ZenQuotes to get a random quote
