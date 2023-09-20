@@ -23,7 +23,6 @@ import (
 var (
 	name    = "fiber-example"
 	release = "1.0.0"
-	commit  = "dev"
 	env     string
 	debug   bool
 	port    int
@@ -87,9 +86,9 @@ func main() {
 		io.WriteString(w, "OK")
 	})
 
-	// Service commit version
+	// Service release version
 	r.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, commit)
+		io.WriteString(w, release)
 	})
 
 	// Use ZenQuotes to get a random quote

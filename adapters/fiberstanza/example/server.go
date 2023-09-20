@@ -26,7 +26,6 @@ import (
 var (
 	name    = "fiber-example"
 	release = "1.0.0"
-	commit  = "dev"
 	env     string
 	debug   bool
 	port    int
@@ -85,9 +84,9 @@ func main() {
 	// fiber: HTTP server
 	app := fiber.New()
 
-	// service commit version
-	app.Get("/commit", func(c *fiber.Ctx) error {
-		return c.SendString(commit)
+	// service release version
+	app.Get("/version", func(c *fiber.Ctx) error {
+		return c.SendString(release)
 	})
 
 	// healthcheck
