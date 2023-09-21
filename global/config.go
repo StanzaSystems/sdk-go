@@ -174,19 +174,16 @@ func GetGuardConfigs(ctx context.Context, skipPoll bool) {
 			if skipPoll || time.Now().After(
 				gs.guardConfigTime[guard].Add(
 					jitter(GUARD_CONFIG_REFRESH_INTERVAL, GUARD_CONFIG_REFRESH_JITTER))) {
-				GetGuardConfig(ctx, guard)
+				fetchGuardConfig(ctx, guard)
 			}
 		}
 	}
 }
 
-func GetGuardConfig(ctx context.Context, guard string) *hubv1.GuardConfig {
+func fetchGuardConfig(ctx context.Context, guard string) *hubv1.GuardConfig {
 	gs.guardConfigLock.RLock()
-	gc, ok := gs.guardConfig[guard]
+	_, ok := gs.guardConfig[guard]
 	gs.guardConfigLock.RUnlock()
-	if ok && gc != nil {
-		return gc
-	}
 	if !ok {
 		gs.guardConfigLock.Lock()
 		gs.guardConfig[guard] = nil
