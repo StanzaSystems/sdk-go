@@ -183,6 +183,16 @@ func GetServiceRelease() string {
 	return gs.svcRelease
 }
 
+func GetGuardConfig(ctx context.Context, guard string) *hubv1.GuardConfig {
+	gs.guardConfigLock.RLock()
+	gc, ok := gs.guardConfig[guard]
+	gs.guardConfigLock.RUnlock()
+	if ok && gc != nil {
+		return gc
+	}
+	return fetchGuardConfig(ctx, guard)
+}
+
 func QuotaServiceClient() hubv1.QuotaServiceClient {
 	gsLock.RLock()
 	defer gsLock.RUnlock()
