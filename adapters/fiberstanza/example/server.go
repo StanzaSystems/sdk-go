@@ -64,6 +64,13 @@ func main() {
 	defer logger.Sync()
 	zap.ReplaceGlobals(logger.WithOptions(zap.AddCallerSkip(1)))
 
+	// Log basic service info at startup
+	logger.Info("service init",
+		zap.String("name", name),
+		zap.String("release", release),
+		zap.String("env", env),
+	)
+
 	// Init Stanza fault tolerance library
 	stanzaExit, stanzaInitErr := fiberstanza.Init(ctx,
 		fiberstanza.Client{
