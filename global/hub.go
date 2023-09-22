@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net"
 	"os"
 	"time"
 
@@ -101,6 +102,11 @@ func hubPoller(ctx context.Context, pollInterval time.Duration) {
 							"uri", gs.hubURI,
 							"attempt", connectAttempt,
 						)
+						host, _, _ := net.SplitHostPort(gs.hubURI)
+						_, err := net.LookupHost(host)
+						if err != nil {
+							logging.Error(err)
+						}
 						gs.hubConn.Connect()
 					}
 				}
