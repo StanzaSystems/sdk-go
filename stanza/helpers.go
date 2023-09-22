@@ -27,6 +27,18 @@ func HttpServer(guardName string, opts ...GuardOpt) (*httphandler.InboundHandler
 	return NewHttpInboundHandler(withOpts(guardName, opts...))
 }
 
+func GuardMiddleware(next func(w http.ResponseWriter, r *http.Request), guardName string, opts ...GuardOpt) func(w http.ResponseWriter, r *http.Request) {
+	h, err := NewHttpInboundHandler(withOpts(guardName, opts...))
+	if err != nil {
+		logging.Error(fmt.Errorf("no HTTP inbound handler, failing open"))
+		if h != nil {
+			h.FailOpen(context.Background())
+		}
+		return next
+	}
+	return h.GuardHandlerFunction(next)
+}
+
 func GuardHandler(next http.Handler, guardName string, opts ...GuardOpt) http.Handler {
 	h, err := NewHttpInboundHandler(withOpts(guardName, opts...))
 	if err != nil {

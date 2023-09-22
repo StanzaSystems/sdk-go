@@ -28,9 +28,9 @@ func NewInboundHandler(gn string, fn *string, pb *int32, dw *float32) (*InboundH
 	return &InboundHandler{h}, nil
 }
 
-// GuardHandler implements HTTP handler (middleware) for adding a Stanza Guard to an HTTP Server
-func (h *InboundHandler) GuardHandler(next http.Handler) http.Handler {
-	fn := func(w http.ResponseWriter, r *http.Request) {
+// GuardHandlerFunc implements HTTP func(w, r) middleware for adding a Stanza Guard to an HTTP Server
+func (h *InboundHandler) GuardHandlerFunction(next func(w http.ResponseWriter, r *http.Request)) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
 		ctx, span, tokens := h.Start(r)
 		defer span.End()
 
@@ -42,7 +42,7 @@ func (h *InboundHandler) GuardHandler(next http.Handler) http.Handler {
 			return
 		}
 
-		m := httpsnoop.CaptureMetrics(next, w, r.WithContext(ctx))
+		m := httpsnoop.CaptureMetrics(http.HandlerFunc(next), w, r.WithContext(ctx))
 		code, msg := h.HTTPServerStatus(m.Code)
 		span.SetAttributes(semconv.HTTPStatusCode(m.Code))
 		span.SetStatus(code, msg)
@@ -52,7 +52,11 @@ func (h *InboundHandler) GuardHandler(next http.Handler) http.Handler {
 			guard.End(guard.Success)
 		}
 	}
-	return http.HandlerFunc(fn)
+}
+
+// GuardHandler implements HTTP handler (middleware) for adding a Stanza Guard to an HTTP Server
+func (h *InboundHandler) GuardHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(h.GuardHandlerFunction(next.ServeHTTP))
 }
 
 func (h *InboundHandler) Start(r *http.Request) (context.Context, trace.Span, []string) {
