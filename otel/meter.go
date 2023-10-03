@@ -14,11 +14,11 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
-func newMeterProvider(ctx context.Context, res *resource.Resource, headers map[string]string, url string) (*metric.MeterProvider, error) {
+func newMeterProvider(ctx context.Context, res *resource.Resource, headers map[string]string, endpoint string) (*metric.MeterProvider, error) {
 	if os.Getenv("STANZA_OTEL_DEBUG") != "" {
 		return initDebugMeter(res)
 	} else {
-		return initGrpcMeter(ctx, res, url, headers)
+		return initGrpcMeter(ctx, res, endpoint, headers)
 	}
 }
 
@@ -33,7 +33,7 @@ func initDebugMeter(res *resource.Resource) (*metric.MeterProvider, error) {
 	return mp, nil
 }
 
-func initGrpcMeter(ctx context.Context, res *resource.Resource, url string, headers map[string]string) (*metric.MeterProvider, error) {
+func initGrpcMeter(ctx context.Context, res *resource.Resource, endpoint string, headers map[string]string) (*metric.MeterProvider, error) {
 	opts := []otlpmetricgrpc.Option{
 		// WithRetry sets the retry policy for transient retryable errors that are
 		//   returned by the target collector endpoint.
@@ -56,7 +56,7 @@ func initGrpcMeter(ctx context.Context, res *resource.Resource, url string, head
 		//   attempts to the target endpoint.
 		// otlpmetricgrpc.WithReconnectionPeriod(1 * time.Minute),
 		//
-		otlpmetricgrpc.WithEndpoint(url),
+		otlpmetricgrpc.WithEndpoint(endpoint),
 		otlpmetricgrpc.WithHeaders(headers),
 	}
 	if os.Getenv("STANZA_OTEL_NO_TLS") != "" { // disable TLS for local OTEL development

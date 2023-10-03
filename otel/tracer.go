@@ -13,11 +13,11 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
-func newTraceProvider(ctx context.Context, res *resource.Resource, headers map[string]string, url string, sampleRate float64) (*trace.TracerProvider, error) {
+func newTraceProvider(ctx context.Context, res *resource.Resource, headers map[string]string, endpoint string, sampleRate float64) (*trace.TracerProvider, error) {
 	if os.Getenv("STANZA_OTEL_DEBUG") != "" {
 		return initDebugTracer(res, sampleRate)
 	} else {
-		return initGrpcTracer(ctx, res, url, headers, sampleRate)
+		return initGrpcTracer(ctx, res, endpoint, headers, sampleRate)
 	}
 
 }
@@ -38,7 +38,7 @@ func initDebugTracer(resource *resource.Resource, sampleRate float64) (*trace.Tr
 	return tp, nil
 }
 
-func initGrpcTracer(ctx context.Context, resource *resource.Resource, url string, headers map[string]string, sampleRate float64) (*trace.TracerProvider, error) {
+func initGrpcTracer(ctx context.Context, resource *resource.Resource, endpoint string, headers map[string]string, sampleRate float64) (*trace.TracerProvider, error) {
 	opts := []otlptracegrpc.Option{
 		// WithRetry sets the retry policy for transient retryable errors that may be
 		//   returned by the target collector endpoint when exporting a batch of spans.
@@ -61,7 +61,7 @@ func initGrpcTracer(ctx context.Context, resource *resource.Resource, url string
 		//   attempts to the target endpoint.
 		// otlptracegrpc.WithReconnectionPeriod(30 * time.Second),
 		//
-		otlptracegrpc.WithEndpoint(url),
+		otlptracegrpc.WithEndpoint(endpoint),
 		otlptracegrpc.WithHeaders(headers),
 	}
 	if os.Getenv("STANZA_OTEL_NO_TLS") != "" { // disable TLS for local OTEL development
