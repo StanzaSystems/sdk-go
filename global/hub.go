@@ -18,7 +18,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-func hubConnect(ctx context.Context) (func(), func()) {
+func hubConnect(ctx context.Context) {
 	tlsConfig := &tls.Config{}
 	if caPath := os.Getenv("STANZA_AWS_ROOT_CA"); caPath != "" {
 		tlsConfig.RootCAs = ca.AWSRootCAs(caPath)
@@ -56,21 +56,19 @@ func hubConnect(ctx context.Context) (func(), func()) {
 			logging.Info("connected to stanza hub", "uri", gs.hubURI)
 			GetServiceConfig(ctx, true)
 			GetGuardConfigs(ctx, true)
-			return OtelStartup(ctx), SentinelStartup(ctx)
+			OtelStartup(ctx, true)
+			SentinelStartup(ctx)
 		}
 	}
-	return func() {}, func() {}
 }
 
 func hubPoller(ctx context.Context, pollInterval time.Duration) {
 	connectAttempt := 0
-	otelShutdown := func() {}
-	sentinelShutdown := func() {}
 	for {
 		select {
 		case <-ctx.Done():
-			otelShutdown()
-			sentinelShutdown()
+			gs.otelShutdown(ctx)
+			gs.sentinelShutdown(ctx)
 			return
 		case <-time.After(pollInterval):
 			if gs.hubConn != nil {
@@ -85,8 +83,8 @@ func hubPoller(ctx context.Context, pollInterval time.Duration) {
 					}
 					GetServiceConfig(ctx, false)
 					GetGuardConfigs(ctx, false)
-					otelShutdown = OtelStartup(ctx)
-					sentinelShutdown = SentinelStartup(ctx)
+					OtelStartup(ctx, false)
+					SentinelStartup(ctx)
 				} else {
 					// 120 attempts * 15 seconds == 1800 seconds == 30 minutes
 					if connectAttempt > 120 {
@@ -111,7 +109,7 @@ func hubPoller(ctx context.Context, pollInterval time.Duration) {
 					}
 				}
 			} else {
-				otelShutdown, sentinelShutdown = hubConnect(ctx)
+				hubConnect(ctx)
 			}
 		}
 	}
