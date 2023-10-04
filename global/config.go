@@ -170,8 +170,9 @@ func OtelStartup(ctx context.Context, skipPoll bool) {
 					ServiceName:        gs.svcName,
 					ServiceVersion:     gs.svcRelease,
 					ServiceEnvironment: gs.svcEnvironment,
-					MetricConfig:       gs.svcConfig.MetricConfig,
-					TraceConfig:        gs.svcConfig.TraceConfig,
+					MetricCollector:    gs.svcConfig.MetricConfig.GetCollectorUrl(),
+					TraceCollector:     gs.svcConfig.TraceConfig.GetCollectorUrl(),
+					TraceSampleRate:    float64(gs.svcConfig.TraceConfig.GetSampleRateDefault()),
 					Headers: map[string]string{
 						"Authorization": "Bearer " + res.GetBearerToken(),
 						"User-Agent":    UserAgent(),

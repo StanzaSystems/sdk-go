@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 
-	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.20.0"
@@ -15,8 +14,9 @@ type SetupConfig struct {
 	ServiceVersion     string
 	ServiceEnvironment string
 	Headers            map[string]string
-	MetricConfig       *hubv1.MetricConfig
-	TraceConfig        *hubv1.TraceConfig
+	MetricCollector    string
+	TraceCollector     string
+	TraceSampleRate    float64
 }
 
 // Setup bootstraps the OpenTelemetry export pipeline.
@@ -49,7 +49,7 @@ func Setup(ctx context.Context, sc SetupConfig) (shutdown func(context.Context) 
 	}
 
 	// Setup trace provider.
-	tracerProvider, err := newTraceProvider(ctx, res, sc.Headers, sc.TraceConfig.GetCollectorUrl(), float64(sc.TraceConfig.GetSampleRateDefault()))
+	tracerProvider, err := newTraceProvider(ctx, res, sc.Headers, sc.TraceCollector, sc.TraceSampleRate)
 	if err != nil {
 		handleErr(err)
 		return
@@ -58,7 +58,7 @@ func Setup(ctx context.Context, sc SetupConfig) (shutdown func(context.Context) 
 	otel.SetTracerProvider(tracerProvider)
 
 	// Setup meter provider.
-	meterProvider, err := newMeterProvider(ctx, res, sc.Headers, sc.MetricConfig.GetCollectorUrl())
+	meterProvider, err := newMeterProvider(ctx, res, sc.Headers, sc.MetricCollector)
 	if err != nil {
 		handleErr(err)
 		return
