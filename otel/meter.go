@@ -14,6 +14,9 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
+// Batch interval for sending metrics to the OTEL collector
+const METRIC_EXPORT_INTERVAL = 10 * time.Second
+
 func newMeterProvider(ctx context.Context, res *resource.Resource, headers map[string]string, endpoint string) (*metric.MeterProvider, error) {
 	if os.Getenv("STANZA_OTEL_DEBUG") != "" {
 		return initDebugMeter(res)
@@ -23,7 +26,7 @@ func newMeterProvider(ctx context.Context, res *resource.Resource, headers map[s
 }
 
 func initDebugMeter(res *resource.Resource) (*metric.MeterProvider, error) {
-	exporter, err := stdoutmetric.New()
+	exporter, err := stdoutmetric.New(stdoutmetric.WithPrettyPrint())
 	if err != nil {
 		return nil, fmt.Errorf("creating stdout meter exporter: %w", err)
 	}
@@ -76,7 +79,7 @@ func initGrpcMeter(ctx context.Context, res *resource.Resource, endpoint string,
 		metric.WithResource(res),
 		metric.WithReader(
 			metric.NewPeriodicReader(exp,
-				metric.WithInterval(10*time.Second))),
+				metric.WithInterval(METRIC_EXPORT_INTERVAL))),
 	)
 	return mp, nil
 }

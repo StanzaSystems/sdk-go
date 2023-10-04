@@ -17,8 +17,8 @@ import (
 )
 
 // Set to less than the maximum duration of the Auth0 Bearer Token
-const BEARER_TOKEN_REFRESH_INTERVAL = 4 * time.Minute
-const BEARER_TOKEN_REFRESH_JITTER = 6 // seconds
+const BEARER_TOKEN_REFRESH_INTERVAL = 20 * time.Hour
+const BEARER_TOKEN_REFRESH_JITTER = 600 // seconds
 
 // Set to how often we poll Hub for a new Service Config
 const SERVICE_CONFIG_REFRESH_INTERVAL = 30 * time.Second
@@ -55,7 +55,7 @@ func GetServiceConfig(ctx context.Context, skipPoll bool) {
 					gs.svcConfig.MetricConfig = res.GetConfig().MetricConfig
 					gs.svcConfig.TraceConfig = res.GetConfig().TraceConfig
 					OtelStartup(ctx, true)
-					logging.Debug("accepted opentelemetry config", "version", res.GetVersion())
+					logging.Debug("accepted opentelemetry configs", "version", res.GetVersion())
 				}
 			}
 			if gs.sentinelInit {
