@@ -6,6 +6,7 @@ import (
 	"time"
 
 	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
+	"github.com/StanzaSystems/sdk-go/global"
 	"github.com/StanzaSystems/sdk-go/hub"
 	"github.com/StanzaSystems/sdk-go/logging"
 
@@ -25,7 +26,7 @@ const (
 type Guard struct {
 	ctx   context.Context
 	start time.Time
-	meter *meter
+	meter *global.StanzaMeter
 	span  trace.Span
 	attr  []attribute.KeyValue
 	err   error

@@ -55,9 +55,11 @@ type state struct {
 	guardConfigLock    *sync.RWMutex
 
 	// otel
-	otelInit      bool
-	otelShutdown  func(context.Context) error
-	otelTokenTime time.Time
+	otelInit         bool
+	otelShutdown     func(context.Context) error
+	otelTokenTime    time.Time
+	otelStanzaMeter  *StanzaMeter
+	otelStanzaTracer *trace.Tracer
 
 	// sentinel
 	sentinelInit       bool
@@ -97,6 +99,7 @@ func NewState(ctx context.Context, hubUri, svcKey, svcName, svcEnv, svcRel strin
 			otelInit:           false,
 			otelShutdown:       func(context.Context) error { return nil },
 			otelTokenTime:      time.Time{},
+			otelStanzaMeter:    &StanzaMeter{},
 			sentinelInit:       false,
 			sentinelShutdown:   func(context.Context) error { return nil },
 			sentinelRulesLock:  &sync.RWMutex{},
@@ -175,6 +178,14 @@ func GetServiceEnvironment() string {
 
 func GetServiceRelease() string {
 	return gs.svcRelease
+}
+
+func GetStanzaMeter() *StanzaMeter {
+	return gs.otelStanzaMeter
+}
+
+func GetStanzaTracer() *trace.Tracer {
+	return gs.otelStanzaTracer
 }
 
 func GetGuardConfig(ctx context.Context, guard string) *hubv1.GuardConfig {

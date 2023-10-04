@@ -16,9 +16,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// Set to longer than it takes for all active Handlers to get new OTEL Providers
-const OTEL_SHUTDOWN_GRACE_PERIOD = 4 * time.Minute
-
 // Set to less than the maximum duration of the Auth0 Bearer Token
 const BEARER_TOKEN_REFRESH_INTERVAL = 4 * time.Minute
 const BEARER_TOKEN_REFRESH_JITTER = 6 // seconds
@@ -186,11 +183,20 @@ func OtelStartup(ctx context.Context, skipPoll bool) {
 					return
 				}
 
-				// Copy the (now) old "otelShutdown" function into a goroutine
-				// which will run it after a grace period; we do this so we have
-				// time to update any active handlers which might be using the old
-				// OTEL Providers to use our new OTEL Providers
-				go runAfter(ctx, gs.otelShutdown, OTEL_SHUTDOWN_GRACE_PERIOD)
+				// Replace global Stanza Meter
+				meter, err := NewStanzaMeter()
+				if err != nil {
+					logging.Error(err)
+				} else {
+					gs.otelStanzaMeter = meter
+				}
+
+				// Replace global Stanza Tracer
+				gs.otelStanzaTracer = NewStanzaTracer()
+
+				// Run old OTEL shutdown function to cleanly shutdown the old
+				// meter and tracer
+				gs.otelShutdown(ctx)
 
 				// Finalize our success
 				gs.otelInit = true
@@ -224,13 +230,4 @@ func SentinelStartup(ctx context.Context) {
 // Helper function to add jitter (random number of seconds) to time.Duration
 func jitter(d time.Duration, i int) time.Duration {
 	return d + (time.Duration(rand.Intn(i)) * time.Second)
-}
-
-// Helper function which sleeps before given function
-func runAfter(ctx context.Context, funcToRun func(context.Context) error, d time.Duration) {
-	time.Sleep(d)
-	err := funcToRun(ctx)
-	if err != nil {
-		logging.Error(err)
-	}
 }
