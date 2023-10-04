@@ -17,7 +17,7 @@ import (
 )
 
 // Set to less than the maximum duration of the Auth0 Bearer Token
-const BEARER_TOKEN_REFRESH_INTERVAL = 4 * time.Hour
+const BEARER_TOKEN_REFRESH_INTERVAL = 20 * time.Hour
 const BEARER_TOKEN_REFRESH_JITTER = 600 // seconds
 
 // Set to how often we poll Hub for a new Service Config
@@ -27,62 +27,6 @@ const SERVICE_CONFIG_REFRESH_JITTER = 6 // seconds
 // Set to how often we poll Hub for a new Guard Config
 const GUARD_CONFIG_REFRESH_INTERVAL = 30 * time.Second
 const GUARD_CONFIG_REFRESH_JITTER = 6 // seconds
-
-// Must be created outside the *Startup functions (so we don't wipe these out every 5 seconds)
-var (
-	otelDone     = func() {}
-	sentinelDone = func() {}
-)
-
-func OtelStartup(ctx context.Context) func() {
-	if OtelEnabled() {
-		gsLock.Lock()
-		defer gsLock.Unlock()
-
-		if !gs.otelInit {
-			otelDone, _ = otel.Init(ctx,
-				gs.svcName,
-				gs.svcRelease,
-				gs.svcEnvironment)
-
-			gs.otelInit = true
-			logging.Debug("initialized opentelemetry exporter")
-		}
-		if gs.svcConfig != nil && GetNewBearerToken(ctx) {
-			if err := otel.InitMetricProvider(ctx, gs.svcConfig.GetMetricConfig(), gs.bearerToken, UserAgent()); err != nil {
-				logging.Error(err)
-			} else {
-				logging.Debug("accepted opentelemetry metric config",
-					"version", gs.svcConfigVersion)
-			}
-			if err := otel.InitTraceProvider(ctx, gs.svcConfig.GetTraceConfig(), gs.bearerToken, UserAgent()); err != nil {
-				logging.Error(err)
-			} else {
-				logging.Debug("accepted opentelemetry trace config",
-					"version", gs.svcConfigVersion)
-			}
-		}
-	}
-	return otelDone
-}
-
-func GetNewBearerToken(ctx context.Context) bool {
-	if time.Now().After(gs.bearerTokenTime.Add(jitter(BEARER_TOKEN_REFRESH_INTERVAL, BEARER_TOKEN_REFRESH_JITTER))) {
-		res, err := gs.hubAuthClient.GetBearerToken(
-			metadata.NewOutgoingContext(ctx, XStanzaKey()),
-			&hubv1.GetBearerTokenRequest{})
-		if err != nil {
-			logging.Error(err)
-		}
-		if res.GetBearerToken() != "" {
-			gs.bearerToken = res.GetBearerToken()
-			gs.bearerTokenTime = time.Now()
-			logging.Debug("obtained bearer token")
-			return true
-		}
-	}
-	return false
-}
 
 func GetServiceConfig(ctx context.Context, skipPoll bool) {
 	if skipPoll || time.Now().After(gs.svcConfigTime.Add(jitter(SERVICE_CONFIG_REFRESH_INTERVAL, SERVICE_CONFIG_REFRESH_JITTER))) {
@@ -106,26 +50,12 @@ func GetServiceConfig(ctx context.Context, skipPoll bool) {
 			defer gsLock.Unlock()
 			errCount := 0
 			if gs.otelInit {
-				if gs.svcConfig.GetMetricConfig().String() != res.GetConfig().GetMetricConfig().String() {
-					if err := otel.InitMetricProvider(ctx, res.GetConfig().GetMetricConfig(), gs.bearerToken, UserAgent()); err != nil {
-						errCount += 1
-						logging.Error(err)
-						otel.InitMetricProvider(ctx, gs.svcConfig.GetMetricConfig(), gs.bearerToken, UserAgent())
-					} else {
-						logging.Debug("accepted opentelemetry metric config",
-							"version", res.GetVersion())
-					}
-				}
-				if gs.svcConfig.GetTraceConfig().String() != res.GetConfig().GetTraceConfig().String() {
-					if err := otel.InitTraceProvider(ctx, res.GetConfig().GetTraceConfig(), gs.bearerToken, UserAgent()); err != nil {
-						errCount += 1
-						logging.Error(err)
-						otel.InitTraceProvider(ctx, gs.svcConfig.GetTraceConfig(), gs.bearerToken, UserAgent())
-					} else {
-						logging.Debug("accepted opentelemetry trace config",
-							"version", res.GetVersion(),
-							"sample_rate", res.GetConfig().GetTraceConfig().GetSampleRateDefault())
-					}
+				if gs.svcConfig.GetMetricConfig().String() != res.GetConfig().GetMetricConfig().String() ||
+					gs.svcConfig.GetTraceConfig().String() != res.GetConfig().GetTraceConfig().String() {
+					gs.svcConfig.MetricConfig = res.GetConfig().MetricConfig
+					gs.svcConfig.TraceConfig = res.GetConfig().TraceConfig
+					OtelStartup(ctx, true)
+					logging.Debug("accepted opentelemetry configs", "version", res.GetVersion())
 				}
 			}
 			if gs.sentinelInit {
@@ -220,23 +150,84 @@ func fetchGuardConfig(ctx context.Context, guard string) *hubv1.GuardConfig {
 	return nil
 }
 
-func SentinelStartup(ctx context.Context) func() {
+func OtelStartup(ctx context.Context, skipPoll bool) {
+	if OtelEnabled() {
+		if skipPoll || time.Now().After(gs.otelTokenTime.Add(jitter(BEARER_TOKEN_REFRESH_INTERVAL, BEARER_TOKEN_REFRESH_JITTER))) {
+			if gs.svcConfig.MetricConfig == nil || gs.svcConfig.TraceConfig == nil {
+				logging.Error(fmt.Errorf("unable to setup opentelemetry, invalid metric or trace config"))
+				return
+			}
+			res, err := gs.hubAuthClient.GetBearerToken(
+				metadata.NewOutgoingContext(ctx, XStanzaKey()),
+				&hubv1.GetBearerTokenRequest{})
+			if err != nil {
+				logging.Error(err)
+				return
+			}
+			if res.GetBearerToken() == "" {
+				logging.Error(fmt.Errorf("failed to obtain bearer token"))
+				return
+			}
+
+			sc := otel.SetupConfig{
+				ServiceName:        gs.svcName,
+				ServiceVersion:     gs.svcRelease,
+				ServiceEnvironment: gs.svcEnvironment,
+				MetricCollector:    gs.svcConfig.MetricConfig.GetCollectorUrl(),
+				TraceCollector:     gs.svcConfig.TraceConfig.GetCollectorUrl(),
+				TraceSampleRate:    float64(gs.svcConfig.TraceConfig.GetSampleRateDefault()),
+				Headers: map[string]string{
+					"Authorization": "Bearer " + res.GetBearerToken(),
+					"User-Agent":    UserAgent(),
+				},
+			}
+
+			// Require the global state lock
+			gsLock.Lock()
+			defer gsLock.Unlock()
+
+			// Setup new OTEL exporters
+			otelShutdown, err := otel.Setup(ctx, sc)
+			if err != nil {
+				logging.Error(err)
+				return
+			}
+
+			// Replace global Stanza Meter
+			gs.otelStanzaMeter = NewStanzaMeter()
+
+			// Replace global Stanza Tracer
+			gs.otelStanzaTracer = NewStanzaTracer()
+
+			// Run old OTEL shutdown function to cleanly shutdown the old
+			// meter and tracer
+			go gs.otelShutdown(ctx)
+
+			// Finalize our success
+			gs.otelInit = true
+			gs.otelShutdown = otelShutdown
+			gs.otelTokenTime = time.Now()
+		}
+	}
+}
+
+func SentinelStartup(ctx context.Context) {
 	if SentinelEnabled() && !gs.sentinelInit {
 		done, err := sentinel.Init(gs.svcName, gs.sentinelRules)
 		if err != nil {
 			logging.Error(err)
-		} else {
-			sentinelDone = done
-			gsLock.Lock()
-			gs.sentinelInit = true
-			gs.sentinelInitTime = time.Now()
-			gsLock.Unlock()
-			logging.Debug("initialized sentinel rules watcher")
+			return
 		}
-	}
-	return func() {
-		sentinelDone()
-		os.RemoveAll(gs.sentinelDatasource)
+		sentinelDone := func(ctx context.Context) error {
+			done()
+			os.RemoveAll(gs.sentinelDatasource)
+			return err
+		}
+		gsLock.Lock()
+		gs.sentinelInit = true
+		gs.sentinelShutdown = sentinelDone
+		gsLock.Unlock()
+		logging.Debug("initialized sentinel rules watcher")
 	}
 }
 

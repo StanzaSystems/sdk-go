@@ -22,7 +22,7 @@ import (
 
 const (
 	instrumentationName    = "github.com/StanzaSystems/sdk-go"
-	instrumentationVersion = "0.0.3-beta"
+	instrumentationVersion = "0.0.4-beta"
 
 	MIN_POLLING_TIME = 15 * time.Second
 
@@ -43,10 +43,6 @@ type state struct {
 	hubConfigClient hubv1.ConfigServiceClient
 	hubQuotaClient  hubv1.QuotaServiceClient
 
-	// stored from GetBearerToken request
-	bearerToken     string
-	bearerTokenTime time.Time
-
 	// stored from GetServiceConfig polling
 	svcConfig        *hubv1.ServiceConfig
 	svcConfigTime    time.Time
@@ -58,14 +54,16 @@ type state struct {
 	guardConfigVersion map[string]string
 	guardConfigLock    *sync.RWMutex
 
-	// OTEL
-	otelInit                    bool
-	otelMetricProviderConnected bool
-	otelTraceProviderConnected  bool
+	// otel
+	otelInit         bool
+	otelShutdown     func(context.Context) error
+	otelTokenTime    time.Time
+	otelStanzaMeter  *StanzaMeter
+	otelStanzaTracer *trace.Tracer
 
 	// sentinel
 	sentinelInit       bool
-	sentinelInitTime   time.Time
+	sentinelShutdown   func(context.Context) error
 	sentinelDatasource string
 	sentinelRules      map[string]string
 	sentinelRulesLock  *sync.RWMutex
@@ -84,28 +82,28 @@ func NewState(ctx context.Context, hubUri, svcKey, svcName, svcEnv, svcRel strin
 	initOnce.Do(func() {
 		gsLock.Lock()
 		gs = state{
-			hubURI:                      hubUri,
-			svcKey:                      svcKey,
-			svcName:                     svcName,
-			svcEnvironment:              svcEnv,
-			svcRelease:                  svcRel,
-			clientId:                    uuid.New(),
-			hubConn:                     nil,
-			bearerToken:                 "",
-			bearerTokenTime:             time.Time{},
-			svcConfig:                   &hubv1.ServiceConfig{},
-			svcConfigTime:               time.Time{},
-			svcConfigVersion:            "",
-			guardConfig:                 make(map[string]*hubv1.GuardConfig),
-			guardConfigTime:             make(map[string]time.Time),
-			guardConfigVersion:          make(map[string]string),
-			guardConfigLock:             &sync.RWMutex{},
-			otelInit:                    false,
-			otelMetricProviderConnected: false,
-			otelTraceProviderConnected:  false,
-			sentinelInit:                false,
-			sentinelInitTime:            time.Time{},
-			sentinelRulesLock:           &sync.RWMutex{},
+			hubURI:             hubUri,
+			svcKey:             svcKey,
+			svcName:            svcName,
+			svcEnvironment:     svcEnv,
+			svcRelease:         svcRel,
+			clientId:           uuid.New(),
+			hubConn:            nil,
+			svcConfig:          &hubv1.ServiceConfig{},
+			svcConfigTime:      time.Time{},
+			svcConfigVersion:   "",
+			guardConfig:        make(map[string]*hubv1.GuardConfig),
+			guardConfigTime:    make(map[string]time.Time),
+			guardConfigVersion: make(map[string]string),
+			guardConfigLock:    &sync.RWMutex{},
+			otelInit:           false,
+			otelShutdown:       func(context.Context) error { return nil },
+			otelTokenTime:      time.Time{},
+			otelStanzaMeter:    NewStanzaMeter(),
+			otelStanzaTracer:   NewStanzaTracer(),
+			sentinelInit:       false,
+			sentinelShutdown:   func(context.Context) error { return nil },
+			sentinelRulesLock:  &sync.RWMutex{},
 		}
 		gsLock.Unlock()
 
@@ -181,6 +179,14 @@ func GetServiceEnvironment() string {
 
 func GetServiceRelease() string {
 	return gs.svcRelease
+}
+
+func GetStanzaMeter() *StanzaMeter {
+	return gs.otelStanzaMeter
+}
+
+func GetStanzaTracer() *trace.Tracer {
+	return gs.otelStanzaTracer
 }
 
 func GetGuardConfig(ctx context.Context, guard string) *hubv1.GuardConfig {

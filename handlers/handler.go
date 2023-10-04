@@ -19,29 +19,21 @@ type Handler struct {
 	featureName   *string // overrides request baggage (if any)
 	priorityBoost *int32  // adds to request baggage (if any)
 	defaultWeight *float32
-	meter         *meter
-	tracer        trace.Tracer
 	attr          []attribute.KeyValue
 }
 
 func NewHandler(gn string, fn *string, pb *int32, dw *float32) (*Handler, error) {
-	m, err := GetStanzaMeter()
 	return &Handler{
 		guardName:     gn,
 		featureName:   fn,
 		priorityBoost: pb,
 		defaultWeight: dw,
-		meter:         m,
-		tracer: otel.GetTracerProvider().Tracer(
-			global.InstrumentationName(),
-			global.InstrumentationTraceVersion(),
-		),
 		attr: []attribute.KeyValue{
 			clientIdKey.String(global.GetClientID()),
 			environmentKey.String(global.GetServiceEnvironment()),
 			serviceKey.String(global.GetServiceName()),
 		},
-	}, err
+	}, nil
 }
 
 func (h *Handler) Guard(ctx context.Context, span trace.Span, tokens []string) *Guard {
@@ -83,7 +75,7 @@ func (h *Handler) NewGuard(ctx context.Context, span trace.Span, attr []attribut
 	return &Guard{
 		ctx:   ctx,
 		start: time.Time{},
-		meter: h.meter,
+		meter: global.GetStanzaMeter(),
 		span:  span,
 		attr:  append(h.attr, attr...),
 		err:   err,
@@ -115,7 +107,7 @@ func (h *Handler) DefaultWeight() *float32 {
 
 // OTEL Helper Functions //
 func (h *Handler) Tracer() trace.Tracer {
-	return h.tracer
+	return *global.GetStanzaTracer()
 }
 
 func (h *Handler) Propagator() propagation.TextMapPropagator {
@@ -123,11 +115,11 @@ func (h *Handler) Propagator() propagation.TextMapPropagator {
 }
 
 func (h *Handler) FailOpen(ctx context.Context) {
-	if h.meter != nil {
-		h.meter.AllowedCount.Add(ctx, 1,
+	if m := global.GetStanzaMeter(); m != nil {
+		m.AllowedCount.Add(ctx, 1,
 			[]metric.AddOption{metric.WithAttributes(append(h.attr,
 				reason(ReasonFailOpen))...)}...)
-		h.meter.AllowedUnknownCount.Add(ctx, 1,
+		m.AllowedUnknownCount.Add(ctx, 1,
 			[]metric.AddOption{metric.WithAttributes(h.attr...)}...)
 	}
 }

@@ -6,9 +6,6 @@ import (
 	"fmt"
 	"os"
 
-	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
-
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -16,7 +13,16 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
-func initDebugTracer(resource *resource.Resource, config *hubv1.TraceConfig) (*trace.TracerProvider, error) {
+func newTraceProvider(ctx context.Context, res *resource.Resource, headers map[string]string, endpoint string, sampleRate float64) (*trace.TracerProvider, error) {
+	if os.Getenv("STANZA_OTEL_DEBUG") != "" {
+		return initDebugTracer(res, sampleRate)
+	} else {
+		return initGrpcTracer(ctx, res, endpoint, headers, sampleRate)
+	}
+
+}
+
+func initDebugTracer(resource *resource.Resource, sampleRate float64) (*trace.TracerProvider, error) {
 	exporter, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
 	if err != nil {
 		return nil, fmt.Errorf("creating stdout trace exporter: %w", err)
@@ -24,18 +30,15 @@ func initDebugTracer(resource *resource.Resource, config *hubv1.TraceConfig) (*t
 
 	// ParentBased will enable sampling if the Parent sampled, otherwise use the
 	// default sample rate given by Hub (which is 1/10th of 1% of requests).
-	sampleRate := float64(config.GetSampleRateDefault())
-
 	tp := trace.NewTracerProvider(
 		trace.WithSampler(trace.ParentBased(trace.TraceIDRatioBased(sampleRate))),
 		trace.WithBatcher(exporter),
 		trace.WithResource(resource),
 	)
-	otel.SetTracerProvider(tp)
 	return tp, nil
 }
 
-func initGrpcTracer(ctx context.Context, resource *resource.Resource, config *hubv1.TraceConfig, token, ua string) (*trace.TracerProvider, error) {
+func initGrpcTracer(ctx context.Context, resource *resource.Resource, endpoint string, headers map[string]string, sampleRate float64) (*trace.TracerProvider, error) {
 	opts := []otlptracegrpc.Option{
 		// WithRetry sets the retry policy for transient retryable errors that may be
 		//   returned by the target collector endpoint when exporting a batch of spans.
@@ -58,11 +61,8 @@ func initGrpcTracer(ctx context.Context, resource *resource.Resource, config *hu
 		//   attempts to the target endpoint.
 		// otlptracegrpc.WithReconnectionPeriod(30 * time.Second),
 		//
-		otlptracegrpc.WithEndpoint(config.GetCollectorUrl()),
-		otlptracegrpc.WithHeaders(map[string]string{
-			"Authorization": "Bearer " + token,
-			"User-Agent":    ua,
-		}),
+		otlptracegrpc.WithEndpoint(endpoint),
+		otlptracegrpc.WithHeaders(headers),
 	}
 	if os.Getenv("STANZA_OTEL_NO_TLS") != "" { // disable TLS for local OTEL development
 		opts = append(opts,
@@ -80,14 +80,10 @@ func initGrpcTracer(ctx context.Context, resource *resource.Resource, config *hu
 
 	// ParentBased will enable sampling if the Parent sampled, otherwise use the
 	// default sample rate given by Hub (which is 1/10th of 1% of requests).
-	// TODO: Handle trace sample rate overrides
-	sampleRate := float64(config.GetSampleRateDefault())
-
 	tp := trace.NewTracerProvider(
 		trace.WithSampler(trace.ParentBased(trace.TraceIDRatioBased(sampleRate))),
 		trace.WithBatcher(exporter),
 		trace.WithResource(resource),
 	)
-	otel.SetTracerProvider(tp)
 	return tp, nil
 }

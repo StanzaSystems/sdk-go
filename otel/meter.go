@@ -5,10 +5,8 @@ import (
 	"crypto/tls"
 	"fmt"
 	"os"
+	"time"
 
-	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
-
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
 	"go.opentelemetry.io/otel/sdk/metric"
@@ -16,19 +14,29 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
+// Batch interval for sending metrics to the OTEL collector
+const METRIC_EXPORT_INTERVAL = 10 * time.Second
+
+func newMeterProvider(ctx context.Context, res *resource.Resource, headers map[string]string, endpoint string) (*metric.MeterProvider, error) {
+	if os.Getenv("STANZA_OTEL_DEBUG") != "" {
+		return initDebugMeter(res)
+	} else {
+		return initGrpcMeter(ctx, res, endpoint, headers)
+	}
+}
+
 func initDebugMeter(res *resource.Resource) (*metric.MeterProvider, error) {
-	exporter, err := stdoutmetric.New()
+	exporter, err := stdoutmetric.New(stdoutmetric.WithPrettyPrint())
 	if err != nil {
 		return nil, fmt.Errorf("creating stdout meter exporter: %w", err)
 	}
 	mp := metric.NewMeterProvider(
 		metric.WithResource(res),
 		metric.WithReader(metric.NewPeriodicReader(exporter)))
-	otel.SetMeterProvider(mp)
 	return mp, nil
 }
 
-func initGrpcMeter(ctx context.Context, res *resource.Resource, config *hubv1.MetricConfig, token, ua string) (*metric.MeterProvider, error) {
+func initGrpcMeter(ctx context.Context, res *resource.Resource, endpoint string, headers map[string]string) (*metric.MeterProvider, error) {
 	opts := []otlpmetricgrpc.Option{
 		// WithRetry sets the retry policy for transient retryable errors that are
 		//   returned by the target collector endpoint.
@@ -51,11 +59,8 @@ func initGrpcMeter(ctx context.Context, res *resource.Resource, config *hubv1.Me
 		//   attempts to the target endpoint.
 		// otlpmetricgrpc.WithReconnectionPeriod(1 * time.Minute),
 		//
-		otlpmetricgrpc.WithEndpoint(config.GetCollectorUrl()),
-		otlpmetricgrpc.WithHeaders(map[string]string{
-			"Authorization": "Bearer " + token,
-			"User-Agent":    ua,
-		}),
+		otlpmetricgrpc.WithEndpoint(endpoint),
+		otlpmetricgrpc.WithHeaders(headers),
 	}
 	if os.Getenv("STANZA_OTEL_NO_TLS") != "" { // disable TLS for local OTEL development
 		opts = append(opts,
@@ -72,7 +77,9 @@ func initGrpcMeter(ctx context.Context, res *resource.Resource, config *hubv1.Me
 	}
 	mp := metric.NewMeterProvider(
 		metric.WithResource(res),
-		metric.WithReader(metric.NewPeriodicReader(exp)))
-	otel.SetMeterProvider(mp)
+		metric.WithReader(
+			metric.NewPeriodicReader(exp,
+				metric.WithInterval(METRIC_EXPORT_INTERVAL))),
+	)
 	return mp, nil
 }
