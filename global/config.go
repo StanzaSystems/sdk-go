@@ -153,52 +153,60 @@ func fetchGuardConfig(ctx context.Context, guard string) *hubv1.GuardConfig {
 func OtelStartup(ctx context.Context, skipPoll bool) {
 	if OtelEnabled() {
 		if skipPoll || time.Now().After(gs.otelTokenTime.Add(jitter(BEARER_TOKEN_REFRESH_INTERVAL, BEARER_TOKEN_REFRESH_JITTER))) {
-			if gs.svcConfig.MetricConfig != nil && gs.svcConfig.TraceConfig != nil {
-				res, err := gs.hubAuthClient.GetBearerToken(
-					metadata.NewOutgoingContext(ctx, XStanzaKey()),
-					&hubv1.GetBearerTokenRequest{})
-				if err != nil {
-					logging.Error(err)
-					return
-				}
-				if res.GetBearerToken() == "" {
-					logging.Error(fmt.Errorf("failed to obtain bearer token"))
-					return
-				}
-
-				sc := otel.SetupConfig{
-					ServiceName:        gs.svcName,
-					ServiceVersion:     gs.svcRelease,
-					ServiceEnvironment: gs.svcEnvironment,
-					MetricCollector:    gs.svcConfig.MetricConfig.GetCollectorUrl(),
-					TraceCollector:     gs.svcConfig.TraceConfig.GetCollectorUrl(),
-					TraceSampleRate:    float64(gs.svcConfig.TraceConfig.GetSampleRateDefault()),
-					Headers: map[string]string{
-						"Authorization": "Bearer " + res.GetBearerToken(),
-						"User-Agent":    UserAgent(),
-					},
-				}
-				otelShutdown, err := otel.Setup(ctx, sc)
-				if err != nil {
-					logging.Error(err)
-					return
-				}
-
-				// Replace global Stanza Meter
-				gs.otelStanzaMeter = NewStanzaMeter()
-
-				// Replace global Stanza Tracer
-				gs.otelStanzaTracer = NewStanzaTracer()
-
-				// Run old OTEL shutdown function to cleanly shutdown the old
-				// meter and tracer
-				gs.otelShutdown(ctx)
-
-				// Finalize our success
-				gs.otelInit = true
-				gs.otelShutdown = otelShutdown
-				gs.otelTokenTime = time.Now()
+			if gs.svcConfig.MetricConfig == nil || gs.svcConfig.TraceConfig == nil {
+				logging.Error(fmt.Errorf("unable to setup opentelemetry, invalid metric or trace config"))
+				return
 			}
+			res, err := gs.hubAuthClient.GetBearerToken(
+				metadata.NewOutgoingContext(ctx, XStanzaKey()),
+				&hubv1.GetBearerTokenRequest{})
+			if err != nil {
+				logging.Error(err)
+				return
+			}
+			if res.GetBearerToken() == "" {
+				logging.Error(fmt.Errorf("failed to obtain bearer token"))
+				return
+			}
+
+			sc := otel.SetupConfig{
+				ServiceName:        gs.svcName,
+				ServiceVersion:     gs.svcRelease,
+				ServiceEnvironment: gs.svcEnvironment,
+				MetricCollector:    gs.svcConfig.MetricConfig.GetCollectorUrl(),
+				TraceCollector:     gs.svcConfig.TraceConfig.GetCollectorUrl(),
+				TraceSampleRate:    float64(gs.svcConfig.TraceConfig.GetSampleRateDefault()),
+				Headers: map[string]string{
+					"Authorization": "Bearer " + res.GetBearerToken(),
+					"User-Agent":    UserAgent(),
+				},
+			}
+
+			// Require the global state lock
+			gsLock.Lock()
+			defer gsLock.Unlock()
+
+			// Setup new OTEL exporters
+			otelShutdown, err := otel.Setup(ctx, sc)
+			if err != nil {
+				logging.Error(err)
+				return
+			}
+
+			// Replace global Stanza Meter
+			gs.otelStanzaMeter = NewStanzaMeter()
+
+			// Replace global Stanza Tracer
+			gs.otelStanzaTracer = NewStanzaTracer()
+
+			// Run old OTEL shutdown function to cleanly shutdown the old
+			// meter and tracer
+			go gs.otelShutdown(ctx)
+
+			// Finalize our success
+			gs.otelInit = true
+			gs.otelShutdown = otelShutdown
+			gs.otelTokenTime = time.Now()
 		}
 	}
 }
