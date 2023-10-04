@@ -34,56 +34,37 @@ func NewStanzaTracer() *trace.Tracer {
 	return &t
 }
 
-func NewStanzaMeter() (*StanzaMeter, error) {
+func NewStanzaMeter() *StanzaMeter {
 	om := otel.GetMeterProvider().Meter(
 		InstrumentationName(),
 		InstrumentationMetricVersion(),
 	)
 
 	var m StanzaMeter
-	var err error
-	m.AllowedCount, err = om.Int64Counter(
+	m.AllowedCount, _ = om.Int64Counter(
 		stanzaAllowed,
 		metric.WithUnit("1"),
 		metric.WithDescription("measures the number of executions that were allowed"))
-	if err != nil {
-		return nil, err
-	}
-	m.BlockedCount, err = om.Int64Counter(
+	m.BlockedCount, _ = om.Int64Counter(
 		stanzaBlocked,
 		metric.WithUnit("1"),
 		metric.WithDescription("measures the number of executions that were backpressured"))
-	if err != nil {
-		return nil, err
-	}
-	m.AllowedSuccessCount, err = om.Int64Counter(
+	m.AllowedSuccessCount, _ = om.Int64Counter(
 		stanzaAllowedSuccess,
 		metric.WithUnit("1"),
 		metric.WithDescription("measures the number of executions that succeeded"))
-	if err != nil {
-		return nil, err
-	}
-	m.AllowedFailureCount, err = om.Int64Counter(
+	m.AllowedFailureCount, _ = om.Int64Counter(
 		stanzaAllowedFailure,
 		metric.WithUnit("1"),
 		metric.WithDescription("measures the number of executions that failed"))
-	if err != nil {
-		return nil, err
-	}
-	m.AllowedUnknownCount, err = om.Int64Counter(
+	m.AllowedUnknownCount, _ = om.Int64Counter(
 		stanzaAllowedUnknown,
 		metric.WithUnit("1"),
 		metric.WithDescription("measures the number of executions where the success (or failure) was unknown"))
-	if err != nil {
-		return nil, err
-	}
-	m.AllowedDuration, err = om.Float64Histogram(
+	m.AllowedDuration, _ = om.Float64Histogram(
 		stanzaAllowedDuration,
 		metric.WithUnit("ms"),
 		metric.WithDescription("measures the total executions time of guarded requests"))
-	if err != nil {
-		return nil, err
-	}
 
-	return &m, nil
+	return &m
 }

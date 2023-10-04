@@ -185,12 +185,7 @@ func OtelStartup(ctx context.Context, skipPoll bool) {
 				}
 
 				// Replace global Stanza Meter
-				meter, err := NewStanzaMeter()
-				if err != nil {
-					logging.Error(err)
-				} else {
-					gs.otelStanzaMeter = meter
-				}
+				gs.otelStanzaMeter = NewStanzaMeter()
 
 				// Replace global Stanza Tracer
 				gs.otelStanzaTracer = NewStanzaTracer()
