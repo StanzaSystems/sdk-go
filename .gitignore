@@ -21,6 +21,7 @@ __debug*
 
 # Build artifacts
 bin/
+pkg/
 
 # Any user generated certs, don't check those in.
 certs/

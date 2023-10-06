@@ -1,0 +1,10 @@
+manifest_version = 3
+name = "stanzaproxy-fastly"
+description = "StanzaProxy for Fastly Edge@Compute"
+authors = ["msg@sre.is"]
+language = "go"
+service_id = ""
+
+[scripts]
+env_vars = ["GOARCH=wasm", "GOOS=wasip1"]
+build = "go build -o bin/main.wasm ."
