@@ -63,7 +63,7 @@ func Guard(sg StanzaGuard, fr FastlyRequest) func(w http.ResponseWriter, r *http
 			w.Write([]byte(err.Error()))
 			return
 		}
-		req.Header.Set("X-Stanza-Key", key)
+		req.Header.Set("X-Stanza-Token", key)
 		resp, err := req.Send(r.Context(), sg.Backend)
 		if err != nil {
 			w.WriteHeader(fsthttp.StatusBadGateway)
