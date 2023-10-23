@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
@@ -36,44 +35,57 @@ type Guard struct {
 	Unknown     int
 	finalStatus int
 
-	quotaToken   string
-	quotaStatus  int
-	quotaMessage string
-	quotaReason  string
+	localStatus hubv1.Local
+	localBlock  *base.BlockError
 
-	sentinelBlock *base.BlockError
+	tokenStatus hubv1.Token
+
+	quotaStatus hubv1.Quota
+	quotaToken  string
 }
 
 func (g *Guard) Allowed() bool {
-	if g.sentinelBlock == nil &&
-		g.quotaStatus != hub.CheckQuotaBlocked &&
-		g.quotaStatus != hub.ValidateTokensInvalid {
+	if g.localStatus != hubv1.Local_LOCAL_BLOCKED &&
+		g.quotaStatus != hubv1.Quota_QUOTA_BLOCKED &&
+		g.tokenStatus != hubv1.Token_TOKEN_NOT_VALID {
 		return true
 	}
 	return false
 }
 
 func (g *Guard) Blocked() bool {
-	if g.sentinelBlock != nil ||
-		g.quotaStatus == hub.CheckQuotaBlocked ||
-		g.quotaStatus == hub.ValidateTokensInvalid {
+	if g.localStatus == hubv1.Local_LOCAL_BLOCKED ||
+		g.quotaStatus == hubv1.Quota_QUOTA_BLOCKED ||
+		g.tokenStatus == hubv1.Token_TOKEN_NOT_VALID {
 		return true
 	}
 	return false
 }
 
 func (g *Guard) BlockMessage() string {
-	if g.sentinelBlock != nil {
-		return g.sentinelBlock.BlockMsg()
+	if g.localStatus == hubv1.Local_LOCAL_BLOCKED {
+		return g.localBlock.BlockMsg()
 	}
-	return g.quotaMessage
+	if g.tokenStatus == hubv1.Token_TOKEN_NOT_VALID {
+		return "Invalid or expired X-Stanza-Token."
+	}
+	if g.quotaStatus == hubv1.Quota_QUOTA_BLOCKED {
+		return "Stanza quota exhausted. Please try again later."
+	}
+	return ""
 }
 
 func (g *Guard) BlockReason() string {
-	if g.sentinelBlock != nil {
-		return g.sentinelBlock.BlockType().String()
+	if g.localStatus == hubv1.Local_LOCAL_BLOCKED {
+		return hubv1.Local_name[int32(hubv1.Local_LOCAL_BLOCKED)]
 	}
-	return g.quotaReason
+	if g.tokenStatus == hubv1.Token_TOKEN_NOT_VALID {
+		return hubv1.Token_name[int32(hubv1.Token_TOKEN_NOT_VALID)]
+	}
+	if g.quotaStatus == hubv1.Quota_QUOTA_BLOCKED {
+		return hubv1.Quota_name[int32(hubv1.Quota_QUOTA_BLOCKED)]
+	}
+	return ""
 }
 
 func (g *Guard) Token() string {
@@ -106,108 +118,113 @@ func (g *Guard) End(status int) {
 	g.finalStatus = status
 }
 
-func (g *Guard) checkSentinel(name string) {
-	attrWithReason := append(g.attr, reason(ReasonSentinel))
-	e, b := api.Entry(name, api.WithTrafficType(base.Inbound), api.WithResourceType(base.ResTypeWeb))
-	if b != nil {
-		g.sentinelBlock = b
-		logging.Debug("Stanza blocked",
-			"guard", name,
-			"sentinel.block_msg", b.BlockMsg(),
-			"sentinel.block_type", b.BlockType().String(),
-			"sentinel.block_value", b.TriggeredValue(),
-			"sentinel.block_rule", b.TriggeredRule().String(),
-		)
-		g.span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
-		g.meter.BlockedCount.Add(g.ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
+func (g *Guard) checkLocal(ctx context.Context, name string, enabled bool) (hubv1.Local, error) {
+	if !enabled {
+		g.localStatus = hubv1.Local_LOCAL_EVAL_DISABLED
 	} else {
-		g.span.AddEvent("Stanza allowed", trace.WithAttributes(attrWithReason...))
-		g.meter.AllowedCount.Add(g.ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
+		e, b := api.Entry(name, api.WithTrafficType(base.Inbound), api.WithResourceType(base.ResTypeWeb))
+		if b != nil {
+			g.localBlock = b
+			logging.Debug("Sentinel blocked",
+				"guard", name,
+				"sentinel.block_msg", b.BlockMsg(),
+				"sentinel.block_type", b.BlockType().String(),
+				"sentinel.block_value", b.TriggeredValue(),
+				"sentinel.block_rule", b.TriggeredRule().String(),
+			)
+			g.blocked(ctx)
+			g.localStatus = hubv1.Local_LOCAL_BLOCKED
+		} else {
+			e.Exit() // cleanly exit the Sentinel Entry
+			g.localStatus = hubv1.Local_LOCAL_ALLOWED
+		}
 	}
-	e.Exit() // cleanly exit the Sentinel Entry
+	return g.localStatus, nil
 }
 
-func (g *Guard) checkQuota(ctx context.Context, tlr *hubv1.GetTokenLeaseRequest) {
+func (g *Guard) checkToken(ctx context.Context, name string, tokens []string) (hubv1.Token, error) {
+	g.tokenStatus, g.err = hub.ValidateTokens(ctx, name, tokens)
+	if g.err != nil {
+		g.failopen(ctx, g.err)
+	}
+	if g.tokenStatus == hubv1.Token_TOKEN_NOT_VALID {
+		g.blocked(ctx)
+	}
+	return g.tokenStatus, g.err
+}
+
+func (g *Guard) checkQuota(ctx context.Context, tlr *hubv1.GetTokenLeaseRequest) (hubv1.Quota, error) {
 	g.quotaStatus, g.quotaToken, g.err = hub.CheckQuota(ctx, tlr)
-
-	attrWithReason := g.attr
-	switch g.quotaStatus {
-	case hub.CheckQuotaBlocked:
-		attrWithReason = append(attrWithReason, reason(ReasonQuota))
-		g.quotaReason = reason(ReasonQuota).Value.AsString()
-		g.quotaMessage = "Stanza quota exhausted. Please try again later."
-		g.meter.BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
-		g.span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
-		logging.Debug("Stanza blocked", tlrLogReason(tlr, g.quotaReason)...)
-		return
-	case hub.CheckQuotaAllowed:
-		attrWithReason = append(attrWithReason, reason(ReasonQuota))
-		g.quotaReason = reason(ReasonQuota).Value.AsString()
-	case hub.CheckQuotaSkipped:
-		attrWithReason = append(attrWithReason, reason(ReasonQuotaCheckDisabled))
-		g.quotaReason = reason(ReasonQuotaCheckDisabled).Value.AsString()
-	case hub.CheckQuotaFailOpen:
-		attrWithReason = append(attrWithReason, reason(ReasonQuotaFailOpen))
-		g.quotaReason = reason(ReasonQuotaFailOpen).Value.AsString()
-	default:
-		attrWithReason = append(attrWithReason, reason(ReasonQuotaUnknown))
-		g.quotaReason = reason(ReasonQuotaUnknown).Value.AsString()
-		g.quotaStatus = GuardUnknown
+	if g.err != nil {
+		g.failopen(ctx, g.err)
 	}
-	g.span.AddEvent("Stanza allowed", trace.WithAttributes(attrWithReason...))
-	logging.Debug("Stanza allowed", tlrLogReason(tlr, g.quotaReason)...)
-	g.meter.AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
+	if g.quotaStatus == hubv1.Quota_QUOTA_BLOCKED {
+		g.blocked(ctx)
+	}
+	return g.quotaStatus, g.err
 }
 
-func (g *Guard) checkToken(ctx context.Context, name string, tokens []string) {
-	g.quotaStatus, g.err = hub.ValidateTokens(ctx, name, tokens)
-
-	attrWithReason := g.attr
-	switch g.quotaStatus {
-	case hub.ValidateTokensInvalid:
-		attrWithReason := append(attrWithReason, reason(ReasonQuotaToken))
-		g.quotaReason = reason(ReasonQuotaToken).Value.AsString()
-		g.quotaMessage = "Invalid or expired x-stanza-token."
-		g.meter.BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
-		g.span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
-		logging.Debug("Stanza blocked",
-			"guard", name,
-			"reason", g.quotaReason,
-		)
-		return
-	case hub.ValidateTokensValid:
-		attrWithReason = append(attrWithReason, reason(ReasonQuotaToken))
-		g.quotaReason = reason(ReasonQuotaToken).Value.AsString()
-	case hub.ValidateTokensFailOpen:
-		attrWithReason = append(attrWithReason, reason(ReasonQuotaFailOpen))
-		g.quotaReason = reason(ReasonQuotaFailOpen).Value.AsString()
-	case hub.ValidateTokensSkipped:
-		attrWithReason = append(attrWithReason, reason(ReasonQuotaCheckDisabled))
-		g.quotaReason = reason(ReasonQuotaCheckDisabled).Value.AsString()
-	}
-	g.span.AddEvent("Stanza allowed", trace.WithAttributes(attrWithReason...))
-	logging.Debug("Stanza allowed",
-		"guard", name,
-		"reason", g.quotaReason,
-	)
-	g.meter.AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
+func (g *Guard) allowed(ctx context.Context) {
+	g.meter.AllowedCount.Add(ctx, 1, g.metricAttr()...)
+	g.span.AddEvent("Stanza allowed", g.traceAttr(nil))
+	logging.Debug("Stanza allowed", g.logReasons(nil)...)
 }
 
-func tlrLogReason(tlr *hubv1.GetTokenLeaseRequest, reason string) []interface{} {
+func (g *Guard) blocked(ctx context.Context) {
+	g.meter.BlockedCount.Add(ctx, 1, g.metricAttr()...)
+	g.span.AddEvent("Stanza blocked", g.traceAttr(nil))
+	logging.Debug("Stanza blocked", g.logReasons(nil)...)
+}
+
+func (g *Guard) failopen(ctx context.Context, err error) {
+	g.span.AddEvent("Stanza failed open", g.traceAttr(err))
+	logging.Debug("Stanza failed open", g.logReasons(err)...)
+}
+
+func (g *Guard) metricAttr() []metric.AddOption {
+	return []metric.AddOption{metric.WithAttributes(g.reasons()...)}
+}
+
+func (g *Guard) traceAttr(err error) trace.SpanStartEventOption {
+	var resp []attribute.KeyValue
+	if err != nil {
+		resp = append(resp, errorKey.String(err.Error()))
+	}
+	resp = append(resp, g.reasons()...)
+	return trace.WithAttributes(resp...)
+}
+
+func (g *Guard) reasons() []attribute.KeyValue {
+	kvs := g.attr
+	kvs = append(kvs, localReasonKey.String(hubv1.Local_name[int32(g.localStatus)]))
+	kvs = append(kvs, tokenReasonKey.String(hubv1.Token_name[int32(g.tokenStatus)]))
+	kvs = append(kvs, quotaReasonKey.String(hubv1.Quota_name[int32(g.quotaStatus)]))
+	return kvs
+}
+
+func (g *Guard) logReasons(err error) []interface{} {
 	resp := make([]interface{}, 0, 10)
-	if tlr != nil {
-		if tlr.Selector != nil {
-			resp = append(resp, "guard", tlr.GetSelector().GetGuardName())
-			if tlr.GetSelector().FeatureName != nil {
-				resp = append(resp, "feature", tlr.GetSelector().GetFeatureName())
-			}
-		}
-		if tlr.PriorityBoost != nil {
-			resp = append(resp, "priority_boost", fmt.Sprintf("%d", tlr.GetPriorityBoost()))
-		}
-		if tlr.DefaultWeight != nil {
-			resp = append(resp, "default_weight", fmt.Sprintf("%.2f", tlr.GetDefaultWeight()))
-		}
+	if err != nil {
+		resp = append(resp, "error", err.Error())
 	}
-	return append(resp, "reason", reason)
+	// TODO: store and use guard name, feature name, PB, DW
+	// 	if tlr != nil {
+	// 		if tlr.Selector != nil {
+	// 			resp = append(resp, "guard", tlr.GetSelector().GetGuardName())
+	// 			if tlr.GetSelector().FeatureName != nil {
+	// 				resp = append(resp, "feature", tlr.GetSelector().GetFeatureName())
+	// 			}
+	// 		}
+	// 		if tlr.PriorityBoost != nil {
+	// 			resp = append(resp, "priority_boost", fmt.Sprintf("%d", tlr.GetPriorityBoost()))
+	// 		}
+	// 		if tlr.DefaultWeight != nil {
+	// 			resp = append(resp, "default_weight", fmt.Sprintf("%.2f", tlr.GetDefaultWeight()))
+	// 		}
+	// 	}
+	return append(resp,
+		localReason, hubv1.Local_name[int32(g.localStatus)],
+		tokenReason, hubv1.Token_name[int32(g.tokenStatus)],
+		quotaReason, hubv1.Quota_name[int32(g.quotaStatus)],
+	)
 }

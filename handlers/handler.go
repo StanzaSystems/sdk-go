@@ -2,14 +2,15 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/global"
 	"github.com/StanzaSystems/sdk-go/hub"
 	"github.com/StanzaSystems/sdk-go/otel"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -51,21 +52,27 @@ func (h *Handler) Guard(ctx context.Context, span trace.Span, tokens []string) *
 		guardKey.String(tlr.Selector.GetGuardName()),
 		featureKey.String(tlr.Selector.GetFeatureName()),
 	}
-
 	g := h.NewGuard(ctx, span, attr, nil)
-	if h.SentinelEnabled() {
-		g.checkSentinel(h.GuardName())
-		if g.sentinelBlock != nil {
-			return g
-		}
+
+	// Local (Sentinel) check
+	localStatus, err := g.checkLocal(ctx, h.GuardName(), h.SentinelEnabled())
+	if err != nil || localStatus == hubv1.Local_LOCAL_BLOCKED {
+		return g
 	}
-	if len(tokens) > 0 {
-		g.checkToken(ctx, h.GuardName(), tokens)
-		if g.quotaStatus == hub.ValidateTokensInvalid {
-			return g
-		}
+
+	// Ingress Token check
+	tokenStatus, err := g.checkToken(ctx, h.GuardName(), tokens)
+	if err != nil || tokenStatus == hubv1.Token_TOKEN_NOT_VALID {
+		return g
 	}
-	g.checkQuota(ctx, tlr)
+
+	// Quota check
+	quotaStatus, err := g.checkQuota(ctx, tlr)
+	if err != nil || quotaStatus == hubv1.Quota_QUOTA_BLOCKED {
+		return g
+	}
+
+	g.allowed(ctx)
 	g.start = time.Now()
 	return g
 }
@@ -85,7 +92,10 @@ func (h *Handler) NewGuard(ctx context.Context, span trace.Span, attr []attribut
 		Unknown:     GuardUnknown,
 		finalStatus: GuardUnknown,
 
-		sentinelBlock: nil,
+		localBlock:  nil,
+		localStatus: hubv1.Local_LOCAL_NOT_EVAL,
+		tokenStatus: hubv1.Token_TOKEN_NOT_EVAL,
+		quotaStatus: hubv1.Quota_QUOTA_NOT_EVAL,
 	}
 }
 
@@ -116,11 +126,12 @@ func (h *Handler) Propagator() propagation.TextMapPropagator {
 
 func (h *Handler) FailOpen(ctx context.Context) {
 	if m := global.GetStanzaMeter(); m != nil {
-		m.AllowedCount.Add(ctx, 1,
-			[]metric.AddOption{metric.WithAttributes(append(h.attr,
-				reason(ReasonFailOpen))...)}...)
-		m.AllowedUnknownCount.Add(ctx, 1,
-			[]metric.AddOption{metric.WithAttributes(h.attr...)}...)
+		// m.AllowedCount.Add(ctx, 1,
+		// 	[]metric.AddOption{metric.WithAttributes(append(h.attr,
+		// 		reason(ReasonFailOpen))...)}...)
+		// m.AllowedUnknownCount.Add(ctx, 1,
+		// 	[]metric.AddOption{metric.WithAttributes(h.attr...)}...)
+		fmt.Println("FIX ME")
 	}
 }
 
