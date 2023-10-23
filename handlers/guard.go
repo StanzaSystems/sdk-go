@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
@@ -25,15 +26,15 @@ const (
 type Guard struct {
 	ctx   context.Context
 	start time.Time
+	tlr   *hubv1.GetTokenLeaseRequest
 	meter *global.StanzaMeter
 	span  trace.Span
 	attr  []attribute.KeyValue
 	err   error
 
-	Success     int
-	Failure     int
-	Unknown     int
-	finalStatus int
+	Success int
+	Failure int
+	Unknown int
 
 	localStatus hubv1.Local
 	localBlock  *base.BlockError
@@ -115,7 +116,6 @@ func (g *Guard) End(status int) {
 	if status == g.Unknown {
 		g.meter.AllowedUnknownCount.Add(g.ctx, 1, []metric.AddOption{metric.WithAttributes(g.attr...)}...)
 	}
-	g.finalStatus = status
 }
 
 func (g *Guard) checkLocal(ctx context.Context, name string, enabled bool) (hubv1.Local, error) {
@@ -154,6 +154,7 @@ func (g *Guard) checkToken(ctx context.Context, name string, tokens []string) (h
 }
 
 func (g *Guard) checkQuota(ctx context.Context, tlr *hubv1.GetTokenLeaseRequest) (hubv1.Quota, error) {
+	g.tlr = tlr
 	g.quotaStatus, g.quotaToken, g.err = hub.CheckQuota(ctx, tlr)
 	if g.err != nil {
 		g.failopen(ctx, g.err)
@@ -177,6 +178,7 @@ func (g *Guard) blocked(ctx context.Context) {
 }
 
 func (g *Guard) failopen(ctx context.Context, err error) {
+	g.meter.FailOpenCount.Add(ctx, 1, g.metricAttr()...)
 	g.span.AddEvent("Stanza failed open", g.traceAttr(err))
 	logging.Debug("Stanza failed open", g.logReasons(err)...)
 }
@@ -207,21 +209,20 @@ func (g *Guard) logReasons(err error) []interface{} {
 	if err != nil {
 		resp = append(resp, "error", err.Error())
 	}
-	// TODO: store and use guard name, feature name, PB, DW
-	// 	if tlr != nil {
-	// 		if tlr.Selector != nil {
-	// 			resp = append(resp, "guard", tlr.GetSelector().GetGuardName())
-	// 			if tlr.GetSelector().FeatureName != nil {
-	// 				resp = append(resp, "feature", tlr.GetSelector().GetFeatureName())
-	// 			}
-	// 		}
-	// 		if tlr.PriorityBoost != nil {
-	// 			resp = append(resp, "priority_boost", fmt.Sprintf("%d", tlr.GetPriorityBoost()))
-	// 		}
-	// 		if tlr.DefaultWeight != nil {
-	// 			resp = append(resp, "default_weight", fmt.Sprintf("%.2f", tlr.GetDefaultWeight()))
-	// 		}
-	// 	}
+	if g.tlr != nil {
+		if g.tlr.Selector != nil {
+			resp = append(resp, "guard", g.tlr.GetSelector().GetGuardName())
+			if g.tlr.GetSelector().FeatureName != nil {
+				resp = append(resp, "feature", g.tlr.GetSelector().GetFeatureName())
+			}
+		}
+		if g.tlr.PriorityBoost != nil {
+			resp = append(resp, "priority_boost", fmt.Sprintf("%d", g.tlr.GetPriorityBoost()))
+		}
+		if g.tlr.DefaultWeight != nil {
+			resp = append(resp, "default_weight", fmt.Sprintf("%.2f", g.tlr.GetDefaultWeight()))
+		}
+	}
 	return append(resp,
 		localReason, hubv1.Local_name[int32(g.localStatus)],
 		tokenReason, hubv1.Token_name[int32(g.tokenStatus)],

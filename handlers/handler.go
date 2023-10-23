@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
@@ -11,6 +10,7 @@ import (
 	"github.com/StanzaSystems/sdk-go/otel"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -82,15 +82,15 @@ func (h *Handler) NewGuard(ctx context.Context, span trace.Span, attr []attribut
 	return &Guard{
 		ctx:   ctx,
 		start: time.Time{},
+		tlr:   &hubv1.GetTokenLeaseRequest{Selector: &hubv1.GuardFeatureSelector{GuardName: h.guardName}},
 		meter: global.GetStanzaMeter(),
 		span:  span,
 		attr:  append(h.attr, attr...),
 		err:   err,
 
-		Success:     GuardSuccess,
-		Failure:     GuardFailure,
-		Unknown:     GuardUnknown,
-		finalStatus: GuardUnknown,
+		Success: GuardSuccess,
+		Failure: GuardFailure,
+		Unknown: GuardUnknown,
 
 		localBlock:  nil,
 		localStatus: hubv1.Local_LOCAL_NOT_EVAL,
@@ -126,12 +126,7 @@ func (h *Handler) Propagator() propagation.TextMapPropagator {
 
 func (h *Handler) FailOpen(ctx context.Context) {
 	if m := global.GetStanzaMeter(); m != nil {
-		// m.AllowedCount.Add(ctx, 1,
-		// 	[]metric.AddOption{metric.WithAttributes(append(h.attr,
-		// 		reason(ReasonFailOpen))...)}...)
-		// m.AllowedUnknownCount.Add(ctx, 1,
-		// 	[]metric.AddOption{metric.WithAttributes(h.attr...)}...)
-		fmt.Println("FIX ME")
+		m.FailOpenCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(h.attr...)}...)
 	}
 }
 

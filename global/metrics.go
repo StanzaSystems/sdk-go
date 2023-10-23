@@ -15,6 +15,7 @@ const (
 	stanzaAllowedUnknown  = "stanza.guard.allowed.unknown"  // counter
 	stanzaAllowedDuration = "stanza.guard.allowed.duration" // histogram (milliseconds)
 	stanzaBlocked         = "stanza.guard.blocked"          // counter
+	stanzaFailOpen        = "stanza.guard.failopen"         // counter
 )
 
 type StanzaMeter struct {
@@ -24,6 +25,7 @@ type StanzaMeter struct {
 	AllowedUnknownCount metric.Int64Counter
 	AllowedDuration     metric.Float64Histogram
 	BlockedCount        metric.Int64Counter
+	FailOpenCount       metric.Int64Counter
 }
 
 func NewStanzaTracer() *trace.Tracer {
@@ -45,10 +47,6 @@ func NewStanzaMeter() *StanzaMeter {
 		stanzaAllowed,
 		metric.WithUnit("1"),
 		metric.WithDescription("measures the number of executions that were allowed"))
-	m.BlockedCount, _ = om.Int64Counter(
-		stanzaBlocked,
-		metric.WithUnit("1"),
-		metric.WithDescription("measures the number of executions that were backpressured"))
 	m.AllowedSuccessCount, _ = om.Int64Counter(
 		stanzaAllowedSuccess,
 		metric.WithUnit("1"),
@@ -65,6 +63,14 @@ func NewStanzaMeter() *StanzaMeter {
 		stanzaAllowedDuration,
 		metric.WithUnit("ms"),
 		metric.WithDescription("measures the total executions time of guarded requests"))
+	m.BlockedCount, _ = om.Int64Counter(
+		stanzaBlocked,
+		metric.WithUnit("1"),
+		metric.WithDescription("measures the number of executions that were backpressured"))
+	m.FailOpenCount, _ = om.Int64Counter(
+		stanzaFailOpen,
+		metric.WithUnit("1"),
+		metric.WithDescription("measures the number of executions that failed open"))
 
 	return &m
 }
