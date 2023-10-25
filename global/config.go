@@ -2,6 +2,7 @@ package global
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -102,13 +103,16 @@ func GetGuardConfigs(ctx context.Context, skipPoll bool) {
 			if skipPoll || time.Now().After(
 				gs.guardConfigTime[guard].Add(
 					jitter(GUARD_CONFIG_REFRESH_INTERVAL, GUARD_CONFIG_REFRESH_JITTER))) {
-				fetchGuardConfig(ctx, guard)
+				_, err := fetchGuardConfig(ctx, guard)
+				if err != nil {
+					logging.Error(err)
+				}
 			}
 		}
 	}
 }
 
-func fetchGuardConfig(ctx context.Context, guard string) *hubv1.GuardConfig {
+func fetchGuardConfig(ctx context.Context, guard string) (*hubv1.GuardConfig, error) {
 	gs.guardConfigLock.RLock()
 	_, ok := gs.guardConfig[guard]
 	gs.guardConfigLock.RUnlock()
@@ -121,7 +125,7 @@ func fetchGuardConfig(ctx context.Context, guard string) *hubv1.GuardConfig {
 	}
 
 	if gs.hubConfigClient == nil {
-		return nil
+		return nil, errors.New("hub config client unavailable")
 	}
 	res, err := gs.hubConfigClient.GetGuardConfig(
 		metadata.NewOutgoingContext(ctx, XStanzaKey()),
@@ -136,7 +140,7 @@ func fetchGuardConfig(ctx context.Context, guard string) *hubv1.GuardConfig {
 		},
 	)
 	if err != nil {
-		logging.Error(err)
+		return nil, err
 	}
 	if res.GetConfigDataSent() {
 		gs.guardConfigLock.Lock()
@@ -145,9 +149,9 @@ func fetchGuardConfig(ctx context.Context, guard string) *hubv1.GuardConfig {
 		gs.guardConfigVersion[guard] = res.GetVersion()
 		gs.guardConfigLock.Unlock()
 		logging.Debug("accepted guard config", "guard", guard, "version", res.GetVersion())
-		return res.GetConfig()
+		return res.GetConfig(), nil
 	}
-	return nil
+	return nil, nil
 }
 
 func OtelStartup(ctx context.Context, skipPoll bool) {

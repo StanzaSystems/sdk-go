@@ -189,12 +189,12 @@ func GetStanzaTracer() *trace.Tracer {
 	return gs.otelStanzaTracer
 }
 
-func GetGuardConfig(ctx context.Context, guard string) *hubv1.GuardConfig {
+func GetGuardConfig(ctx context.Context, guard string) (*hubv1.GuardConfig, error) {
 	gs.guardConfigLock.RLock()
 	gc, ok := gs.guardConfig[guard]
 	gs.guardConfigLock.RUnlock()
 	if ok && gc != nil {
-		return gc
+		return gc, nil
 	}
 	return fetchGuardConfig(ctx, guard)
 }

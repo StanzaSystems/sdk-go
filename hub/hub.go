@@ -73,7 +73,7 @@ func NewTokenLeaseRequest(ctx context.Context, gn string, fn *string, pb *int32,
 	return ctx, &tlr
 }
 
-func CheckQuota(ctx context.Context, tlr *hubv1.GetTokenLeaseRequest) (hubv1.Quota, string, error) {
+func CheckQuota(_ context.Context, tlr *hubv1.GetTokenLeaseRequest) (hubv1.Quota, string, error) {
 	if tlr == nil || tlr.Selector == nil {
 		errMsg := "invalid token lease request, failing open"
 		logging.Debug(errMsg, "count", atomic.AddInt64(&failOpenCount, 1))
@@ -86,15 +86,6 @@ func CheckQuota(ctx context.Context, tlr *hubv1.GetTokenLeaseRequest) (hubv1.Quo
 		return hubv1.Quota_QUOTA_NOT_EVAL, "", errors.New(errMsg)
 	}
 	guard := tlr.GetSelector().GetGuardName()
-	gc := global.GetGuardConfig(ctx, guard)
-	if gc == nil {
-		errMsg := "invalid guard config, failing open"
-		logging.Debug(errMsg, "count", atomic.AddInt64(&failOpenCount, 1))
-		return hubv1.Quota_QUOTA_NOT_EVAL, "", errors.New(errMsg)
-	}
-	if !gc.GetCheckQuota() {
-		return hubv1.Quota_QUOTA_EVAL_DISABLED, "", nil
-	}
 
 	// start a background batch token consumer
 	consumedLeasesInit.Do(func() { go batchTokenConsumer() })
@@ -322,7 +313,7 @@ func cachedLeaseManager() {
 	}
 }
 
-func ValidateTokens(ctx context.Context, guard string, tokens []string) (hubv1.Token, error) {
+func ValidateTokens(_ context.Context, guard string, tokens []string) (hubv1.Token, error) {
 	qsc := global.QuotaServiceClient()
 	if qsc == nil {
 		errMsg := "invalid quota service client, failing open"
@@ -331,19 +322,7 @@ func ValidateTokens(ctx context.Context, guard string, tokens []string) (hubv1.T
 			"count", atomic.AddInt64(&failOpenCount, 1))
 		return hubv1.Token_TOKEN_NOT_EVAL, errors.New(errMsg)
 	}
-	gc := global.GetGuardConfig(ctx, guard)
-	if gc == nil {
-		errMsg := "invalid guard config, failing open"
-		logging.Debug(errMsg,
-			"guard", guard,
-			"count", atomic.AddInt64(&failOpenCount, 1))
-		return hubv1.Token_TOKEN_NOT_EVAL, errors.New(errMsg)
-	}
 
-	if !gc.GetValidateIngressTokens() {
-		// if we weren't asked to validate ingress tokens, don't
-		return hubv1.Token_TOKEN_EVAL_DISABLED, nil
-	}
 	if len(tokens) == 0 {
 		// fail fast in the case where we are supposed to validate, but no tokens found
 		logging.Warn("validate ingress tokens was specified, but no tokens were found", "guard", guard)

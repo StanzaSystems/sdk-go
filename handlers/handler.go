@@ -54,21 +54,27 @@ func (h *Handler) Guard(ctx context.Context, span trace.Span, tokens []string) *
 	}
 	g := h.NewGuard(ctx, span, attr, nil)
 
+	// Config State check
+	_, err := g.getGuardConfig(ctx, h.guardName)
+	if err != nil || g.gc == nil {
+		return g
+	}
+
 	// Local (Sentinel) check
-	localStatus, err := g.checkLocal(ctx, h.GuardName(), h.SentinelEnabled())
-	if err != nil || localStatus == hubv1.Local_LOCAL_BLOCKED {
+	err = g.checkLocal(ctx, h.guardName, h.SentinelEnabled())
+	if err != nil || g.localStatus == hubv1.Local_LOCAL_BLOCKED {
 		return g
 	}
 
 	// Ingress Token check
-	tokenStatus, err := g.checkToken(ctx, h.GuardName(), tokens)
-	if err != nil || tokenStatus == hubv1.Token_TOKEN_NOT_VALID {
+	err = g.checkToken(ctx, h.guardName, tokens, g.gc.ValidateIngressTokens)
+	if err != nil || g.tokenStatus == hubv1.Token_TOKEN_NOT_VALID {
 		return g
 	}
 
 	// Quota check
-	quotaStatus, err := g.checkQuota(ctx, tlr)
-	if err != nil || quotaStatus == hubv1.Quota_QUOTA_BLOCKED {
+	err = g.checkQuota(ctx, tlr, g.gc.CheckQuota)
+	if err != nil || g.quotaStatus == hubv1.Quota_QUOTA_BLOCKED {
 		return g
 	}
 
@@ -83,6 +89,7 @@ func (h *Handler) NewGuard(ctx context.Context, span trace.Span, attr []attribut
 		ctx:   ctx,
 		start: time.Time{},
 		tlr:   &hubv1.GetTokenLeaseRequest{Selector: &hubv1.GuardFeatureSelector{GuardName: h.guardName}},
+		gc:    nil,
 		meter: global.GetStanzaMeter(),
 		span:  span,
 		attr:  append(h.attr, attr...),
@@ -92,10 +99,11 @@ func (h *Handler) NewGuard(ctx context.Context, span trace.Span, attr []attribut
 		Failure: GuardFailure,
 		Unknown: GuardUnknown,
 
-		localBlock:  nil,
-		localStatus: hubv1.Local_LOCAL_NOT_EVAL,
-		tokenStatus: hubv1.Token_TOKEN_NOT_EVAL,
-		quotaStatus: hubv1.Quota_QUOTA_NOT_EVAL,
+		configStatus: hubv1.Config_CONFIG_NOT_FOUND,
+		localBlock:   nil,
+		localStatus:  hubv1.Local_LOCAL_NOT_EVAL,
+		tokenStatus:  hubv1.Token_TOKEN_NOT_EVAL,
+		quotaStatus:  hubv1.Quota_QUOTA_NOT_EVAL,
 	}
 }
 

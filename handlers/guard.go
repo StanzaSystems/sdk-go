@@ -27,6 +27,7 @@ type Guard struct {
 	ctx   context.Context
 	start time.Time
 	tlr   *hubv1.GetTokenLeaseRequest
+	gc    *hubv1.GuardConfig
 	meter *global.StanzaMeter
 	span  trace.Span
 	attr  []attribute.KeyValue
@@ -35,6 +36,8 @@ type Guard struct {
 	Success int
 	Failure int
 	Unknown int
+
+	configStatus hubv1.Config
 
 	localStatus hubv1.Local
 	localBlock  *base.BlockError
@@ -46,7 +49,9 @@ type Guard struct {
 }
 
 func (g *Guard) Allowed() bool {
-	if g.localStatus != hubv1.Local_LOCAL_BLOCKED &&
+	if (g.configStatus == hubv1.Config_CONFIG_CACHED_OK ||
+		g.configStatus == hubv1.Config_CONFIG_FETCHED_OK) &&
+		g.localStatus != hubv1.Local_LOCAL_BLOCKED &&
 		g.quotaStatus != hubv1.Quota_QUOTA_BLOCKED &&
 		g.tokenStatus != hubv1.Token_TOKEN_NOT_VALID {
 		return true
@@ -55,7 +60,11 @@ func (g *Guard) Allowed() bool {
 }
 
 func (g *Guard) Blocked() bool {
-	if g.localStatus == hubv1.Local_LOCAL_BLOCKED ||
+	if g.configStatus == hubv1.Config_CONFIG_UNSPECIFIED ||
+		g.configStatus == hubv1.Config_CONFIG_FETCH_ERROR ||
+		g.configStatus == hubv1.Config_CONFIG_FETCH_TIMEOUT ||
+		g.configStatus == hubv1.Config_CONFIG_NOT_FOUND ||
+		g.localStatus == hubv1.Local_LOCAL_BLOCKED ||
 		g.quotaStatus == hubv1.Quota_QUOTA_BLOCKED ||
 		g.tokenStatus == hubv1.Token_TOKEN_NOT_VALID {
 		return true
@@ -118,7 +127,21 @@ func (g *Guard) End(status int) {
 	}
 }
 
-func (g *Guard) checkLocal(ctx context.Context, name string, enabled bool) (hubv1.Local, error) {
+func (g *Guard) getGuardConfig(ctx context.Context, name string) (hubv1.Config, error) {
+	gc, err := global.GetGuardConfig(ctx, name)
+	if err != nil {
+		logging.Error(err)
+		g.failopen(ctx, err)
+		g.configStatus = hubv1.Config_CONFIG_FETCH_ERROR
+		return g.configStatus, err
+	} else {
+		g.gc = gc
+		g.configStatus = hubv1.Config_CONFIG_CACHED_OK
+		return g.configStatus, nil
+	}
+}
+
+func (g *Guard) checkLocal(ctx context.Context, name string, enabled bool) error {
 	if !enabled {
 		g.localStatus = hubv1.Local_LOCAL_EVAL_DISABLED
 	} else {
@@ -139,30 +162,38 @@ func (g *Guard) checkLocal(ctx context.Context, name string, enabled bool) (hubv
 			g.localStatus = hubv1.Local_LOCAL_ALLOWED
 		}
 	}
-	return g.localStatus, nil
+	return nil
 }
 
-func (g *Guard) checkToken(ctx context.Context, name string, tokens []string) (hubv1.Token, error) {
-	g.tokenStatus, g.err = hub.ValidateTokens(ctx, name, tokens)
-	if g.err != nil {
-		g.failopen(ctx, g.err)
+func (g *Guard) checkToken(ctx context.Context, name string, tokens []string, enabled bool) error {
+	if !enabled {
+		g.tokenStatus = hubv1.Token_TOKEN_EVAL_DISABLED
+	} else {
+		g.tokenStatus, g.err = hub.ValidateTokens(ctx, name, tokens)
+		if g.err != nil {
+			g.failopen(ctx, g.err)
+		}
+		if g.tokenStatus == hubv1.Token_TOKEN_NOT_VALID {
+			g.blocked(ctx)
+		}
 	}
-	if g.tokenStatus == hubv1.Token_TOKEN_NOT_VALID {
-		g.blocked(ctx)
-	}
-	return g.tokenStatus, g.err
+	return g.err
 }
 
-func (g *Guard) checkQuota(ctx context.Context, tlr *hubv1.GetTokenLeaseRequest) (hubv1.Quota, error) {
+func (g *Guard) checkQuota(ctx context.Context, tlr *hubv1.GetTokenLeaseRequest, enabled bool) error {
 	g.tlr = tlr
-	g.quotaStatus, g.quotaToken, g.err = hub.CheckQuota(ctx, tlr)
-	if g.err != nil {
-		g.failopen(ctx, g.err)
+	if !enabled {
+		g.quotaStatus = hubv1.Quota_QUOTA_EVAL_DISABLED
+	} else {
+		g.quotaStatus, g.quotaToken, g.err = hub.CheckQuota(ctx, tlr)
+		if g.err != nil {
+			g.failopen(ctx, g.err)
+		}
+		if g.quotaStatus == hubv1.Quota_QUOTA_BLOCKED {
+			g.blocked(ctx)
+		}
 	}
-	if g.quotaStatus == hubv1.Quota_QUOTA_BLOCKED {
-		g.blocked(ctx)
-	}
-	return g.quotaStatus, g.err
+	return g.err
 }
 
 func (g *Guard) allowed(ctx context.Context) {
@@ -198,6 +229,7 @@ func (g *Guard) traceAttr(err error) trace.SpanStartEventOption {
 
 func (g *Guard) reasons() []attribute.KeyValue {
 	kvs := g.attr
+	kvs = append(kvs, configReasonKey.String(hubv1.Config_name[int32(g.configStatus)]))
 	kvs = append(kvs, localReasonKey.String(hubv1.Local_name[int32(g.localStatus)]))
 	kvs = append(kvs, tokenReasonKey.String(hubv1.Token_name[int32(g.tokenStatus)]))
 	kvs = append(kvs, quotaReasonKey.String(hubv1.Quota_name[int32(g.quotaStatus)]))
