@@ -148,46 +148,53 @@ func CheckQuota(_ context.Context, tlr *hubv1.GetTokenLeaseRequest) (hubv1.Quota
 	ctx, cancel := context.WithTimeout(context.Background(), MAX_QUOTA_WAIT)
 	defer cancel()
 
-	resp, err := qsc.GetTokenLease(metadata.NewOutgoingContext(ctx, global.XStanzaKey()), tlr)
-	if err != nil {
-		// TODO: Implement Error Handling as specified in SDK spec:
-		// If quota is required and the Stanza hub is unresponsive or does not return a valid
-		// response, then the SDK should do the following:
-		// - time out after 300 milliseconds (and record as a failure in metrics exported to Stanza)
-		//   This should be logged as a WARNING.
-		// - if more than 10% of quota requests time out in a one-second period, then the SDK should
-		//   fail open and stop waiting for quota from Stanza.
-		//   This should be logged as an ERROR.
-		// - back off for one second, and then attempt to fetch quota for 1% of requests. If over 90%
-		//   of those requests are successful, ramp up to 5%, 10%, 25%, 50% and 100% over successive
-		//   seconds.
-		//   Re-enablement should be logged at INFO.
-		return hubv1.Quota_QUOTA_ERROR, "", err // just fail open (for now)
-	}
-	leases := resp.GetLeases()
-	if len(leases) == 0 {
-		return hubv1.Quota_QUOTA_BLOCKED, "", nil // not an error, there were no leases available
-	}
-	if len(leases[1:]) > 0 {
-		// Start a background cached lease manager (the first time we get extra leases from Stanza Hub)
-		cachedLeasesInit.Do(func() { go cachedLeaseManager() })
-
-		logging.Debug("obtained new batch of cacheable leases", "guard", guard, "count", len(leases[1:]))
-		for _, lease := range leases[1:] {
-			if lease.ExpiresAt == nil {
-				lease.ExpiresAt = timestamppb.New(time.Now().Add(time.Duration(lease.DurationMsec) * time.Millisecond))
+	for {
+		select {
+		case <-ctx.Done():
+			return hubv1.Quota_QUOTA_TIMEOUT, "", ctx.Err() // deadline reached, log error and fail open
+		default:
+			resp, err := qsc.GetTokenLease(metadata.NewOutgoingContext(ctx, global.XStanzaKey()), tlr)
+			if err != nil {
+				// TODO: Implement Error Handling as specified in SDK spec:
+				// If quota is required and the Stanza hub is unresponsive or does not return a valid
+				// response, then the SDK should do the following:
+				// - time out after 300 milliseconds (and record as a failure in metrics exported to Stanza)
+				//   This should be logged as a WARNING.
+				// - if more than 10% of quota requests time out in a one-second period, then the SDK should
+				//   fail open and stop waiting for quota from Stanza.
+				//   This should be logged as an ERROR.
+				// - back off for one second, and then attempt to fetch quota for 1% of requests. If over 90%
+				//   of those requests are successful, ramp up to 5%, 10%, 25%, 50% and 100% over successive
+				//   seconds.
+				//   Re-enablement should be logged at INFO.
+				return hubv1.Quota_QUOTA_ERROR, "", err // just fail open (for now)
 			}
-		}
-		// use a separate "waiting leases" lock here as we don't need/want to block a request on contention for
-		// the higher volume / harder to get "cached leases" lock
-		waitingLeasesLock[guard].Lock()
-		waitingLeases[guard] = append(waitingLeases[guard], leases[1:]...)
-		waitingLeasesLock[guard].Unlock()
-	}
+			leases := resp.GetLeases()
+			if len(leases) == 0 {
+				return hubv1.Quota_QUOTA_BLOCKED, "", nil // not an error, there were no leases available
+			}
+			if len(leases[1:]) > 0 {
+				// Start a background cached lease manager (the first time we get extra leases from Stanza Hub)
+				cachedLeasesInit.Do(func() { go cachedLeaseManager() })
 
-	// Consume first token from leases (not cached, so this doesn't require the cached leases lock)
-	go consumeLease(guard, leases[0])
-	return hubv1.Quota_QUOTA_GRANTED, leases[0].Token, nil
+				logging.Debug("obtained new batch of cacheable leases", "guard", guard, "count", len(leases[1:]))
+				for _, lease := range leases[1:] {
+					if lease.ExpiresAt == nil {
+						lease.ExpiresAt = timestamppb.New(time.Now().Add(time.Duration(lease.DurationMsec) * time.Millisecond))
+					}
+				}
+				// use a separate "waiting leases" lock here as we don't need/want to block a request on contention for
+				// the higher volume / harder to get "cached leases" lock
+				waitingLeasesLock[guard].Lock()
+				waitingLeases[guard] = append(waitingLeases[guard], leases[1:]...)
+				waitingLeasesLock[guard].Unlock()
+			}
+
+			// Consume first token from leases (not cached, so this doesn't require the cached leases lock)
+			go consumeLease(guard, leases[0])
+			return hubv1.Quota_QUOTA_GRANTED, leases[0].Token, nil
+		}
+	}
 }
 
 func consumeLease(guard string, lease *hubv1.TokenLease) {
