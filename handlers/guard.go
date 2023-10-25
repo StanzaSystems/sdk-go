@@ -73,6 +73,12 @@ func (g *Guard) Blocked() bool {
 }
 
 func (g *Guard) BlockMessage() string {
+	if g.configStatus == hubv1.Config_CONFIG_UNSPECIFIED ||
+		g.configStatus == hubv1.Config_CONFIG_FETCH_ERROR ||
+		g.configStatus == hubv1.Config_CONFIG_FETCH_TIMEOUT ||
+		g.configStatus == hubv1.Config_CONFIG_NOT_FOUND {
+		return "Error fetching Guard config or Guard config not found."
+	}
 	if g.localStatus == hubv1.Local_LOCAL_BLOCKED {
 		return g.localBlock.BlockMsg()
 	}
@@ -86,14 +92,20 @@ func (g *Guard) BlockMessage() string {
 }
 
 func (g *Guard) BlockReason() string {
+	if g.configStatus == hubv1.Config_CONFIG_UNSPECIFIED ||
+		g.configStatus == hubv1.Config_CONFIG_FETCH_ERROR ||
+		g.configStatus == hubv1.Config_CONFIG_FETCH_TIMEOUT ||
+		g.configStatus == hubv1.Config_CONFIG_NOT_FOUND {
+		return g.configStatus.String()
+	}
 	if g.localStatus == hubv1.Local_LOCAL_BLOCKED {
-		return hubv1.Local_name[int32(hubv1.Local_LOCAL_BLOCKED)]
+		return g.localStatus.String()
 	}
 	if g.tokenStatus == hubv1.Token_TOKEN_NOT_VALID {
-		return hubv1.Token_name[int32(hubv1.Token_TOKEN_NOT_VALID)]
+		return g.tokenStatus.String()
 	}
 	if g.quotaStatus == hubv1.Quota_QUOTA_BLOCKED {
-		return hubv1.Quota_name[int32(hubv1.Quota_QUOTA_BLOCKED)]
+		return g.quotaStatus.String()
 	}
 	return ""
 }
@@ -229,10 +241,10 @@ func (g *Guard) traceAttr(err error) trace.SpanStartEventOption {
 
 func (g *Guard) reasons() []attribute.KeyValue {
 	kvs := g.attr
-	kvs = append(kvs, configReasonKey.String(hubv1.Config_name[int32(g.configStatus)]))
-	kvs = append(kvs, localReasonKey.String(hubv1.Local_name[int32(g.localStatus)]))
-	kvs = append(kvs, tokenReasonKey.String(hubv1.Token_name[int32(g.tokenStatus)]))
-	kvs = append(kvs, quotaReasonKey.String(hubv1.Quota_name[int32(g.quotaStatus)]))
+	kvs = append(kvs, configReasonKey.String(g.configStatus.String()))
+	kvs = append(kvs, localReasonKey.String(g.localStatus.String()))
+	kvs = append(kvs, tokenReasonKey.String(g.tokenStatus.String()))
+	kvs = append(kvs, quotaReasonKey.String(g.quotaStatus.String()))
 	return kvs
 }
 
@@ -255,9 +267,18 @@ func (g *Guard) logReasons(err error) []interface{} {
 			resp = append(resp, "default_weight", fmt.Sprintf("%.2f", g.tlr.GetDefaultWeight()))
 		}
 	}
-	return append(resp,
-		localReason, hubv1.Local_name[int32(g.localStatus)],
-		tokenReason, hubv1.Token_name[int32(g.tokenStatus)],
-		quotaReason, hubv1.Quota_name[int32(g.quotaStatus)],
+	resp = append(resp,
+		configReason, g.configStatus.String(),
+		localReason, g.localStatus.String(),
+		tokenReason, g.tokenStatus.String(),
+		quotaReason, g.quotaStatus.String(),
 	)
+
+	if g.config.ReportOnly {
+		resp = append(resp, "mode", hubv1.Mode_MODE_REPORT_ONLY.String())
+	} else {
+		resp = append(resp, "mode", hubv1.Mode_MODE_NORMAL.String())
+	}
+
+	return resp
 }
