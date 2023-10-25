@@ -27,7 +27,6 @@ type Guard struct {
 	ctx   context.Context
 	start time.Time
 	tlr   *hubv1.GetTokenLeaseRequest
-	gc    *hubv1.GuardConfig
 	meter *global.StanzaMeter
 	span  trace.Span
 	attr  []attribute.KeyValue
@@ -38,6 +37,7 @@ type Guard struct {
 	Unknown int
 
 	configStatus hubv1.Config
+	config       *hubv1.GuardConfig
 
 	localStatus hubv1.Local
 	localBlock  *base.BlockError
@@ -135,7 +135,7 @@ func (g *Guard) getGuardConfig(ctx context.Context, name string) (hubv1.Config, 
 		g.configStatus = hubv1.Config_CONFIG_FETCH_ERROR
 		return g.configStatus, err
 	} else {
-		g.gc = gc
+		g.config = gc
 		g.configStatus = hubv1.Config_CONFIG_CACHED_OK
 		return g.configStatus, nil
 	}

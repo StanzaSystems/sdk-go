@@ -56,25 +56,31 @@ func (h *Handler) Guard(ctx context.Context, span trace.Span, tokens []string) *
 
 	// Config State check
 	_, err := g.getGuardConfig(ctx, h.guardName)
-	if err != nil || g.gc == nil {
+	if err != nil || g.config == nil {
 		return g
+	}
+
+	if g.config.ReportOnly {
+		g.attr = append(g.attr, modeKey.String(hubv1.Mode_MODE_REPORT_ONLY.String()))
+	} else {
+		g.attr = append(g.attr, modeKey.String(hubv1.Mode_MODE_NORMAL.String()))
 	}
 
 	// Local (Sentinel) check
 	err = g.checkLocal(ctx, h.guardName, h.SentinelEnabled())
-	if err != nil || g.localStatus == hubv1.Local_LOCAL_BLOCKED {
+	if (err != nil || g.localStatus == hubv1.Local_LOCAL_BLOCKED) && !g.config.ReportOnly {
 		return g
 	}
 
 	// Ingress Token check
-	err = g.checkToken(ctx, h.guardName, tokens, g.gc.ValidateIngressTokens)
-	if err != nil || g.tokenStatus == hubv1.Token_TOKEN_NOT_VALID {
+	err = g.checkToken(ctx, h.guardName, tokens, g.config.ValidateIngressTokens)
+	if (err != nil || g.tokenStatus == hubv1.Token_TOKEN_NOT_VALID) && !g.config.ReportOnly {
 		return g
 	}
 
 	// Quota check
-	err = g.checkQuota(ctx, tlr, g.gc.CheckQuota)
-	if err != nil || g.quotaStatus == hubv1.Quota_QUOTA_BLOCKED {
+	err = g.checkQuota(ctx, tlr, g.config.CheckQuota)
+	if (err != nil || g.quotaStatus == hubv1.Quota_QUOTA_BLOCKED) && !g.config.ReportOnly {
 		return g
 	}
 
@@ -89,7 +95,6 @@ func (h *Handler) NewGuard(ctx context.Context, span trace.Span, attr []attribut
 		ctx:   ctx,
 		start: time.Time{},
 		tlr:   &hubv1.GetTokenLeaseRequest{Selector: &hubv1.GuardFeatureSelector{GuardName: h.guardName}},
-		gc:    nil,
 		meter: global.GetStanzaMeter(),
 		span:  span,
 		attr:  append(h.attr, attr...),
@@ -100,8 +105,9 @@ func (h *Handler) NewGuard(ctx context.Context, span trace.Span, attr []attribut
 		Unknown: GuardUnknown,
 
 		configStatus: hubv1.Config_CONFIG_NOT_FOUND,
-		localBlock:   nil,
+		config:       nil,
 		localStatus:  hubv1.Local_LOCAL_NOT_EVAL,
+		localBlock:   nil,
 		tokenStatus:  hubv1.Token_TOKEN_NOT_EVAL,
 		quotaStatus:  hubv1.Quota_QUOTA_NOT_EVAL,
 	}

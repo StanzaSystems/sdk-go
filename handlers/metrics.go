@@ -19,6 +19,7 @@ var (
 	featureKey      = attribute.Key("feature")
 	serviceKey      = attribute.Key("service")
 	errorKey        = attribute.Key("error")
+	modeKey         = attribute.Key("mode")
 	configReasonKey = attribute.Key(configReason)
 	localReasonKey  = attribute.Key(localReason)
 	tokenReasonKey  = attribute.Key(tokenReason)
