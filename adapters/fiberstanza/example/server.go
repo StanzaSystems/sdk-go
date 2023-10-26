@@ -149,10 +149,12 @@ func main() {
 		// Set outbound request priority boost based on `X-User-Plan` request header
 		opt := fiberstanza.Opt{PriorityBoost: 0}
 		if plan, ok := c.GetReqHeaders()["X-User-Plan"]; ok {
-			if plan == "free" {
-				opt.PriorityBoost -= 1
-			} else if plan == "enterprise" {
-				opt.PriorityBoost += 1
+			if len(plan) == 1 {
+				if plan[0] == "free" {
+					opt.PriorityBoost -= 1
+				} else if plan[0] == "enterprise" {
+					opt.PriorityBoost += 1
+				}
 			}
 		}
 
