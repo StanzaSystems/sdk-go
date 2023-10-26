@@ -26,54 +26,72 @@ const (
 type Guard struct {
 	ctx   context.Context
 	start time.Time
+	tlr   *hubv1.GetTokenLeaseRequest
 	meter *global.StanzaMeter
 	span  trace.Span
 	attr  []attribute.KeyValue
 	err   error
 
-	Success     int
-	Failure     int
-	Unknown     int
-	finalStatus int
+	Success int
+	Failure int
+	Unknown int
 
-	quotaToken   string
-	quotaStatus  int
-	quotaMessage string
-	quotaReason  string
+	configStatus hubv1.Config
+	config       *hubv1.GuardConfig
 
-	sentinelBlock *base.BlockError
+	localStatus hubv1.Local
+	localBlock  *base.BlockError
+
+	tokenStatus hubv1.Token
+
+	quotaStatus hubv1.Quota
+	quotaToken  string
 }
 
 func (g *Guard) Allowed() bool {
-	if g.sentinelBlock == nil &&
-		g.quotaStatus != hub.CheckQuotaBlocked &&
-		g.quotaStatus != hub.ValidateTokensInvalid {
+	// Default to "allowed", unless one of our checks *explicitly* blocks
+	if g.localStatus != hubv1.Local_LOCAL_BLOCKED &&
+		g.quotaStatus != hubv1.Quota_QUOTA_BLOCKED &&
+		g.tokenStatus != hubv1.Token_TOKEN_NOT_VALID {
 		return true
 	}
 	return false
 }
 
 func (g *Guard) Blocked() bool {
-	if g.sentinelBlock != nil ||
-		g.quotaStatus == hub.CheckQuotaBlocked ||
-		g.quotaStatus == hub.ValidateTokensInvalid {
+	// Default to "allowed", unless one of our checks *explicitly* blocks
+	if g.localStatus == hubv1.Local_LOCAL_BLOCKED ||
+		g.quotaStatus == hubv1.Quota_QUOTA_BLOCKED ||
+		g.tokenStatus == hubv1.Token_TOKEN_NOT_VALID {
 		return true
 	}
 	return false
 }
 
 func (g *Guard) BlockMessage() string {
-	if g.sentinelBlock != nil {
-		return g.sentinelBlock.BlockMsg()
+	if g.localStatus == hubv1.Local_LOCAL_BLOCKED {
+		return g.localBlock.BlockMsg()
 	}
-	return g.quotaMessage
+	if g.tokenStatus == hubv1.Token_TOKEN_NOT_VALID {
+		return "Invalid or expired X-Stanza-Token."
+	}
+	if g.quotaStatus == hubv1.Quota_QUOTA_BLOCKED {
+		return "Stanza quota exhausted. Please try again later."
+	}
+	return ""
 }
 
 func (g *Guard) BlockReason() string {
-	if g.sentinelBlock != nil {
-		return g.sentinelBlock.BlockType().String()
+	if g.localStatus == hubv1.Local_LOCAL_BLOCKED {
+		return g.localStatus.String()
 	}
-	return g.quotaReason
+	if g.tokenStatus == hubv1.Token_TOKEN_NOT_VALID {
+		return g.tokenStatus.String()
+	}
+	if g.quotaStatus == hubv1.Quota_QUOTA_BLOCKED {
+		return g.quotaStatus.String()
+	}
+	return ""
 }
 
 func (g *Guard) Token() string {
@@ -103,111 +121,160 @@ func (g *Guard) End(status int) {
 	if status == g.Unknown {
 		g.meter.AllowedUnknownCount.Add(g.ctx, 1, []metric.AddOption{metric.WithAttributes(g.attr...)}...)
 	}
-	g.finalStatus = status
 }
 
-func (g *Guard) checkSentinel(name string) {
-	attrWithReason := append(g.attr, reason(ReasonSentinel))
-	e, b := api.Entry(name, api.WithTrafficType(base.Inbound), api.WithResourceType(base.ResTypeWeb))
-	if b != nil {
-		g.sentinelBlock = b
-		logging.Debug("Stanza blocked",
-			"guard", name,
-			"sentinel.block_msg", b.BlockMsg(),
-			"sentinel.block_type", b.BlockType().String(),
-			"sentinel.block_value", b.TriggeredValue(),
-			"sentinel.block_rule", b.TriggeredRule().String(),
-		)
-		g.span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
-		g.meter.BlockedCount.Add(g.ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
+func (g *Guard) getGuardConfig(ctx context.Context, name string) (hubv1.Config, error) {
+	g.config, g.configStatus, g.err = global.GetGuardConfig(ctx, name)
+	if g.err != nil {
+		logging.Error(g.err)
+		g.failopen(ctx, g.err)
+	}
+	return g.configStatus, g.err
+}
+
+func (g *Guard) checkLocal(ctx context.Context, name string, enabled bool) error {
+	if !enabled {
+		g.localStatus = hubv1.Local_LOCAL_EVAL_DISABLED
 	} else {
-		g.span.AddEvent("Stanza allowed", trace.WithAttributes(attrWithReason...))
-		g.meter.AllowedCount.Add(g.ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
+		e, b := api.Entry(name, api.WithTrafficType(base.Inbound), api.WithResourceType(base.ResTypeWeb))
+		if b != nil {
+			g.localBlock = b
+			logging.Debug("Sentinel blocked",
+				"guard", name,
+				"sentinel.block_msg", b.BlockMsg(),
+				"sentinel.block_type", b.BlockType().String(),
+				"sentinel.block_value", b.TriggeredValue(),
+				"sentinel.block_rule", b.TriggeredRule().String(),
+			)
+			g.blocked(ctx)
+			g.localStatus = hubv1.Local_LOCAL_BLOCKED
+		} else {
+			e.Exit() // cleanly exit the Sentinel Entry
+			g.localStatus = hubv1.Local_LOCAL_ALLOWED
+		}
 	}
-	e.Exit() // cleanly exit the Sentinel Entry
+	return nil
 }
 
-func (g *Guard) checkQuota(ctx context.Context, tlr *hubv1.GetTokenLeaseRequest) {
-	g.quotaStatus, g.quotaToken, g.err = hub.CheckQuota(ctx, tlr)
-
-	attrWithReason := g.attr
-	switch g.quotaStatus {
-	case hub.CheckQuotaBlocked:
-		attrWithReason = append(attrWithReason, reason(ReasonQuota))
-		g.quotaReason = reason(ReasonQuota).Value.AsString()
-		g.quotaMessage = "Stanza quota exhausted. Please try again later."
-		g.meter.BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
-		g.span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
-		logging.Debug("Stanza blocked", tlrLogReason(tlr, g.quotaReason)...)
-		return
-	case hub.CheckQuotaAllowed:
-		attrWithReason = append(attrWithReason, reason(ReasonQuota))
-		g.quotaReason = reason(ReasonQuota).Value.AsString()
-	case hub.CheckQuotaSkipped:
-		attrWithReason = append(attrWithReason, reason(ReasonQuotaCheckDisabled))
-		g.quotaReason = reason(ReasonQuotaCheckDisabled).Value.AsString()
-	case hub.CheckQuotaFailOpen:
-		attrWithReason = append(attrWithReason, reason(ReasonQuotaFailOpen))
-		g.quotaReason = reason(ReasonQuotaFailOpen).Value.AsString()
-	default:
-		attrWithReason = append(attrWithReason, reason(ReasonQuotaUnknown))
-		g.quotaReason = reason(ReasonQuotaUnknown).Value.AsString()
-		g.quotaStatus = GuardUnknown
+func (g *Guard) checkToken(ctx context.Context, name string, tokens []string, enabled bool) error {
+	if !enabled {
+		g.tokenStatus = hubv1.Token_TOKEN_EVAL_DISABLED
+	} else {
+		g.tokenStatus, g.err = hub.ValidateTokens(ctx, name, tokens)
+		if g.err != nil {
+			g.failopen(ctx, g.err)
+		}
+		if g.tokenStatus == hubv1.Token_TOKEN_NOT_VALID {
+			g.blocked(ctx)
+		}
 	}
-	g.span.AddEvent("Stanza allowed", trace.WithAttributes(attrWithReason...))
-	logging.Debug("Stanza allowed", tlrLogReason(tlr, g.quotaReason)...)
-	g.meter.AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
+	return g.err
 }
 
-func (g *Guard) checkToken(ctx context.Context, name string, tokens []string) {
-	g.quotaStatus, g.err = hub.ValidateTokens(ctx, name, tokens)
-
-	attrWithReason := g.attr
-	switch g.quotaStatus {
-	case hub.ValidateTokensInvalid:
-		attrWithReason := append(attrWithReason, reason(ReasonQuotaToken))
-		g.quotaReason = reason(ReasonQuotaToken).Value.AsString()
-		g.quotaMessage = "Invalid or expired x-stanza-token."
-		g.meter.BlockedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
-		g.span.AddEvent("Stanza blocked", trace.WithAttributes(attrWithReason...))
-		logging.Debug("Stanza blocked",
-			"guard", name,
-			"reason", g.quotaReason,
-		)
-		return
-	case hub.ValidateTokensValid:
-		attrWithReason = append(attrWithReason, reason(ReasonQuotaToken))
-		g.quotaReason = reason(ReasonQuotaToken).Value.AsString()
-	case hub.ValidateTokensFailOpen:
-		attrWithReason = append(attrWithReason, reason(ReasonQuotaFailOpen))
-		g.quotaReason = reason(ReasonQuotaFailOpen).Value.AsString()
-	case hub.ValidateTokensSkipped:
-		attrWithReason = append(attrWithReason, reason(ReasonQuotaCheckDisabled))
-		g.quotaReason = reason(ReasonQuotaCheckDisabled).Value.AsString()
+func (g *Guard) checkQuota(ctx context.Context, tlr *hubv1.GetTokenLeaseRequest, enabled bool) error {
+	g.tlr = tlr
+	if !enabled {
+		g.quotaStatus = hubv1.Quota_QUOTA_EVAL_DISABLED
+	} else {
+		g.quotaStatus, g.quotaToken, g.err = hub.CheckQuota(ctx, tlr)
+		if g.err != nil {
+			g.failopen(ctx, g.err)
+		}
+		if g.quotaStatus == hubv1.Quota_QUOTA_BLOCKED {
+			g.blocked(ctx)
+		}
 	}
-	g.span.AddEvent("Stanza allowed", trace.WithAttributes(attrWithReason...))
-	logging.Debug("Stanza allowed",
-		"guard", name,
-		"reason", g.quotaReason,
-	)
-	g.meter.AllowedCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(attrWithReason...)}...)
+	return g.err
 }
 
-func tlrLogReason(tlr *hubv1.GetTokenLeaseRequest, reason string) []interface{} {
+func (g *Guard) allowed(ctx context.Context) {
+	g.meter.AllowedCount.Add(ctx, 1, g.metricAttr()...)
+	g.span.AddEvent("Stanza allowed", g.traceAttr(nil))
+	logging.Debug("Stanza allowed", g.logAttr(nil)...)
+	g.start = time.Now()
+}
+
+func (g *Guard) blocked(ctx context.Context) {
+	g.meter.BlockedCount.Add(ctx, 1, g.metricAttr()...)
+	g.span.AddEvent("Stanza blocked", g.traceAttr(nil))
+	logging.Debug("Stanza blocked", g.logAttr(nil)...)
+}
+
+func (g *Guard) failopen(ctx context.Context, err error) {
+	g.meter.FailOpenCount.Add(ctx, 1, g.metricAttr()...)
+	g.span.AddEvent("Stanza failed open", g.traceAttr(err))
+	logging.Debug("Stanza failed open", g.logAttr(err)...)
+}
+
+func (g *Guard) reasons() []attribute.KeyValue {
+	kvs := g.attr
+	kvs = append(kvs, configReasonKey.String(g.configStatus.String()))
+	kvs = append(kvs, localReasonKey.String(g.localStatus.String()))
+	kvs = append(kvs, tokenReasonKey.String(g.tokenStatus.String()))
+	kvs = append(kvs, quotaReasonKey.String(g.quotaStatus.String()))
+	if g.config != nil {
+		if g.config.ReportOnly {
+			kvs = append(kvs, modeKey.String(hubv1.Mode_MODE_REPORT_ONLY.String()))
+		} else {
+			kvs = append(kvs, modeKey.String(hubv1.Mode_MODE_NORMAL.String()))
+		}
+	}
+	return kvs
+}
+
+func (g *Guard) metricAttr() []metric.AddOption {
+	return []metric.AddOption{metric.WithAttributes(g.reasons()...)}
+}
+
+func (g *Guard) traceAttr(err error) trace.SpanStartEventOption {
+	var resp []attribute.KeyValue
+	if err != nil {
+		resp = append(resp, errorKey.String(err.Error()))
+	}
+	resp = append(resp, g.reasons()...)
+	return trace.WithAttributes(resp...)
+}
+
+func (g *Guard) logAttr(err error) []interface{} {
 	resp := make([]interface{}, 0, 10)
-	if tlr != nil {
-		if tlr.Selector != nil {
-			resp = append(resp, "guard", tlr.GetSelector().GetGuardName())
-			if tlr.GetSelector().FeatureName != nil {
-				resp = append(resp, "feature", tlr.GetSelector().GetFeatureName())
+
+	// Add error attribute
+	if err != nil {
+		resp = append(resp, "error", err.Error())
+	}
+
+	// Add token lease request attributes
+	if g.tlr != nil {
+		if g.tlr.Selector != nil {
+			resp = append(resp, "guard", g.tlr.GetSelector().GetGuardName())
+			if g.tlr.GetSelector().FeatureName != nil {
+				resp = append(resp, "feature", g.tlr.GetSelector().GetFeatureName())
 			}
 		}
-		if tlr.PriorityBoost != nil {
-			resp = append(resp, "priority_boost", fmt.Sprintf("%d", tlr.GetPriorityBoost()))
+		if g.tlr.PriorityBoost != nil {
+			resp = append(resp, "priority_boost", fmt.Sprintf("%d", g.tlr.GetPriorityBoost()))
 		}
-		if tlr.DefaultWeight != nil {
-			resp = append(resp, "default_weight", fmt.Sprintf("%.2f", tlr.GetDefaultWeight()))
+		if g.tlr.DefaultWeight != nil {
+			resp = append(resp, "default_weight", fmt.Sprintf("%.2f", g.tlr.GetDefaultWeight()))
 		}
 	}
-	return append(resp, "reason", reason)
+
+	// Add reason attributes
+	resp = append(resp,
+		configReason, g.configStatus.String(),
+		localReason, g.localStatus.String(),
+		tokenReason, g.tokenStatus.String(),
+		quotaReason, g.quotaStatus.String(),
+	)
+
+	// Add mode attribute
+	if g.config != nil {
+		if g.config.ReportOnly {
+			resp = append(resp, "mode", hubv1.Mode_MODE_REPORT_ONLY.String())
+		} else {
+			resp = append(resp, "mode", hubv1.Mode_MODE_NORMAL.String())
+		}
+	}
+
+	return resp
 }

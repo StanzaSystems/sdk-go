@@ -5,46 +5,23 @@ import (
 )
 
 const (
-	ReasonUnknown = iota
-	ReasonFailOpen
-	ReasonDarkLaunch
-	ReasonQuota
-	ReasonQuotaToken
-	ReasonQuotaFailOpen
-	ReasonQuotaCheckDisabled
-	ReasonQuotaInvalidToken
-	ReasonQuotaUnknown
-	ReasonSentinel
+	configReason = "config_state"
+	localReason  = "local_reason"
+	tokenReason  = "token_reason"
+	quotaReason  = "quota_reason"
 )
 
 var (
-	clientIdKey    = attribute.Key("client_id")
-	customerIdKey  = attribute.Key("customer_id")
-	guardKey       = attribute.Key("guard")
-	environmentKey = attribute.Key("environment")
-	featureKey     = attribute.Key("feature")
-	serviceKey     = attribute.Key("service")
-	reasonKey      = attribute.Key("reason")
+	clientIdKey     = attribute.Key("client_id")
+	customerIdKey   = attribute.Key("customer_id")
+	guardKey        = attribute.Key("guard")
+	environmentKey  = attribute.Key("environment")
+	featureKey      = attribute.Key("feature")
+	serviceKey      = attribute.Key("service")
+	errorKey        = attribute.Key("error")
+	modeKey         = attribute.Key("mode")
+	configReasonKey = attribute.Key(configReason)
+	localReasonKey  = attribute.Key(localReason)
+	tokenReasonKey  = attribute.Key(tokenReason)
+	quotaReasonKey  = attribute.Key(quotaReason)
 )
-
-func reason(reason int) attribute.KeyValue {
-	switch reason {
-	case ReasonFailOpen:
-		return reasonKey.String("fail_open")
-	case ReasonDarkLaunch:
-		return reasonKey.String("dark_launch")
-	case ReasonQuota:
-		return reasonKey.String("quota")
-	case ReasonQuotaToken:
-		return reasonKey.String("quota_token")
-	case ReasonQuotaFailOpen:
-		return reasonKey.String("quota_fail_open")
-	case ReasonQuotaCheckDisabled:
-		return reasonKey.String("quota_check_disabled")
-	case ReasonQuotaInvalidToken:
-		return reasonKey.String("quota_invalid_token")
-	case ReasonQuotaUnknown:
-		return reasonKey.String("quota_unknown")
-	}
-	return reasonKey.String("unknown")
-}

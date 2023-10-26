@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/global"
 	"github.com/StanzaSystems/sdk-go/hub"
 	"github.com/StanzaSystems/sdk-go/otel"
@@ -51,22 +52,37 @@ func (h *Handler) Guard(ctx context.Context, span trace.Span, tokens []string) *
 		guardKey.String(tlr.Selector.GetGuardName()),
 		featureKey.String(tlr.Selector.GetFeatureName()),
 	}
-
 	g := h.NewGuard(ctx, span, attr, nil)
-	if h.SentinelEnabled() {
-		g.checkSentinel(h.GuardName())
-		if g.sentinelBlock != nil {
-			return g
-		}
+
+	// Config State check
+	_, err := g.getGuardConfig(ctx, h.guardName)
+	if err != nil || g.config == nil {
+		return g
 	}
-	if len(tokens) > 0 {
-		g.checkToken(ctx, h.GuardName(), tokens)
-		if g.quotaStatus == hub.ValidateTokensInvalid {
-			return g
+
+	// Local (Sentinel) check
+	err = g.checkLocal(ctx, h.guardName, h.SentinelEnabled())
+	if err != nil || g.localStatus == hubv1.Local_LOCAL_BLOCKED {
+		if g.config.ReportOnly {
+			g.localStatus = hubv1.Local_LOCAL_ALLOWED
+			g.allowed(ctx)
 		}
+		return g
 	}
-	g.checkQuota(ctx, tlr)
-	g.start = time.Now()
+
+	// Ingress token check
+	err = g.checkToken(ctx, h.guardName, tokens, g.config.ValidateIngressTokens)
+	if err != nil || g.tokenStatus == hubv1.Token_TOKEN_NOT_VALID {
+		return g
+	}
+
+	// Quota check
+	err = g.checkQuota(ctx, tlr, g.config.CheckQuota)
+	if err != nil || g.quotaStatus == hubv1.Quota_QUOTA_BLOCKED {
+		return g
+	}
+
+	g.allowed(ctx)
 	return g
 }
 
@@ -75,17 +91,22 @@ func (h *Handler) NewGuard(ctx context.Context, span trace.Span, attr []attribut
 	return &Guard{
 		ctx:   ctx,
 		start: time.Time{},
+		tlr:   &hubv1.GetTokenLeaseRequest{Selector: &hubv1.GuardFeatureSelector{GuardName: h.guardName}},
 		meter: global.GetStanzaMeter(),
 		span:  span,
 		attr:  append(h.attr, attr...),
 		err:   err,
 
-		Success:     GuardSuccess,
-		Failure:     GuardFailure,
-		Unknown:     GuardUnknown,
-		finalStatus: GuardUnknown,
+		Success: GuardSuccess,
+		Failure: GuardFailure,
+		Unknown: GuardUnknown,
 
-		sentinelBlock: nil,
+		configStatus: hubv1.Config_CONFIG_NOT_FOUND,
+		config:       nil,
+		localStatus:  hubv1.Local_LOCAL_NOT_EVAL,
+		localBlock:   nil,
+		tokenStatus:  hubv1.Token_TOKEN_NOT_EVAL,
+		quotaStatus:  hubv1.Quota_QUOTA_NOT_EVAL,
 	}
 }
 
@@ -116,11 +137,7 @@ func (h *Handler) Propagator() propagation.TextMapPropagator {
 
 func (h *Handler) FailOpen(ctx context.Context) {
 	if m := global.GetStanzaMeter(); m != nil {
-		m.AllowedCount.Add(ctx, 1,
-			[]metric.AddOption{metric.WithAttributes(append(h.attr,
-				reason(ReasonFailOpen))...)}...)
-		m.AllowedUnknownCount.Add(ctx, 1,
-			[]metric.AddOption{metric.WithAttributes(h.attr...)}...)
+		m.FailOpenCount.Add(ctx, 1, []metric.AddOption{metric.WithAttributes(h.attr...)}...)
 	}
 }
 
