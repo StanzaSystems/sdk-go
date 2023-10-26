@@ -103,7 +103,7 @@ func GetGuardConfigs(ctx context.Context, skipPoll bool) {
 			if skipPoll || time.Now().After(
 				gs.guardConfigTime[guard].Add(
 					jitter(GUARD_CONFIG_REFRESH_INTERVAL, GUARD_CONFIG_REFRESH_JITTER))) {
-				_, err := fetchGuardConfig(ctx, guard)
+				_, _, err := fetchGuardConfig(ctx, guard)
 				if err != nil {
 					logging.Error(err)
 				}
@@ -112,7 +112,7 @@ func GetGuardConfigs(ctx context.Context, skipPoll bool) {
 	}
 }
 
-func fetchGuardConfig(ctx context.Context, guard string) (*hubv1.GuardConfig, error) {
+func fetchGuardConfig(ctx context.Context, guard string) (*hubv1.GuardConfig, hubv1.Config, error) {
 	gs.guardConfigLock.RLock()
 	_, ok := gs.guardConfig[guard]
 	gs.guardConfigLock.RUnlock()
@@ -125,7 +125,7 @@ func fetchGuardConfig(ctx context.Context, guard string) (*hubv1.GuardConfig, er
 	}
 
 	if gs.hubConfigClient == nil {
-		return nil, errors.New("hub config client unavailable")
+		return nil, hubv1.Config_CONFIG_FETCH_ERROR, errors.New("hub config client unavailable")
 	}
 	res, err := gs.hubConfigClient.GetGuardConfig(
 		metadata.NewOutgoingContext(ctx, XStanzaKey()),
@@ -140,7 +140,7 @@ func fetchGuardConfig(ctx context.Context, guard string) (*hubv1.GuardConfig, er
 		},
 	)
 	if err != nil {
-		return nil, err
+		return nil, hubv1.Config_CONFIG_FETCH_ERROR, err
 	}
 	if res.GetConfigDataSent() {
 		gs.guardConfigLock.Lock()
@@ -149,9 +149,9 @@ func fetchGuardConfig(ctx context.Context, guard string) (*hubv1.GuardConfig, er
 		gs.guardConfigVersion[guard] = res.GetVersion()
 		gs.guardConfigLock.Unlock()
 		logging.Debug("accepted guard config", "guard", guard, "version", res.GetVersion())
-		return res.GetConfig(), nil
+		return res.GetConfig(), hubv1.Config_CONFIG_FETCHED_OK, nil
 	}
-	return nil, nil
+	return nil, hubv1.Config_CONFIG_NOT_FOUND, nil
 }
 
 func OtelStartup(ctx context.Context, skipPoll bool) {

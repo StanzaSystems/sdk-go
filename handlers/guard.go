@@ -124,17 +124,12 @@ func (g *Guard) End(status int) {
 }
 
 func (g *Guard) getGuardConfig(ctx context.Context, name string) (hubv1.Config, error) {
-	gc, err := global.GetGuardConfig(ctx, name)
-	if err != nil {
-		g.configStatus = hubv1.Config_CONFIG_FETCH_ERROR
-		logging.Error(err)
-		g.failopen(ctx, err)
-		return g.configStatus, err
-	} else {
-		g.config = gc
-		g.configStatus = hubv1.Config_CONFIG_CACHED_OK
-		return g.configStatus, nil
+	g.config, g.configStatus, g.err = global.GetGuardConfig(ctx, name)
+	if g.err != nil {
+		logging.Error(g.err)
+		g.failopen(ctx, g.err)
 	}
+	return g.configStatus, g.err
 }
 
 func (g *Guard) checkLocal(ctx context.Context, name string, enabled bool) error {
@@ -195,19 +190,36 @@ func (g *Guard) checkQuota(ctx context.Context, tlr *hubv1.GetTokenLeaseRequest,
 func (g *Guard) allowed(ctx context.Context) {
 	g.meter.AllowedCount.Add(ctx, 1, g.metricAttr()...)
 	g.span.AddEvent("Stanza allowed", g.traceAttr(nil))
-	logging.Debug("Stanza allowed", g.logReasons(nil)...)
+	logging.Debug("Stanza allowed", g.logAttr(nil)...)
+	g.start = time.Now()
 }
 
 func (g *Guard) blocked(ctx context.Context) {
 	g.meter.BlockedCount.Add(ctx, 1, g.metricAttr()...)
 	g.span.AddEvent("Stanza blocked", g.traceAttr(nil))
-	logging.Debug("Stanza blocked", g.logReasons(nil)...)
+	logging.Debug("Stanza blocked", g.logAttr(nil)...)
 }
 
 func (g *Guard) failopen(ctx context.Context, err error) {
 	g.meter.FailOpenCount.Add(ctx, 1, g.metricAttr()...)
 	g.span.AddEvent("Stanza failed open", g.traceAttr(err))
-	logging.Debug("Stanza failed open", g.logReasons(err)...)
+	logging.Debug("Stanza failed open", g.logAttr(err)...)
+}
+
+func (g *Guard) reasons() []attribute.KeyValue {
+	kvs := g.attr
+	kvs = append(kvs, configReasonKey.String(g.configStatus.String()))
+	kvs = append(kvs, localReasonKey.String(g.localStatus.String()))
+	kvs = append(kvs, tokenReasonKey.String(g.tokenStatus.String()))
+	kvs = append(kvs, quotaReasonKey.String(g.quotaStatus.String()))
+	if g.config != nil {
+		if g.config.ReportOnly {
+			kvs = append(kvs, modeKey.String(hubv1.Mode_MODE_REPORT_ONLY.String()))
+		} else {
+			kvs = append(kvs, modeKey.String(hubv1.Mode_MODE_NORMAL.String()))
+		}
+	}
+	return kvs
 }
 
 func (g *Guard) metricAttr() []metric.AddOption {
@@ -223,20 +235,15 @@ func (g *Guard) traceAttr(err error) trace.SpanStartEventOption {
 	return trace.WithAttributes(resp...)
 }
 
-func (g *Guard) reasons() []attribute.KeyValue {
-	kvs := g.attr
-	kvs = append(kvs, configReasonKey.String(g.configStatus.String()))
-	kvs = append(kvs, localReasonKey.String(g.localStatus.String()))
-	kvs = append(kvs, tokenReasonKey.String(g.tokenStatus.String()))
-	kvs = append(kvs, quotaReasonKey.String(g.quotaStatus.String()))
-	return kvs
-}
-
-func (g *Guard) logReasons(err error) []interface{} {
+func (g *Guard) logAttr(err error) []interface{} {
 	resp := make([]interface{}, 0, 10)
+
+	// Add error attribute
 	if err != nil {
 		resp = append(resp, "error", err.Error())
 	}
+
+	// Add token lease request attributes
 	if g.tlr != nil {
 		if g.tlr.Selector != nil {
 			resp = append(resp, "guard", g.tlr.GetSelector().GetGuardName())
@@ -251,6 +258,8 @@ func (g *Guard) logReasons(err error) []interface{} {
 			resp = append(resp, "default_weight", fmt.Sprintf("%.2f", g.tlr.GetDefaultWeight()))
 		}
 	}
+
+	// Add reason attributes
 	resp = append(resp,
 		configReason, g.configStatus.String(),
 		localReason, g.localStatus.String(),
@@ -258,10 +267,13 @@ func (g *Guard) logReasons(err error) []interface{} {
 		quotaReason, g.quotaStatus.String(),
 	)
 
-	if g.config != nil && g.config.ReportOnly {
-		resp = append(resp, "mode", hubv1.Mode_MODE_REPORT_ONLY.String())
-	} else {
-		resp = append(resp, "mode", hubv1.Mode_MODE_NORMAL.String())
+	// Add mode attribute
+	if g.config != nil {
+		if g.config.ReportOnly {
+			resp = append(resp, "mode", hubv1.Mode_MODE_REPORT_ONLY.String())
+		} else {
+			resp = append(resp, "mode", hubv1.Mode_MODE_NORMAL.String())
+		}
 	}
 
 	return resp

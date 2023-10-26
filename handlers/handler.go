@@ -60,33 +60,29 @@ func (h *Handler) Guard(ctx context.Context, span trace.Span, tokens []string) *
 		return g
 	}
 
-	// Add report only attribute
-	if g.config.ReportOnly {
-		g.attr = append(g.attr, modeKey.String(hubv1.Mode_MODE_REPORT_ONLY.String()))
-	} else {
-		g.attr = append(g.attr, modeKey.String(hubv1.Mode_MODE_NORMAL.String()))
-	}
-
 	// Local (Sentinel) check
 	err = g.checkLocal(ctx, h.guardName, h.SentinelEnabled())
-	if (err != nil || g.localStatus == hubv1.Local_LOCAL_BLOCKED) && !g.config.ReportOnly {
+	if err != nil || g.localStatus == hubv1.Local_LOCAL_BLOCKED {
+		if g.config.ReportOnly {
+			g.localStatus = hubv1.Local_LOCAL_ALLOWED
+			g.allowed(ctx)
+		}
 		return g
 	}
 
 	// Ingress token check
 	err = g.checkToken(ctx, h.guardName, tokens, g.config.ValidateIngressTokens)
-	if (err != nil || g.tokenStatus == hubv1.Token_TOKEN_NOT_VALID) && !g.config.ReportOnly {
+	if err != nil || g.tokenStatus == hubv1.Token_TOKEN_NOT_VALID {
 		return g
 	}
 
 	// Quota check
 	err = g.checkQuota(ctx, tlr, g.config.CheckQuota)
-	if (err != nil || g.quotaStatus == hubv1.Quota_QUOTA_BLOCKED) && !g.config.ReportOnly {
+	if err != nil || g.quotaStatus == hubv1.Quota_QUOTA_BLOCKED {
 		return g
 	}
 
 	g.allowed(ctx)
-	g.start = time.Now()
 	return g
 }
 
