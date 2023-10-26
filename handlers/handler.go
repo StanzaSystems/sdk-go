@@ -63,10 +63,6 @@ func (h *Handler) Guard(ctx context.Context, span trace.Span, tokens []string) *
 	// Local (Sentinel) check
 	err = g.checkLocal(ctx, h.guardName, h.SentinelEnabled())
 	if err != nil || g.localStatus == hubv1.Local_LOCAL_BLOCKED {
-		if g.config.ReportOnly {
-			g.localStatus = hubv1.Local_LOCAL_ALLOWED
-			g.allowed(ctx)
-		}
 		return g
 	}
 

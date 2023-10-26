@@ -49,6 +49,11 @@ type Guard struct {
 }
 
 func (g *Guard) Allowed() bool {
+	// Report Only mode always allows
+	if g.config != nil && g.config.ReportOnly {
+		return true
+	}
+
 	// Default to "allowed", unless one of our checks *explicitly* blocks
 	if g.localStatus != hubv1.Local_LOCAL_BLOCKED &&
 		g.quotaStatus != hubv1.Quota_QUOTA_BLOCKED &&
@@ -59,6 +64,11 @@ func (g *Guard) Allowed() bool {
 }
 
 func (g *Guard) Blocked() bool {
+	// Report Only mode always allows
+	if g.config != nil && g.config.ReportOnly {
+		return false
+	}
+
 	// Default to "allowed", unless one of our checks *explicitly* blocks
 	if g.localStatus == hubv1.Local_LOCAL_BLOCKED ||
 		g.quotaStatus == hubv1.Quota_QUOTA_BLOCKED ||
