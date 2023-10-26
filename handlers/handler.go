@@ -60,6 +60,7 @@ func (h *Handler) Guard(ctx context.Context, span trace.Span, tokens []string) *
 		return g
 	}
 
+	// Add report only attribute
 	if g.config.ReportOnly {
 		g.attr = append(g.attr, modeKey.String(hubv1.Mode_MODE_REPORT_ONLY.String()))
 	} else {
@@ -72,7 +73,7 @@ func (h *Handler) Guard(ctx context.Context, span trace.Span, tokens []string) *
 		return g
 	}
 
-	// Ingress Token check
+	// Ingress token check
 	err = g.checkToken(ctx, h.guardName, tokens, g.config.ValidateIngressTokens)
 	if (err != nil || g.tokenStatus == hubv1.Token_TOKEN_NOT_VALID) && !g.config.ReportOnly {
 		return g

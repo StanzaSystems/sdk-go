@@ -49,9 +49,8 @@ type Guard struct {
 }
 
 func (g *Guard) Allowed() bool {
-	if (g.configStatus == hubv1.Config_CONFIG_CACHED_OK ||
-		g.configStatus == hubv1.Config_CONFIG_FETCHED_OK) &&
-		g.localStatus != hubv1.Local_LOCAL_BLOCKED &&
+	// Default to "allowed", unless one of our checks *explicitly* blocks
+	if g.localStatus != hubv1.Local_LOCAL_BLOCKED &&
 		g.quotaStatus != hubv1.Quota_QUOTA_BLOCKED &&
 		g.tokenStatus != hubv1.Token_TOKEN_NOT_VALID {
 		return true
@@ -60,11 +59,8 @@ func (g *Guard) Allowed() bool {
 }
 
 func (g *Guard) Blocked() bool {
-	if g.configStatus == hubv1.Config_CONFIG_UNSPECIFIED ||
-		g.configStatus == hubv1.Config_CONFIG_FETCH_ERROR ||
-		g.configStatus == hubv1.Config_CONFIG_FETCH_TIMEOUT ||
-		g.configStatus == hubv1.Config_CONFIG_NOT_FOUND ||
-		g.localStatus == hubv1.Local_LOCAL_BLOCKED ||
+	// Default to "allowed", unless one of our checks *explicitly* blocks
+	if g.localStatus == hubv1.Local_LOCAL_BLOCKED ||
 		g.quotaStatus == hubv1.Quota_QUOTA_BLOCKED ||
 		g.tokenStatus == hubv1.Token_TOKEN_NOT_VALID {
 		return true
@@ -73,12 +69,6 @@ func (g *Guard) Blocked() bool {
 }
 
 func (g *Guard) BlockMessage() string {
-	if g.configStatus == hubv1.Config_CONFIG_UNSPECIFIED ||
-		g.configStatus == hubv1.Config_CONFIG_FETCH_ERROR ||
-		g.configStatus == hubv1.Config_CONFIG_FETCH_TIMEOUT ||
-		g.configStatus == hubv1.Config_CONFIG_NOT_FOUND {
-		return "Error fetching Guard config or Guard config not found."
-	}
 	if g.localStatus == hubv1.Local_LOCAL_BLOCKED {
 		return g.localBlock.BlockMsg()
 	}
@@ -92,12 +82,6 @@ func (g *Guard) BlockMessage() string {
 }
 
 func (g *Guard) BlockReason() string {
-	if g.configStatus == hubv1.Config_CONFIG_UNSPECIFIED ||
-		g.configStatus == hubv1.Config_CONFIG_FETCH_ERROR ||
-		g.configStatus == hubv1.Config_CONFIG_FETCH_TIMEOUT ||
-		g.configStatus == hubv1.Config_CONFIG_NOT_FOUND {
-		return g.configStatus.String()
-	}
 	if g.localStatus == hubv1.Local_LOCAL_BLOCKED {
 		return g.localStatus.String()
 	}
@@ -142,9 +126,9 @@ func (g *Guard) End(status int) {
 func (g *Guard) getGuardConfig(ctx context.Context, name string) (hubv1.Config, error) {
 	gc, err := global.GetGuardConfig(ctx, name)
 	if err != nil {
+		g.configStatus = hubv1.Config_CONFIG_FETCH_ERROR
 		logging.Error(err)
 		g.failopen(ctx, err)
-		g.configStatus = hubv1.Config_CONFIG_FETCH_ERROR
 		return g.configStatus, err
 	} else {
 		g.config = gc
@@ -274,7 +258,7 @@ func (g *Guard) logReasons(err error) []interface{} {
 		quotaReason, g.quotaStatus.String(),
 	)
 
-	if g.config.ReportOnly {
+	if g.config != nil && g.config.ReportOnly {
 		resp = append(resp, "mode", hubv1.Mode_MODE_REPORT_ONLY.String())
 	} else {
 		resp = append(resp, "mode", hubv1.Mode_MODE_NORMAL.String())
