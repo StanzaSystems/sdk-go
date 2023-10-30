@@ -163,7 +163,7 @@ func OtelStartup(ctx context.Context, skipPoll bool) {
 			}
 			res, err := gs.hubAuthClient.GetBearerToken(
 				metadata.NewOutgoingContext(ctx, XStanzaKey()),
-				&hubv1.GetBearerTokenRequest{})
+				&hubv1.GetBearerTokenRequest{Environment: GetServiceEnvironment()})
 			if err != nil {
 				logging.Error(err)
 				return

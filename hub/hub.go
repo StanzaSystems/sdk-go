@@ -220,7 +220,10 @@ func batchTokenConsumer() {
 				defer cancel()
 				global.QuotaServiceClient().SetTokenLeaseConsumed(
 					metadata.NewOutgoingContext(ctx, global.XStanzaKey()),
-					&hubv1.SetTokenLeaseConsumedRequest{Tokens: consumedLeases})
+					&hubv1.SetTokenLeaseConsumedRequest{
+						Tokens:      consumedLeases,
+						Environment: global.GetServiceEnvironment(),
+					})
 			}
 			return
 		case <-time.After(BATCH_TOKEN_CONSUME_INTERVAL):
@@ -229,7 +232,10 @@ func batchTokenConsumer() {
 				if len(consumedLeases) == 0 {
 					consumedLeasesLock.Unlock()
 				} else {
-					consumeTokenReq := &hubv1.SetTokenLeaseConsumedRequest{Tokens: consumedLeases}
+					consumeTokenReq := &hubv1.SetTokenLeaseConsumedRequest{
+						Tokens:      consumedLeases,
+						Environment: global.GetServiceEnvironment(),
+					}
 					consumedLeases = []string{}
 					consumedLeasesLock.Unlock()
 
