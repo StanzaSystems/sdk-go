@@ -22,7 +22,7 @@ import (
 
 const (
 	instrumentationName    = "github.com/StanzaSystems/sdk-go"
-	instrumentationVersion = "0.0.4-beta"
+	instrumentationVersion = "0.0.5-beta"
 
 	MIN_POLLING_TIME = 15 * time.Second
 
