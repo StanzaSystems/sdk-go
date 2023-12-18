@@ -10,7 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
+	"buf.build/gen/go/stanza/apis/grpc/go/stanza/hub/v1/hubv1grpc"
+	hubv1 "buf.build/gen/go/stanza/apis/protocolbuffers/go/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/logging"
 
 	"github.com/google/uuid"
@@ -39,9 +40,9 @@ type state struct {
 
 	// stored after hubConnect success
 	hubConn         *grpc.ClientConn
-	hubAuthClient   hubv1.AuthServiceClient
-	hubConfigClient hubv1.ConfigServiceClient
-	hubQuotaClient  hubv1.QuotaServiceClient
+	hubAuthClient   hubv1grpc.AuthServiceClient
+	hubConfigClient hubv1grpc.ConfigServiceClient
+	hubQuotaClient  hubv1grpc.QuotaServiceClient
 
 	// stored from GetServiceConfig polling
 	svcConfig        *hubv1.ServiceConfig
@@ -199,7 +200,7 @@ func GetGuardConfig(ctx context.Context, guard string) (*hubv1.GuardConfig, hubv
 	return fetchGuardConfig(ctx, guard)
 }
 
-func QuotaServiceClient() hubv1.QuotaServiceClient {
+func QuotaServiceClient() hubv1grpc.QuotaServiceClient {
 	gsLock.RLock()
 	defer gsLock.RUnlock()
 	return gs.hubQuotaClient
