@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
+	"buf.build/gen/go/stanza/apis/grpc/go/stanza/hub/v1/hubv1grpc"
 	"github.com/StanzaSystems/sdk-go/ca"
-	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/logging"
 
 	"google.golang.org/grpc"
@@ -40,9 +40,9 @@ func hubConnect(ctx context.Context) {
 	} else {
 		gsLock.Lock()
 		gs.hubConn = hubConn
-		gs.hubAuthClient = hubv1.NewAuthServiceClient(hubConn)
-		gs.hubConfigClient = hubv1.NewConfigServiceClient(hubConn)
-		gs.hubQuotaClient = hubv1.NewQuotaServiceClient(hubConn)
+		gs.hubAuthClient = hubv1grpc.NewAuthServiceClient(hubConn)
+		gs.hubConfigClient = hubv1grpc.NewConfigServiceClient(hubConn)
+		gs.hubQuotaClient = hubv1grpc.NewQuotaServiceClient(hubConn)
 		gsLock.Unlock()
 
 		// attempt to establish hub connection (doesn't block)

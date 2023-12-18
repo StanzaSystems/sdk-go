@@ -21,7 +21,12 @@ require (
 	google.golang.org/protobuf v1.31.0
 )
 
-require github.com/matttproud/golang_protobuf_extensions/v2 v2.0.0 // indirect
+require (
+	buf.build/gen/go/grpc-ecosystem/grpc-gateway/protocolbuffers/go v1.31.0-20221127060915-a1ecdc58eccd.2 // indirect
+	buf.build/gen/go/stanza/apis/grpc/go v1.3.0-20231026123415-1a9dca8fa2f6.2 // indirect
+	buf.build/gen/go/stanza/apis/protocolbuffers/go v1.31.0-20231026123415-1a9dca8fa2f6.2 // indirect
+	github.com/matttproud/golang_protobuf_extensions/v2 v2.0.0 // indirect
+)
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect

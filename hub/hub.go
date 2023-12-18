@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	hubv1 "github.com/StanzaSystems/sdk-go/gen/stanza/hub/v1"
+	hubv1 "buf.build/gen/go/stanza/apis/protocolbuffers/go/stanza/hub/v1"
 	"github.com/StanzaSystems/sdk-go/global"
 	"github.com/StanzaSystems/sdk-go/logging"
 	"github.com/StanzaSystems/sdk-go/otel"
