@@ -37,6 +37,7 @@ type Opt struct {
 	Feature       string
 	PriorityBoost int32
 	DefaultWeight float32
+	Tags          map[string]string
 }
 
 // New creates a new fiberstanza middleware fiber.Handler
@@ -147,6 +148,9 @@ func withOpts(opts ...Opt) stanza.GuardOpt {
 		}
 		if opts[0].DefaultWeight != 0 {
 			guardOpt.DefaultWeight = &opts[0].DefaultWeight
+		}
+		if len(opts[0].Tags) > 0 {
+			guardOpt.Tags = &opts[0].Tags
 		}
 	}
 	return guardOpt

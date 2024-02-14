@@ -109,9 +109,11 @@ func main() {
 
 	// Use ZenQuotes to get a random quote
 	app.Get("/quote", func(c *fiber.Ctx) error {
+		opt := fiberstanza.Opt{Tags: make(map[string]string)}
+		opt.Tags["tier"] = "MEGA"
 
 		// Outbound request with ZenQuotes Guard
-		resp, err := fiberstanza.HttpGet(c, "ZenQuotes", "https://zenquotes.io/api/random")
+		resp, err := fiberstanza.HttpGet(c, "ZenQuotes", "https://zenquotes.io/api/random", opt)
 		if err != nil {
 			logger.Error("ZenQuotes", zap.Error(err))
 		}
