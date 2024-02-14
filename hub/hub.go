@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"os/signal"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -45,7 +46,7 @@ var (
 	failOpenCount = int64(0)
 )
 
-func NewTokenLeaseRequest(ctx context.Context, gn string, fn *string, pb *int32, dw *float32) (context.Context, *hubv1.GetTokenLeaseRequest) {
+func NewTokenLeaseRequest(ctx context.Context, gn string, fn *string, pb *int32, dw *float32, tags *map[string]string) (context.Context, *hubv1.GetTokenLeaseRequest) {
 	tlr := hubv1.GetTokenLeaseRequest{
 		ClientId: proto.String(global.GetClientID()),
 		Selector: &hubv1.GuardFeatureSelector{
@@ -69,6 +70,24 @@ func NewTokenLeaseRequest(ctx context.Context, gn string, fn *string, pb *int32,
 	// DefaultWeight can not be set via Baggage or Headers
 	if dw != nil {
 		tlr.DefaultWeight = dw
+	}
+
+	// Add Tags (if Guard config allows it)
+	if tags != nil {
+		if len(*tags) > 0 {
+			guardConfig, _, err := global.GetGuardConfig(ctx, gn)
+			if err != nil {
+				logging.Error(err)
+			} else {
+				for k, v := range *tags {
+					if slices.Contains(guardConfig.QuotaTags, k) {
+						tlr.Selector.Tags = append(tlr.Selector.Tags, &hubv1.Tag{Key: k, Value: v})
+					} else {
+						logging.Info("skipping unknown tag", "tag", k, "guard", gn)
+					}
+				}
+			}
+		}
 	}
 	return ctx, &tlr
 }

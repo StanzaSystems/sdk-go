@@ -20,15 +20,17 @@ type Handler struct {
 	featureName   *string // overrides request baggage (if any)
 	priorityBoost *int32  // adds to request baggage (if any)
 	defaultWeight *float32
+	tags          *map[string]string
 	attr          []attribute.KeyValue
 }
 
-func NewHandler(gn string, fn *string, pb *int32, dw *float32) (*Handler, error) {
+func NewHandler(gn string, fn *string, pb *int32, dw *float32, kv *map[string]string) (*Handler, error) {
 	return &Handler{
 		guardName:     gn,
 		featureName:   fn,
 		priorityBoost: pb,
 		defaultWeight: dw,
+		tags:          kv,
 		attr: []attribute.KeyValue{
 			clientIdKey.String(global.GetClientID()),
 			environmentKey.String(global.GetServiceEnvironment()),
@@ -47,7 +49,7 @@ func (h *Handler) Guard(ctx context.Context, span trace.Span, tokens []string) *
 		defer span.End()
 	}
 
-	ctx, tlr := hub.NewTokenLeaseRequest(ctx, h.GuardName(), h.FeatureName(), h.PriorityBoost(), h.DefaultWeight())
+	ctx, tlr := hub.NewTokenLeaseRequest(ctx, h.GuardName(), h.FeatureName(), h.PriorityBoost(), h.DefaultWeight(), h.Tags())
 	attr := []attribute.KeyValue{
 		guardKey.String(tlr.Selector.GetGuardName()),
 		featureKey.String(tlr.Selector.GetFeatureName()),
@@ -120,6 +122,10 @@ func (h *Handler) PriorityBoost() *int32 {
 
 func (h *Handler) DefaultWeight() *float32 {
 	return h.defaultWeight
+}
+
+func (h *Handler) Tags() *map[string]string {
+	return h.tags
 }
 
 // OTEL Helper Functions //
