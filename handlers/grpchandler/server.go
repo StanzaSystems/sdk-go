@@ -20,8 +20,8 @@ type InboundHandler struct {
 }
 
 // NewInboundHandler returns a new InboundHandler
-func NewInboundHandler(gn string, fn *string, pb *int32, dw *float32) (*InboundHandler, error) {
-	h, err := handlers.NewInboundHandler(gn, fn, pb, dw)
+func NewInboundHandler(gn string, fn *string, pb *int32, dw *float32, kv *map[string]string) (*InboundHandler, error) {
+	h, err := handlers.NewInboundHandler(gn, fn, pb, dw, kv)
 	if err != nil {
 		return nil, err
 	}

@@ -20,6 +20,7 @@ type GuardOpt struct {
 	Feature       *string
 	PriorityBoost *int32
 	DefaultWeight *float32
+	Tags          *map[string]string
 }
 
 // HttpServer is a helper function to Guard inbound HTTP requests
@@ -134,10 +135,11 @@ func ContextWithHeaders(r *http.Request) context.Context {
 	return otel.ContextWithHeaders(r)
 }
 
-func withOpts(gn string, opts ...GuardOpt) (string, *string, *int32, *float32) {
+func withOpts(gn string, opts ...GuardOpt) (string, *string, *int32, *float32, *map[string]string) {
 	var fn *string
 	var pb *int32
 	var dw *float32
+	var kv *map[string]string
 	if len(opts) == 1 {
 		if opts[0].Feature != nil {
 			fn = opts[0].Feature
@@ -148,6 +150,9 @@ func withOpts(gn string, opts ...GuardOpt) (string, *string, *int32, *float32) {
 		if opts[0].DefaultWeight != nil {
 			dw = opts[0].DefaultWeight
 		}
+		if opts[0].Tags != nil {
+			kv = opts[0].Tags
+		}
 	}
-	return gn, fn, pb, dw
+	return gn, fn, pb, dw, kv
 }
