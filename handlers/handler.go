@@ -53,6 +53,7 @@ func (h *Handler) Guard(ctx context.Context, span trace.Span, tokens []string) *
 	attr := []attribute.KeyValue{
 		guardKey.String(tlr.Selector.GetGuardName()),
 		featureKey.String(tlr.Selector.GetFeatureName()),
+		priorityBoostKey.Int64(int64(tlr.GetPriorityBoost())),
 	}
 	g := h.NewGuard(ctx, span, attr, nil)
 
