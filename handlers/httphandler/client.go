@@ -85,16 +85,16 @@ func (h *OutboundHandler) Request(ctx context.Context, httpMethod, url string, b
 		}
 		httpClient := &http.Client{Transport: http.DefaultTransport}
 		resp, err := httpClient.Do(req)
-		span.SetAttributes(
-			semconv.UserAgentOriginal(req.Header.Get("User-Agent")),
-			semconv.HTTPStatusCode(resp.StatusCode),
-		)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			guard.End(guard.Failure)
 			return resp, err // TODO: multierr with guard.Error()?
 		} else {
+			span.SetAttributes(
+				semconv.UserAgentOriginal(req.Header.Get("User-Agent")),
+				semconv.HTTPStatusCode(resp.StatusCode),
+			)
 			span.SetStatus(codes.Ok, "OK")
 			guard.End(guard.Success)
 			return resp, guard.Error()
