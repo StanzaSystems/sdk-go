@@ -75,6 +75,9 @@ func (h *OutboundHandler) Request(ctx context.Context, httpMethod, url string, b
 		if guard.Token() != "" {
 			req.Header.Add("X-Stanza-Token", guard.Token())
 		}
+		if h.FeatureName() != nil {
+			req.Header.Add("X-Stanza-Feature", *h.FeatureName())
+		}
 		if req.Header.Get("User-Agent") == "" {
 			req.Header.Set("User-Agent", global.UserAgent())
 		}
