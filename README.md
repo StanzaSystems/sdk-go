@@ -30,4 +30,4 @@ Or browse the [Official Stanza Documentation](https://docs.dev.getstanza.dev/) f
 
 ## Community
 
-Join [Stanza's Community Discord](https://discord.gg/5feHXQam) to get involved and help us improve the SDK!
+Join [Stanza's Community Discord](https://discord.gg/qaCRa2nMxY) to get involved and help us improve the SDK!
