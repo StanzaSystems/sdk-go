@@ -14,20 +14,22 @@ type middleware struct {
 }
 
 // NewHttpHandler wraps the passed handler and enriches it with a guard.
-func NewHttpHandler(handler http.Handler, gn string, fn *string, pb *int32, dw *float32, kv *map[string]string) http.Handler {
-	return NewMiddleware(gn, fn, pb, dw, kv)(handler)
+func NewHttpHandler(handler http.Handler, guardName string, featureName *string,
+	priorityBoost *int32, defaultWeight *float32, tags *map[string]string) http.Handler {
+	return NewMiddleware(guardName, featureName, priorityBoost, defaultWeight, tags)(handler)
 }
 
 // NewMiddleware returns a Guard middleware
 // The handler returned by the middleware wraps a handler and provides a Guard
 // for each request
-func NewMiddleware(gn string, fn *string, pb *int32, dw *float32, kv *map[string]string) func(http.Handler) http.Handler {
+func NewMiddleware(guardName string, featureName *string, priorityBoost *int32,
+	defaultWeight *float32, tags *map[string]string) func(http.Handler) http.Handler {
 	h := middleware{
-		guardName:     gn,
-		featureName:   *fn,
-		priorityBoost: *pb,
-		defaultWeight: *dw,
-		tags:          *kv,
+		guardName:     guardName,
+		featureName:   *featureName,
+		priorityBoost: *priorityBoost,
+		defaultWeight: *defaultWeight,
+		tags:          *tags,
 	}
 
 	return func(next http.Handler) http.Handler {
