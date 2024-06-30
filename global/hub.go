@@ -32,7 +32,7 @@ func hubConnect(ctx context.Context) {
 		grpc.WithUserAgent(UserAgent()),
 		// todo: add keepalives, backoff config, etc
 	}
-	hubConn, err := grpc.Dial(gs.hubURI, opts...)
+	hubConn, err := grpc.NewClient(gs.hubURI, opts...)
 	if err != nil {
 		logging.Error(err,
 			"msg", "failed to connect to stanza hub",
